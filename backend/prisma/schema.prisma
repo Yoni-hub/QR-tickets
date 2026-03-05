@@ -34,8 +34,25 @@ model Ticket {
   updatedAt      DateTime     @updatedAt
   event          UserEvent    @relation(fields: [eventId], references: [id], onDelete: Cascade)
   scanRecords    ScanRecord[]
+  deliveries     TicketDelivery[]
 
   @@index([eventId])
+}
+
+model TicketDelivery {
+  id           String         @id @default(cuid())
+  ticketId     String
+  email        String
+  method       DeliveryMethod @default(EMAIL_LINK)
+  status       DeliveryStatus
+  sentAt       DateTime       @default(now())
+  errorMessage String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  ticket       Ticket         @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@index([sentAt])
 }
 
 model ScanRecord {
@@ -62,4 +79,13 @@ enum ScanResult {
   VALID
   USED
   INVALID
+}
+
+enum DeliveryMethod {
+  EMAIL_LINK
+}
+
+enum DeliveryStatus {
+  SENT
+  FAILED
 }

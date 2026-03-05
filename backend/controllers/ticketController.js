@@ -1,4 +1,4 @@
-﻿const prisma = require("../utils/prisma");
+const prisma = require("../utils/prisma");
 
 async function getTicketByPublicId(req, res) {
   const ticketPublicId = (req.params.ticketPublicId || "").trim();
@@ -10,9 +10,12 @@ async function getTicketByPublicId(req, res) {
   const ticket = await prisma.ticket.findUnique({
     where: { ticketPublicId },
     select: {
+      id: true,
       ticketPublicId: true,
+      qrPayload: true,
       status: true,
       scannedAt: true,
+      createdAt: true,
       event: {
         select: {
           id: true,
@@ -31,7 +34,18 @@ async function getTicketByPublicId(req, res) {
     return;
   }
 
-  res.json({ ticket });
+  const order = {
+    eventId: ticket.event.id,
+    accessCode: ticket.event.accessCode,
+    status: "ACTIVE",
+  };
+
+  res.json({ ticket, order });
 }
 
-module.exports = { getTicketByPublicId };
+async function getPublicTicketByPublicId(req, res) {
+  return getTicketByPublicId(req, res);
+}
+
+module.exports = { getTicketByPublicId, getPublicTicketByPublicId };
+
