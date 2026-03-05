@@ -3,20 +3,44 @@ import { useNavigate } from "react-router-dom";
 import api from "../lib/api";
 
 const TICKET_TYPES = ["General", "VIP", "VVIP"];
+const DELIVERY_METHODS = {
+  PDF: "PDF",
+  EMAIL_LINK: "EMAIL_LINK",
+};
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function parseRecipientEmails(rawValue) {
+  const parts = String(rawValue || "")
+    .split(/[\n,]+/)
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
+
+  const deduped = [];
+  const seen = new Set();
+  for (const email of parts) {
+    if (!EMAIL_PATTERN.test(email)) continue;
+    if (seen.has(email)) continue;
+    seen.add(email);
+    deduped.push(email);
+  }
+  return deduped;
+}
 
 export default function HomePage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+  const [sendSummary, setSendSummary] = useState(null);
   const [result, setResult] = useState(null);
+  const [deliveryMethod, setDeliveryMethod] = useState(DELIVERY_METHODS.PDF);
+  const [recipientEmails, setRecipientEmails] = useState("");
   const [form, setForm] = useState({
     eventName: "QR Tickets Demo Event",
     eventDateTime: "",
     eventAddress: "",
   });
-  const [ticketGroups, setTicketGroups] = useState([
-    { ticketType: "General", ticketPrice: "0", quantity: "10" },
-  ]);
+  const [ticketGroups, setTicketGroups] = useState([{ ticketType: "General", ticketPrice: "0", quantity: "10" }]);
 
   const onChange = (event) => {
     const { name, value } = event.target;
@@ -41,10 +65,34 @@ export default function HomePage() {
     setTicketGroups((prev) => [...prev, { ticketType: nextType, ticketPrice: "0", quantity: "1" }]);
   };
 
+  const sendLinks = async (accessCode) => {
+    const emails = parseRecipientEmails(recipientEmails);
+    if (!emails.length) {
+      setError("Add at least one valid recipient email for Send by email.");
+      return;
+    }
+
+    setSending(true);
+    setError("");
+    setSendSummary(null);
+    try {
+      const response = await api.post(`/orders/${encodeURIComponent(accessCode)}/send-links`, {
+        emails,
+        baseUrl: window.location.origin,
+      });
+      setSendSummary(response.data);
+    } catch (requestError) {
+      setError(requestError.response?.data?.error || "Could not send ticket links.");
+    } finally {
+      setSending(false);
+    }
+  };
+
   const tryDemo = async () => {
     setLoading(true);
     setError("");
     setResult(null);
+    setSendSummary(null);
     try {
       const totalQuantity = Math.max(
         1,
@@ -58,7 +106,21 @@ export default function HomePage() {
         quantity: String(totalQuantity),
       };
       const response = await api.post("/demo/events", payload);
-      setResult(response.data);
+      const created = response.data;
+      setResult(created);
+
+      if (deliveryMethod === DELIVERY_METHODS.EMAIL_LINK) {
+        const emails = parseRecipientEmails(recipientEmails);
+        if (emails.length) {
+          const sendRes = await api.post(`/orders/${encodeURIComponent(created.accessCode)}/send-links`, {
+            emails,
+            baseUrl: window.location.origin,
+          });
+          setSendSummary(sendRes.data);
+        } else {
+          setError("Event created. Add recipient emails, then click Send tickets.");
+        }
+      }
     } catch (requestError) {
       setError(requestError.response?.data?.error || "Could not create demo event.");
     } finally {
@@ -115,7 +177,9 @@ export default function HomePage() {
                 onChange={(event) => onTicketGroupChange(index, "ticketType", event.target.value)}
               >
                 {getAvailableTypes(index).map((type) => (
-                  <option key={type} value={type}>{type}</option>
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
                 ))}
               </select>
             </div>
@@ -152,13 +216,68 @@ export default function HomePage() {
         >
           Add more ticket types
         </button>
+
+        <div className="rounded border p-3">
+          <p className="mb-2 text-sm font-medium">Delivery method</p>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="radio"
+              name="deliveryMethod"
+              value={DELIVERY_METHODS.PDF}
+              checked={deliveryMethod === DELIVERY_METHODS.PDF}
+              onChange={(event) => setDeliveryMethod(event.target.value)}
+            />
+            <span>Download PDF</span>
+          </label>
+          <label className="mt-2 flex items-center gap-2 text-sm">
+            <input
+              type="radio"
+              name="deliveryMethod"
+              value={DELIVERY_METHODS.EMAIL_LINK}
+              checked={deliveryMethod === DELIVERY_METHODS.EMAIL_LINK}
+              onChange={(event) => setDeliveryMethod(event.target.value)}
+            />
+            <span>Send by email (links)</span>
+          </label>
+
+          {deliveryMethod === DELIVERY_METHODS.EMAIL_LINK ? (
+            <div className="mt-3">
+              <label className="mb-1 block text-sm font-medium">Recipient emails</label>
+              <textarea
+                className="w-full rounded border p-2"
+                rows={4}
+                value={recipientEmails}
+                onChange={(event) => setRecipientEmails(event.target.value)}
+                placeholder="alice@email.com, bob@email.com"
+              />
+              <p className="mt-1 text-xs text-slate-600">We&apos;ll send one ticket link per email.</p>
+              {result?.accessCode ? (
+                <button
+                  type="button"
+                  className="mt-3 rounded bg-indigo-600 px-3 py-2 text-white"
+                  onClick={() => sendLinks(result.accessCode)}
+                  disabled={sending}
+                >
+                  {sending ? "Sending..." : "Send tickets"}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
       </div>
 
-      <button type="button" className="mt-4 rounded bg-black px-4 py-2 text-white" onClick={tryDemo} disabled={loading}>
-        {loading ? "Creating..." : "Try Demo"}
+      <button type="button" className="mt-4 rounded bg-black px-4 py-2 text-white" onClick={tryDemo} disabled={loading || sending}>
+        {loading ? "Creating..." : "Try Demo / Generate"}
       </button>
 
       {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
+
+      {sendSummary ? (
+        <div className="mt-3 rounded border bg-emerald-50 p-3 text-sm">
+          <p>Links sent: {sendSummary.sent}</p>
+          {sendSummary.failed?.length ? <p>Failed: {sendSummary.failed.length}</p> : <p>Failed: 0</p>}
+        </div>
+      ) : null}
 
       {result?.accessCode ? (
         <div className="mt-6 rounded border bg-white p-4">
@@ -171,10 +290,15 @@ export default function HomePage() {
             <button className="rounded bg-green-600 px-3 py-2 text-white" onClick={() => navigate(`/scanner?code=${result.accessCode}`)}>
               Open Scanner
             </button>
-            <button className="rounded border px-3 py-2" onClick={downloadPdf}>Download Tickets PDF</button>
+            {deliveryMethod === DELIVERY_METHODS.PDF ? (
+              <button className="rounded border px-3 py-2" onClick={downloadPdf}>
+                Download Tickets PDF
+              </button>
+            ) : null}
           </div>
         </div>
       ) : null}
     </main>
   );
 }
+
