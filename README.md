@@ -17,3 +17,8 @@ Standalone QR event ticketing app.
 ## Production Target
 - https://qr-tickets.connsura.com
 - Blue/green deployment model
+
+## Ticket Design Persistence
+- Home page ticket preview now uses an editable ticket sample (in-place editing + optional header image upload).
+- The selected design is stored on each event as `designJson`.
+- PDF downloads render from stored `designJson` with the same HTML/CSS ticket spec used by preview, so re-downloads keep the original look.
