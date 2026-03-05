@@ -34,6 +34,11 @@ export default function Dashboard() {
     setError("");
     try {
       const response = await api.get(`/events/${summary.event.id}/tickets.pdf`, { responseType: "blob" });
+      const contentType = String(response.headers?.["content-type"] || "");
+      if (!contentType.includes("application/pdf") || response.data.size < 500) {
+        const text = await response.data.text();
+        throw new Error(text || "PDF generation failed.");
+      }
       const url = window.URL.createObjectURL(new Blob([response.data], { type: "application/pdf" }));
       const link = document.createElement("a");
       link.href = url;
@@ -43,7 +48,7 @@ export default function Dashboard() {
       link.remove();
       window.URL.revokeObjectURL(url);
     } catch (requestError) {
-      setError(requestError.response?.data?.error || "Could not download tickets PDF.");
+      setError(requestError.response?.data?.error || requestError.message || "Could not download tickets PDF.");
     }
   };
 
