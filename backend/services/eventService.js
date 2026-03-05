@@ -2,6 +2,14 @@
 const { generateAccessCode } = require("../utils/accessCode");
 const { generateTicketPublicId } = require("../utils/ticketPublicId");
 
+function getPublicBaseUrl() {
+  return (process.env.PUBLIC_BASE_URL || "http://localhost:5174").replace(/\/$/, "");
+}
+
+function buildQrPayload(ticketPublicId) {
+  return `${getPublicBaseUrl()}/t/${ticketPublicId}`;
+}
+
 async function createEvent(payload, isDemo = false) {
   const quantity = Math.max(1, Number.parseInt(payload.quantity, 10) || 1);
   const accessCode = await generateAccessCode(async (code) => {
@@ -33,7 +41,7 @@ async function createEvent(payload, isDemo = false) {
     tickets.push({
       eventId: event.id,
       ticketPublicId,
-      qrPayload: ticketPublicId,
+      qrPayload: buildQrPayload(ticketPublicId),
       status: "UNUSED",
     });
   }
@@ -42,4 +50,4 @@ async function createEvent(payload, isDemo = false) {
   return { eventId: event.id, accessCode };
 }
 
-module.exports = { createEvent };
+module.exports = { createEvent, getPublicBaseUrl, buildQrPayload };

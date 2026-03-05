@@ -29,6 +29,19 @@ export default function Dashboard() {
     }
   };
 
+  const downloadPdf = async () => {
+    if (!summary?.event?.id) return;
+    const response = await api.get(`/events/${summary.event.id}/tickets.pdf`, { responseType: "blob" });
+    const url = window.URL.createObjectURL(new Blob([response.data], { type: "application/pdf" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "tickets.pdf";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  };
+
   return (
     <main className="mx-auto max-w-5xl p-6">
       <h1 className="text-3xl font-bold">Dashboard</h1>
@@ -51,6 +64,7 @@ export default function Dashboard() {
             <p><span className="font-semibold">Event:</span> {summary.event.eventName}</p>
             <p><span className="font-semibold">Date:</span> {new Date(summary.event.eventDate).toLocaleString()}</p>
             <p><span className="font-semibold">Location:</span> {summary.event.eventAddress}</p>
+            <button className="mt-3 rounded border px-3 py-2" onClick={downloadPdf}>Download Tickets PDF</button>
           </div>
 
           <div className="mt-5 overflow-x-auto rounded border">
