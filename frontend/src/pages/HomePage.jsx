@@ -6,7 +6,7 @@ export default function HomePage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [accessCode, setAccessCode] = useState("");
+  const [result, setResult] = useState(null);
   const [form, setForm] = useState({
     eventName: "QR Tickets Demo Event",
     eventDateTime: "",
@@ -24,15 +24,28 @@ export default function HomePage() {
   const tryDemo = async () => {
     setLoading(true);
     setError("");
-    setAccessCode("");
+    setResult(null);
     try {
       const response = await api.post("/demo/events", form);
-      setAccessCode(response.data.accessCode);
+      setResult(response.data);
     } catch (requestError) {
       setError(requestError.response?.data?.error || "Could not create demo event.");
     } finally {
       setLoading(false);
     }
+  };
+
+  const downloadPdf = async () => {
+    if (!result?.eventId) return;
+    const response = await api.get(`/events/${result.eventId}/tickets.pdf`, { responseType: "blob" });
+    const url = window.URL.createObjectURL(new Blob([response.data], { type: "application/pdf" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "tickets.pdf";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
   };
 
   return (
@@ -55,17 +68,18 @@ export default function HomePage() {
 
       {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
 
-      {accessCode ? (
+      {result?.accessCode ? (
         <div className="mt-6 rounded border bg-white p-4">
           <p className="text-sm text-slate-600">Event access code</p>
-          <p className="text-3xl font-bold tracking-wider">{accessCode}</p>
-          <div className="mt-3 flex gap-2">
-            <button className="rounded bg-blue-600 px-3 py-2 text-white" onClick={() => navigate(`/dashboard?code=${accessCode}`)}>
+          <p className="text-3xl font-bold tracking-wider">{result.accessCode}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button className="rounded bg-blue-600 px-3 py-2 text-white" onClick={() => navigate(`/dashboard?code=${result.accessCode}`)}>
               Go to Dashboard
             </button>
-            <button className="rounded bg-green-600 px-3 py-2 text-white" onClick={() => navigate(`/scanner?code=${accessCode}`)}>
+            <button className="rounded bg-green-600 px-3 py-2 text-white" onClick={() => navigate(`/scanner?code=${result.accessCode}`)}>
               Open Scanner
             </button>
+            <button className="rounded border px-3 py-2" onClick={downloadPdf}>Download Tickets PDF</button>
           </div>
         </div>
       ) : null}

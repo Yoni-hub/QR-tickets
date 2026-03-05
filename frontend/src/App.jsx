@@ -3,6 +3,7 @@ import HomePage from "./pages/HomePage";
 import Dashboard from "./pages/Dashboard";
 import Scanner from "./pages/Scanner";
 import Demo from "./pages/Demo";
+import TicketVerify from "./pages/TicketVerify";
 
 export default function App() {
   return (
@@ -20,6 +21,7 @@ export default function App() {
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/scanner" element={<Scanner />} />
         <Route path="/demo" element={<Demo />} />
+        <Route path="/t/:ticketPublicId" element={<TicketVerify />} />
       </Routes>
     </div>
   );
