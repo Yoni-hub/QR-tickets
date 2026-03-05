@@ -9,3 +9,20 @@
 
 ## Production Blue/Green
 - Follow ops/deploy_blue_green.md
+
+## Memory Checkpoint
+Run this whenever you say `checkpoint`, after major change batches, before long handoffs, and at task completion:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File ops/checkpoint.ps1 `
+  -Summary "Implemented scanner improvement X" `
+  -ApiChanged -ApiNote "Added GET /api/example" `
+  -DataModelChanged -DataModelNote "Added ExampleModel.fieldY" `
+  -DecisionContext "Needed stable scanner fallback parsing" `
+  -Decision "Parse /t/:id URLs and raw payloads in one extractor" `
+  -DecisionConsequence "Scanner accepts both URL QR content and plain IDs"
+```
+
+Notes:
+- Decision fields are optional. If omitted, no decision entry is added.
+- Use `-ApiChanged` and/or `-DataModelChanged` only when those interfaces changed.
