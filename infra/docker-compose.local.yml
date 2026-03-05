@@ -1,0 +1,16 @@
+﻿services:
+  postgres:
+    image: postgres:16
+    container_name: qr_tickets_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: qr_user
+      POSTGRES_PASSWORD: qr_pass
+      POSTGRES_DB: qr_tickets
+    ports:
+      - "5434:5432"
+    volumes:
+      - qr_tickets_pgdata:/var/lib/postgresql/data
+
+volumes:
+  qr_tickets_pgdata:

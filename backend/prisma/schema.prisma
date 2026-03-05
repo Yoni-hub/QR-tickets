@@ -1,0 +1,65 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model UserEvent {
+  id          String      @id @default(cuid())
+  eventName   String
+  eventDate   DateTime
+  eventAddress String
+  ticketType  String?
+  ticketPrice Decimal?    @db.Decimal(10, 2)
+  quantity    Int
+  accessCode  String      @unique
+  isDemo      Boolean     @default(false)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  tickets     Ticket[]
+  scanRecords ScanRecord[]
+}
+
+model Ticket {
+  id             String       @id @default(cuid())
+  eventId        String
+  ticketPublicId String       @unique
+  qrPayload      String
+  status         TicketStatus @default(UNUSED)
+  scannedAt      DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  event          UserEvent    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  scanRecords    ScanRecord[]
+
+  @@index([eventId])
+}
+
+model ScanRecord {
+  id          String      @id @default(cuid())
+  eventId      String
+  ticketId     String?
+  ticketPublicId String
+  result       ScanResult
+  scannedAt    DateTime    @default(now())
+  createdAt    DateTime    @default(now())
+  event        UserEvent   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  ticket       Ticket?     @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+
+  @@index([eventId])
+  @@index([ticketPublicId])
+}
+
+enum TicketStatus {
+  UNUSED
+  USED
+}
+
+enum ScanResult {
+  VALID
+  USED
+  INVALID
+}
