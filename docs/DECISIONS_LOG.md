@@ -14,3 +14,8 @@
 - Context: QR payload consistency and user verification.
 - Decision: Encode QR as `${PUBLIC_BASE_URL}/t/${ticketPublicId}` and expose `/t/:ticketPublicId` informational page.
 - Consequence: camera scanner can parse URL or raw fallback; users can verify ticket state without consuming it.
+
+## DEC-004 (2026-03-05)
+- Context: Prevent context loss when starting new chats and enforce consistent memory hygiene.
+- Decision: Require automatic session checkpoints (scripted + documented) at handoff, major change batches, and explicit `checkpoint` requests.
+- Consequence: `SESSION_NOTES`, `DECISIONS_LOG`, and interface docs stay current across chat boundaries.

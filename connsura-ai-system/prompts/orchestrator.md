@@ -9,6 +9,7 @@
   - whenever user says `checkpoint`
   - at task completion/session handoff
 - At each checkpoint:
-  - update `docs/SESSION_NOTES.md` with what changed
-  - update `docs/DECISIONS_LOG.md` for major choices
-  - update `docs/API_CONTRACT.md` and `docs/DATA_MODEL.md` if interfaces/schema changed
+  - run `ops/checkpoint.ps1` first
+  - ensure `docs/SESSION_NOTES.md` is updated with what changed
+  - ensure `docs/DECISIONS_LOG.md` is updated for major choices
+  - ensure `docs/API_CONTRACT.md` and `docs/DATA_MODEL.md` are updated if interfaces/schema changed
