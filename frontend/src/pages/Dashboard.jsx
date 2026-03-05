@@ -31,15 +31,20 @@ export default function Dashboard() {
 
   const downloadPdf = async () => {
     if (!summary?.event?.id) return;
-    const response = await api.get(`/events/${summary.event.id}/tickets.pdf`, { responseType: "blob" });
-    const url = window.URL.createObjectURL(new Blob([response.data], { type: "application/pdf" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "tickets.pdf";
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.URL.revokeObjectURL(url);
+    setError("");
+    try {
+      const response = await api.get(`/events/${summary.event.id}/tickets.pdf`, { responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([response.data], { type: "application/pdf" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "tickets.pdf";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (requestError) {
+      setError(requestError.response?.data?.error || "Could not download tickets PDF.");
+    }
   };
 
   return (
