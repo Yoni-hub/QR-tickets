@@ -1,5 +1,9 @@
 const prisma = require("../utils/prisma");
-const { sendTicketLinkEmail } = require("../utils/mailer");
+const {
+  sendTicketLinkEmail,
+  DEFAULT_SUBJECT_TEMPLATE,
+  DEFAULT_BODY_TEMPLATE,
+} = require("../utils/mailer");
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -23,6 +27,22 @@ function getBaseUrl(rawBaseUrl) {
   return String(rawBaseUrl || fallback).trim().replace(/\/$/, "");
 }
 
+function parseTemplateField(rawValue, fallbackValue, maxLength, fieldName) {
+  if (rawValue === undefined || rawValue === null) return fallbackValue;
+  const value = String(rawValue);
+  if (!value.trim()) {
+    const error = new Error(`${fieldName} cannot be empty.`);
+    error.statusCode = 400;
+    throw error;
+  }
+  if (value.length > maxLength) {
+    const error = new Error(`${fieldName} is too long.`);
+    error.statusCode = 400;
+    throw error;
+  }
+  return value;
+}
+
 async function sendOrderTicketLinks(req, res) {
   const accessCode = String(req.params.accessCode || "").trim();
   if (!accessCode) {
@@ -33,6 +53,16 @@ async function sendOrderTicketLinks(req, res) {
   const emails = normalizeEmailList(req.body?.emails);
   if (!emails.length) {
     res.status(400).json({ error: "Provide at least one valid recipient email." });
+    return;
+  }
+
+  let subjectTemplate;
+  let bodyTemplate;
+  try {
+    subjectTemplate = parseTemplateField(req.body?.emailSubject, DEFAULT_SUBJECT_TEMPLATE, 300, "Email subject");
+    bodyTemplate = parseTemplateField(req.body?.emailBody, DEFAULT_BODY_TEMPLATE, 8000, "Email body");
+  } catch (error) {
+    res.status(error.statusCode || 400).json({ error: error.message || "Invalid email template." });
     return;
   }
 
@@ -84,6 +114,8 @@ async function sendOrderTicketLinks(req, res) {
         eventAddress: event.eventAddress,
         ticketType: event.ticketType || "General",
         ticketUrl,
+        subjectTemplate,
+        bodyTemplate,
       });
       sent += 1;
       await prisma.ticketDelivery.create({
@@ -115,4 +147,3 @@ async function sendOrderTicketLinks(req, res) {
 module.exports = {
   sendOrderTicketLinks,
 };
-

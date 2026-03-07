@@ -63,7 +63,8 @@ function renderTicketCardHtml({ design, qrDataUrl, ticketPublicId }) {
   `;
 }
 
-function renderTicketDocumentHtml({ cardsHtml }) {
+function renderTicketDocumentHtml({ pagesHtml, ticketsPerPage = 2 }) {
+  const safeTicketsPerPage = Math.min(4, Math.max(1, Number.parseInt(ticketsPerPage, 10) || 2));
   return `
     <!doctype html>
     <html>
@@ -71,31 +72,129 @@ function renderTicketDocumentHtml({ cardsHtml }) {
         <meta charset="utf-8" />
         <title>QR Tickets PDF</title>
         <style>
+          @page {
+            size: A4;
+            margin: 0;
+          }
           * { box-sizing: border-box; }
           body {
             margin: 0;
-            padding: 16px;
-            background: #f8fafc;
+            padding: 0;
+            background: #ffffff;
             color: #0f172a;
             font-family: Inter, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+          }
+          .ticket-page {
+            width: 210mm;
+            height: 297mm;
+            page-break-after: always;
+            padding: 12mm 10mm;
+            overflow: hidden;
+          }
+          .ticket-page:last-child {
+            page-break-after: auto;
           }
           .ticket-grid {
             display: grid;
             grid-template-columns: 1fr;
-            gap: 16px;
+            justify-items: center;
+            align-content: center;
+            row-gap: var(--slot-gap, 0mm);
+            height: 100%;
           }
+          .ticket-slot {
+            width: var(--ticket-width);
+            height: calc(var(--ticket-width) / var(--ticket-aspect));
+            min-height: 0;
+            overflow: visible;
+          }
+
+          /* 1-up fixed layout */
+          .ticket-page.mode-1 {
+            --ticket-aspect: 1.82;
+            --ticket-width: 186mm;
+            --slot-gap: 0mm;
+            --header-height: 40mm;
+            --body-padding: 5.2mm;
+            --body-gap: 4.8mm;
+            --event-name-size: 10.2mm;
+            --event-line-size: 3.7mm;
+            --label-size: 3.1mm;
+            --value-size: 5mm;
+            --qr-size: 27mm;
+            --qr-padding: 1.8mm;
+            --id-size: 2.9mm;
+          }
+
+          /* 2-up fixed layout */
+          .ticket-page.mode-2 {
+            --ticket-aspect: 1.82;
+            --ticket-width: 186mm;
+            --slot-gap: 10mm;
+            --header-height: 40mm;
+            --body-padding: 5.2mm;
+            --body-gap: 4.8mm;
+            --event-name-size: 10mm;
+            --event-line-size: 3.7mm;
+            --label-size: 3.1mm;
+            --value-size: 5mm;
+            --qr-size: 27mm;
+            --qr-padding: 1.8mm;
+            --id-size: 2.9mm;
+          }
+
+          /* 3-up fixed layout */
+          .ticket-page.mode-3 {
+            --ticket-aspect: 1.82;
+            --ticket-width: 155mm;
+            --slot-gap: 8mm;
+            --header-height: 30mm;
+            --body-padding: 4mm;
+            --body-gap: 3.4mm;
+            --event-name-size: 6.6mm;
+            --event-line-size: 3mm;
+            --label-size: 2.5mm;
+            --value-size: 3.9mm;
+            --qr-size: 20mm;
+            --qr-padding: 1.2mm;
+            --id-size: 2.3mm;
+          }
+
+          /* 4-up fixed layout */
+          .ticket-page.mode-4 {
+            --ticket-aspect: 1.82;
+            --ticket-width: 113mm;
+            --slot-gap: 6mm;
+            --header-height: 21mm;
+            --body-padding: 3mm;
+            --body-gap: 2.6mm;
+            --event-name-size: 5.2mm;
+            --event-line-size: 2.5mm;
+            --label-size: 2.1mm;
+            --value-size: 3.2mm;
+            --qr-size: 16mm;
+            --qr-padding: 1mm;
+            --id-size: 2mm;
+          }
+
           .ticket {
-            border: 1px solid #cbd5e1;
-            border-radius: 16px;
+            border: 0.45mm solid #94a3b8;
+            border-radius: 4mm;
             overflow: hidden;
             background: #ffffff;
             width: 100%;
+            height: 100%;
+            min-height: 0;
+            display: grid;
+            grid-template-rows: var(--header-height) 1fr;
+            box-sizing: border-box;
           }
           .ticket-header {
-            min-height: 170px;
+            height: auto;
             position: relative;
             display: flex;
             align-items: flex-end;
+            min-height: 0;
           }
           .ticket-overlay {
             position: absolute;
@@ -106,64 +205,80 @@ function renderTicketDocumentHtml({ cardsHtml }) {
             position: relative;
             z-index: 1;
             color: #ffffff;
-            padding: 16px;
+            padding: calc(var(--body-padding) * 0.9);
+            width: 100%;
           }
           .ticket-event-name {
             margin: 0;
-            font-size: 28px;
+            font-size: var(--event-name-size);
             line-height: 1.15;
             font-weight: 800;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
           }
           .ticket-event-line {
-            margin: 6px 0 0;
-            font-size: 14px;
+            margin: 1.1mm 0 0;
+            font-size: var(--event-line-size);
             opacity: 0.95;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
           }
           .ticket-body {
-            display: flex;
-            justify-content: space-between;
-            gap: 14px;
-            padding: 16px;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-content: start;
+            gap: var(--body-gap);
+            padding: var(--body-padding);
+            min-height: 0;
+            overflow: hidden;
+          }
+          .ticket-meta {
+            min-width: 0;
           }
           .ticket-label {
-            margin: 0 0 4px;
+            margin: 0 0 1mm;
             text-transform: uppercase;
             letter-spacing: 0.08em;
             color: #64748b;
-            font-size: 11px;
+            font-size: var(--label-size);
             font-weight: 700;
           }
           .ticket-value {
-            margin: 0 0 10px;
-            font-size: 16px;
+            margin: 0 0 1.4mm;
+            font-size: var(--value-size);
             font-weight: 700;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
           }
           .ticket-qr-wrap {
-            min-width: 148px;
+            min-width: calc(var(--qr-size) + 6mm);
             text-align: center;
           }
           .ticket-qr {
-            width: 128px;
-            height: 128px;
+            width: var(--qr-size);
+            height: var(--qr-size);
             border: 1px solid #e2e8f0;
             border-radius: 10px;
             background: #fff;
-            padding: 8px;
+            padding: var(--qr-padding);
           }
           .ticket-id {
-            margin: 8px 0 0;
-            font-size: 11px;
+            margin: 1.2mm 0 0;
+            font-size: var(--id-size);
             font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
             color: #475569;
-          }
-          @media (max-width: 560px) {
-            .ticket-body { flex-direction: column; }
-            .ticket-qr-wrap { text-align: left; }
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
           }
         </style>
       </head>
       <body>
-        <section class="ticket-grid">${cardsHtml}</section>
+        <section class="tickets-root mode-${safeTicketsPerPage}">${pagesHtml}</section>
       </body>
     </html>
   `;

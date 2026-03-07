@@ -3,6 +3,9 @@ import { useNavigate } from "react-router-dom";
 import api from "../../lib/api";
 import TicketPreview from "./TicketPreview";
 import TicketSettingsForm from "./TicketSettingsForm";
+import AppButton from "../ui/AppButton";
+import FeedbackBanner from "../ui/FeedbackBanner";
+import { withMinDelay } from "../../lib/withMinDelay";
 
 const HEADER_IMAGE_WIDTH = 1200;
 const HEADER_IMAGE_HEIGHT = 600;
@@ -55,7 +58,8 @@ function optimizeHeaderImage(file) {
 export default function TicketEditor() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [imageLoading, setImageLoading] = useState(false);
+  const [feedback, setFeedback] = useState({ kind: "", message: "" });
   const [result, setResult] = useState(null);
   const [previewQrPayload, setPreviewQrPayload] = useState("");
   const [ticketDesign, setTicketDesign] = useState({
@@ -112,22 +116,29 @@ export default function TicketEditor() {
   const onHeaderImageUpload = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    setImageLoading(true);
+    setFeedback({ kind: "", message: "" });
     try {
-      const optimizedImage = await optimizeHeaderImage(file);
+      const optimizedImage = await withMinDelay(optimizeHeaderImage(file), 300);
       setTicketDesign((prev) => ({ ...prev, headerImageDataUrl: optimizedImage }));
+      setFeedback({ kind: "success", message: "Header image uploaded." });
     } catch {
       const reader = new FileReader();
       reader.onload = () => {
         setTicketDesign((prev) => ({ ...prev, headerImageDataUrl: String(reader.result || "") }));
+        setFeedback({ kind: "success", message: "Header image uploaded." });
       };
       reader.readAsDataURL(file);
+    } finally {
+      setImageLoading(false);
     }
     event.target.value = "";
   };
 
   const tryDemo = async () => {
+    if (loading) return;
     setLoading(true);
-    setError("");
+    setFeedback({ kind: "", message: "" });
     setResult(null);
     try {
       const singleGroup = settings.ticketGroups.length === 1 ? settings.ticketGroups[0] : null;
@@ -141,9 +152,10 @@ export default function TicketEditor() {
         quantity: String(totalQuantity),
         designJson: ticketDesign,
       };
-      const response = await api.post("/demo/events", payload);
+      const response = await withMinDelay(api.post("/demo/events", payload));
       const created = response.data;
       setResult(created);
+      setFeedback({ kind: "success", message: "Ticket generated." });
       try {
         const ticketsRes = await api.get(`/events/${created.eventId}/tickets`);
         const list = ticketsRes.data?.tickets || [];
@@ -161,7 +173,7 @@ export default function TicketEditor() {
       }
 
     } catch (requestError) {
-      setError(requestError.response?.data?.error || "Could not create demo event.");
+      setFeedback({ kind: "error", message: requestError.response?.data?.error || "Failed to generate ticket." });
     } finally {
       setLoading(false);
     }
@@ -174,7 +186,7 @@ export default function TicketEditor() {
     <main className="mx-auto w-full max-w-5xl p-4 sm:p-6">
       <h1 className="text-3xl font-bold">QR Tickets</h1>
       <p className="mt-2 text-slate-600">
-        Edit your ticket sample directly. Then generate demo tickets and deliver via PDF or email links.
+        Edit your ticket sample directly. Then generate tickets and Print your tickets or Send Email links.
       </p>
 
       <TicketSettingsForm
@@ -191,6 +203,7 @@ export default function TicketEditor() {
             onTicketDesignChange={setTicketDesign}
             onHeaderImageUpload={onHeaderImageUpload}
             onRemoveHeaderImage={() => setTicketDesign((prev) => ({ ...prev, headerImageDataUrl: null }))}
+            imageLoading={imageLoading}
             ticketTypeLabelOverride={group.ticketType ? group.ticketType.toUpperCase() : ticketDesign.ticketTypeLabel}
             priceTextOverride={formatGroupPrice(group)}
             title={`Live ticket preview: ${group.ticketType}`}
@@ -200,12 +213,12 @@ export default function TicketEditor() {
       </section>
 
       <div className="mt-6">
-        <button type="button" className="rounded bg-black px-4 py-2 text-white" onClick={tryDemo} disabled={loading}>
-          {loading ? "Generating..." : "Generate Tickets"}
-        </button>
+        <AppButton type="button" onClick={tryDemo} loading={loading} loadingText="Generating..." variant="primary">
+          Generate Tickets
+        </AppButton>
       </div>
 
-      {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
+      <FeedbackBanner className="mt-3" kind={feedback.kind} message={feedback.message} />
 
       {result?.accessCode ? (
         <section className="mt-6 rounded border bg-white p-4">
@@ -218,18 +231,18 @@ export default function TicketEditor() {
             Save this code now. It is very important. Do not share it with anyone. You will use it to access the event dashboard and open the scanner.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              className="rounded bg-blue-600 px-3 py-2 text-white"
+            <AppButton
+              variant="indigo"
               onClick={() => navigate(`/dashboard?code=${result.accessCode}`)}
             >
               Go to Dashboard
-            </button>
-            <button
-              className="rounded bg-green-600 px-3 py-2 text-white"
+            </AppButton>
+            <AppButton
+              variant="success"
               onClick={() => navigate(`/scanner?code=${result.accessCode}`)}
             >
               Open Scanner
-            </button>
+            </AppButton>
           </div>
         </section>
       ) : null}
