@@ -50,9 +50,9 @@ export default function TicketVerify() {
     return resolveStatus(ticket, order);
   }, [ticket, order]);
 
-  if (loading) return <main className="mx-auto max-w-3xl p-6">Loading...</main>;
-  if (error) return <main className="mx-auto max-w-3xl p-6 text-red-600">{error}</main>;
-  if (!ticket) return <main className="mx-auto max-w-3xl p-6">Ticket not found.</main>;
+  if (loading) return <main className="mx-auto w-full max-w-3xl px-4 py-4 sm:px-6 sm:py-6">Loading...</main>;
+  if (error) return <main className="mx-auto w-full max-w-3xl px-4 py-4 text-red-600 sm:px-6 sm:py-6">{error}</main>;
+  if (!ticket) return <main className="mx-auto w-full max-w-3xl px-4 py-4 sm:px-6 sm:py-6">Ticket not found.</main>;
 
   const statusLabel =
     resolvedStatus === "VALID"
@@ -72,19 +72,19 @@ export default function TicketVerify() {
   )}`;
 
   return (
-    <main className="mx-auto max-w-3xl p-6">
-      <h1 className="text-3xl font-bold">Ticket Preview</h1>
+    <main className="mx-auto w-full max-w-3xl px-4 py-4 sm:px-6 sm:py-6">
+      <h1 className="text-2xl font-bold sm:text-3xl">Ticket Preview</h1>
       <div className="mt-4 rounded border bg-white p-4">
-        <p>
+        <p className="break-words">
           <span className="font-semibold">Event:</span> {ticket.event.eventName}
         </p>
-        <p>
+        <p className="break-words">
           <span className="font-semibold">Date:</span> {new Date(ticket.event.eventDate).toLocaleString()}
         </p>
-        <p>
+        <p className="break-words">
           <span className="font-semibold">Location:</span> {ticket.event.eventAddress}
         </p>
-        <p>
+        <p className="break-all">
           <span className="font-semibold">Ticket ID:</span> <span className="font-mono">{ticket.ticketPublicId}</span>
         </p>
         <p className="mt-3">
@@ -105,8 +105,8 @@ export default function TicketVerify() {
         </AppButton>
 
         {showQr ? (
-          <div className="mt-4 w-fit rounded border p-3">
-            <img src={qrImageUrl} alt="Ticket QR" width={260} height={260} />
+          <div className="mt-4 w-full rounded border p-3">
+            <img src={qrImageUrl} alt="Ticket QR" width={260} height={260} className="mx-auto w-full max-w-[260px]" />
           </div>
         ) : null}
       </div>

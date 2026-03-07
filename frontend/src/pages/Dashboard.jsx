@@ -31,22 +31,61 @@ const DEFAULT_EMAIL_BODY = [
   "Please present the QR code at the entrance.",
 ].join("\n");
 const DEFAULT_EMAIL_HTML_TEMPLATE = `
-<div style="text-align:center;line-height:1.5;">
-  <p style="margin:0 0 16px 0;">Hello,</p>
-  <p style="margin:0 0 16px 0;">Your <strong>{{ticketType}}</strong> ticket for <strong>{{eventName}}</strong> is ready.</p>
-  <p style="margin:0 0 4px 0;">Event: <strong>{{eventName}}</strong></p>
-  <p style="margin:0 0 4px 0;">Date: <strong>{{eventDate}}</strong></p>
-  <p style="margin:0 0 18px 0;">Location: <strong>{{eventAddress}}</strong></p>
-  <div style="text-align:center;margin:14px 0;">
-    <a href="{{ticketUrl}}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:10px 18px;background:#1d4ed8;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">View Your Ticket</a>
-  </div>
-  <p style="margin:0 0 6px 0;">If the button does not work, use this link:</p>
-  <p style="margin:0 0 16px 0;">
-    <a href="{{ticketUrl}}" target="_blank" rel="noopener noreferrer" style="color:#2d5bd1;word-break:break-all;text-decoration:none;font-weight:700;">{{ticketUrl}}</a>
-  </p>
-  <p style="margin:0 0 10px 0;">This ticket was sent to <strong>{{recipientEmail}}</strong>.</p>
-  <p style="margin:0;">Please present the QR code at the entrance.</p>
-</div>
+<table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#ffffff;padding:16px 0;">
+  <tr>
+    <td align="center">
+      <table width="520" cellpadding="24" cellspacing="0" role="presentation" style="background:#f5f7fb;border-radius:8px;font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
+        <tr>
+          <td align="center">
+            <p style="margin:0 0 18px 0;font-size:20px;font-weight:700;">
+              Ticket Confirmed
+            </p>
+            <p style="margin:0 0 16px 0;">
+              Hello,
+            </p>
+            <p style="margin:0 0 20px 0;">
+              Your <strong>{{ticketType}}</strong> ticket for <strong>{{eventName}}</strong> is ready.
+            </p>
+            <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;text-align:left;">
+              <tr>
+                <td style="padding:4px 10px 4px 0;">Event:</td>
+                <td><strong>{{eventName}}</strong></td>
+              </tr>
+              <tr>
+                <td style="padding:4px 10px 4px 0;">Date:</td>
+                <td><strong>{{eventDate}}</strong></td>
+              </tr>
+              <tr>
+                <td style="padding:4px 10px 4px 0;">Location:</td>
+                <td><strong>{{eventAddress}}</strong></td>
+              </tr>
+            </table>
+            <p style="margin:20px 0;text-align:center;">
+              Tap below to view your ticket for <strong>{{eventName}}</strong>.
+            </p>
+            <p style="text-align:center;margin:20px 0;">
+              <a href="{{ticketUrl}}" target="_blank" rel="noopener noreferrer" style="background:#2d5bd1;color:#ffffff;padding:12px 22px;border-radius:6px;text-decoration:none;font-weight:600;display:inline-block;">
+                View Your Ticket
+              </a>
+            </p>
+            <p style="margin:20px 0;">
+              If the button does not work, use this link:
+            </p>
+            <p style="margin:0 0 20px 0;word-break:break-all;">
+              <a href="{{ticketUrl}}" target="_blank" rel="noopener noreferrer" style="color:#2d5bd1;">{{ticketUrl}}</a>
+            </p>
+            <p style="margin:0 0 10px 0;">
+              This ticket was sent to <strong>{{recipientEmail}}</strong>.
+            </p>
+            <p style="margin:0;">
+              Please present the QR code at the entrance.
+            </p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
 `;
 
 const EMAIL_TEMPLATE_HELP = [
@@ -230,11 +269,11 @@ export default function Dashboard() {
   };
 
   return (
-    <main className="mx-auto max-w-5xl p-6">
-      <h1 className="text-3xl font-bold">Dashboard</h1>
-      <div className="mt-4 flex gap-2">
+    <main className="mx-auto w-full max-w-5xl px-4 py-4 sm:px-6 sm:py-6">
+      <h1 className="text-2xl font-bold sm:text-3xl">Dashboard</h1>
+      <div className="mt-4 flex flex-col gap-2 sm:flex-row">
         <input
-          className="w-64 rounded border p-2"
+          className="w-full rounded border p-2"
           value={code}
           onChange={(e) => setCode(e.target.value)}
           placeholder="Access code"
@@ -248,16 +287,16 @@ export default function Dashboard() {
 
       {summary ? (
         <>
-          <div className="mt-5 grid grid-cols-3 gap-3">
+          <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="rounded border p-3"><p className="text-xs">Total</p><p className="text-2xl font-bold">{summary.totalTickets}</p></div>
             <div className="rounded border p-3"><p className="text-xs">Scanned</p><p className="text-2xl font-bold">{summary.scannedTickets}</p></div>
             <div className="rounded border p-3"><p className="text-xs">Remaining</p><p className="text-2xl font-bold">{summary.remainingTickets}</p></div>
           </div>
 
           <div className="mt-4 rounded border p-4">
-            <p><span className="font-semibold">Event:</span> {summary.event.eventName}</p>
-            <p><span className="font-semibold">Date:</span> {new Date(summary.event.eventDate).toLocaleString()}</p>
-            <p><span className="font-semibold">Location:</span> {summary.event.eventAddress}</p>
+            <p className="break-words"><span className="font-semibold">Event:</span> {summary.event.eventName}</p>
+            <p className="break-words"><span className="font-semibold">Date:</span> {new Date(summary.event.eventDate).toLocaleString()}</p>
+            <p className="break-words"><span className="font-semibold">Location:</span> {summary.event.eventAddress}</p>
           </div>
 
           <div className="mt-4 rounded border p-4">
@@ -287,7 +326,7 @@ export default function Dashboard() {
               <div className="mt-3">
                 <label className="mb-1 block text-sm font-medium">Tickets per page</label>
                 <select
-                  className="w-44 rounded border p-2 text-sm"
+                  className="w-full rounded border p-2 text-sm sm:w-44"
                   value={pdfTicketsPerPage}
                   onChange={(event) => setPdfTicketsPerPage(Number.parseInt(event.target.value, 10) || 2)}
                   disabled={downloading}
@@ -324,9 +363,9 @@ export default function Dashboard() {
                 <p className="mt-1 text-xs text-slate-600">We&apos;ll send one ticket link per email.</p>
 
                 <div className="mt-4 rounded border bg-slate-50 p-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
                     <p className="text-sm font-semibold">Email content preview editor</p>
-                    <div className="flex gap-2">
+                    <div className="grid grid-cols-1 gap-2 sm:flex">
                       <AppButton
                         type="button"
                         variant="secondary"
@@ -376,7 +415,7 @@ export default function Dashboard() {
                         <span className="font-semibold">Subject:</span> {previewSubject}
                       </p>
                       <div
-                        className="mt-2 rounded bg-slate-50 p-2 text-sm text-slate-700"
+                        className="mt-2 overflow-hidden rounded bg-slate-50 p-2 text-sm text-slate-700 [&_a]:break-all [&_table]:max-w-full [&_table]:w-full [&_td]:break-words"
                         dangerouslySetInnerHTML={{ __html: previewBodyHtml }}
                       />
                     </div>
@@ -403,15 +442,28 @@ export default function Dashboard() {
             </div>
           ) : null}
 
-          <div className="mt-5 overflow-x-auto rounded border">
-            <table className="min-w-full text-left text-sm">
+          <div className="mt-5 space-y-3 lg:hidden">
+            {tickets.map((ticket) => (
+              <article key={ticket.ticketPublicId} className="rounded border bg-white p-3 text-sm">
+                <p className="text-xs text-slate-500">ticketPublicId</p>
+                <p className="break-all font-mono">{ticket.ticketPublicId}</p>
+                <p className="mt-2 text-xs text-slate-500">status</p>
+                <p>{ticket.status}</p>
+                <p className="mt-2 text-xs text-slate-500">scannedAt</p>
+                <p className="break-words">{ticket.scannedAt ? new Date(ticket.scannedAt).toLocaleString() : "-"}</p>
+              </article>
+            ))}
+          </div>
+
+          <div className="mt-5 hidden overflow-hidden rounded border lg:block">
+            <table className="w-full text-left text-sm">
               <thead className="bg-slate-100"><tr><th className="p-2">ticketPublicId</th><th className="p-2">status</th><th className="p-2">scannedAt</th></tr></thead>
               <tbody>
                 {tickets.map((ticket) => (
                   <tr key={ticket.ticketPublicId} className="border-t">
-                    <td className="p-2 font-mono">{ticket.ticketPublicId}</td>
+                    <td className="break-all p-2 font-mono">{ticket.ticketPublicId}</td>
                     <td className="p-2">{ticket.status}</td>
-                    <td className="p-2">{ticket.scannedAt ? new Date(ticket.scannedAt).toLocaleString() : "-"}</td>
+                    <td className="break-words p-2">{ticket.scannedAt ? new Date(ticket.scannedAt).toLocaleString() : "-"}</td>
                   </tr>
                 ))}
               </tbody>

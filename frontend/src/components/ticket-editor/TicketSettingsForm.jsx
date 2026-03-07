@@ -57,7 +57,7 @@ export default function TicketSettingsForm({ settings, onSettingsChange }) {
         </div>
 
         {settings.ticketGroups.map((group, index) => (
-          <div key={group.ticketType} className="grid grid-cols-3 gap-2 rounded border p-3">
+          <div key={group.ticketType} className="grid grid-cols-1 gap-2 rounded border p-3 sm:grid-cols-3">
             <div>
               <label className="mb-1 block text-xs font-medium sm:text-sm">Ticket type</label>
               <select

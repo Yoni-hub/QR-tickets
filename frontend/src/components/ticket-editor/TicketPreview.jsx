@@ -103,7 +103,7 @@ export default function TicketPreview({
   }, [ticketDesign.headerImageDataUrl, ticketDesign.headerOverlay]);
 
   return (
-    <section className="mx-auto w-full max-w-xl">
+    <section className="mx-auto w-full max-w-xl overflow-hidden">
       {title ? (
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <h3 className="text-sm font-semibold text-slate-700">{title}</h3>
@@ -117,7 +117,7 @@ export default function TicketPreview({
           onRemove={onRemoveHeaderImage}
           imageLoading={imageLoading}
         />
-        <div className="mt-2 flex items-center gap-2 text-xs">
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
           <span className="font-medium text-slate-600">Text color</span>
           <AppButton
             type="button"
@@ -147,7 +147,7 @@ export default function TicketPreview({
       </div>
 
       <article className="overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-sm">
-        <div className="relative min-h-[180px] p-4 text-white" style={headerStyle}>
+        <div className="relative min-h-[160px] p-3 text-white sm:min-h-[180px] sm:p-4" style={headerStyle}>
           <div
             className="absolute inset-0 bg-slate-950"
             style={{ opacity: ticketDesign.headerImageDataUrl ? ticketDesign.headerOverlay : 0 }}
@@ -156,29 +156,29 @@ export default function TicketPreview({
             <EditableText
               value={ticketDesign.eventName}
               onChange={(next) => updateField("eventName", next)}
-              className="text-3xl font-extrabold leading-tight"
+              className="break-words text-2xl font-extrabold leading-tight sm:text-3xl"
               ariaLabel="Edit event name"
             />
             <EditableText
               value={ticketDesign.location}
               onChange={(next) => updateField("location", next)}
-              className="mt-2 text-sm font-medium"
+              className="mt-2 break-words text-sm font-medium"
               ariaLabel="Edit event location"
             />
             <EditableText
               value={ticketDesign.dateTimeText}
               onChange={(next) => updateField("dateTimeText", next)}
-              className="mt-1 text-sm"
+              className="mt-1 break-words text-sm"
               ariaLabel="Edit event date and time text"
             />
           </div>
         </div>
 
-        <div className="flex items-start justify-between gap-4 p-4">
+        <div className="flex flex-col gap-4 p-3 sm:flex-row sm:items-start sm:justify-between sm:p-4">
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Type</p>
             {hasTypeOverride ? (
-              <p className="mt-1 text-lg font-bold text-slate-900">{resolvedTicketTypeLabel}</p>
+              <p className="mt-1 break-words text-lg font-bold text-slate-900">{resolvedTicketTypeLabel}</p>
             ) : (
               <EditableText
                 value={resolvedTicketTypeLabel}
@@ -190,7 +190,7 @@ export default function TicketPreview({
 
             <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Price</p>
             {hasPriceOverride ? (
-              <p className="mt-1 text-xl font-extrabold text-slate-900">{resolvedPriceText}</p>
+              <p className="mt-1 break-words text-xl font-extrabold text-slate-900">{resolvedPriceText}</p>
             ) : (
               <EditableText
                 value={resolvedPriceText}
@@ -201,19 +201,19 @@ export default function TicketPreview({
             )}
           </div>
 
-          <div className="w-[132px] shrink-0">
+          <div className="w-full shrink-0 sm:w-[132px]">
             {qrImageUrl ? (
               <img
                 src={qrImageUrl}
                 alt="Generated ticket QR"
-                className="h-28 w-28 rounded-lg border border-slate-200 bg-white p-2 sm:h-32 sm:w-32"
+                className="mx-auto h-28 w-28 rounded-lg border border-slate-200 bg-white p-2 sm:h-32 sm:w-32"
               />
             ) : (
-              <div className="grid h-28 w-28 place-items-center rounded-lg border border-slate-200 bg-slate-100 text-xs font-semibold text-slate-500 sm:h-32 sm:w-32">
+              <div className="mx-auto grid h-28 w-28 place-items-center rounded-lg border border-slate-200 bg-slate-100 text-xs font-semibold text-slate-500 sm:h-32 sm:w-32">
                 QR Placeholder
               </div>
             )}
-            <p className="mt-2 font-mono text-xs text-slate-500">
+            <p className="mt-2 break-all text-center font-mono text-xs text-slate-500 sm:text-left">
               {qrImageUrl ? "Generated ticket QR" : "Generated after you click Generate Tickets"}
             </p>
           </div>
