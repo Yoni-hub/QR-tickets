@@ -183,8 +183,8 @@ export default function TicketEditor() {
     group.ticketPrice && Number(group.ticketPrice) > 0 ? `$${Number(group.ticketPrice).toFixed(2)}` : "Free";
 
   return (
-    <main className="mx-auto w-full max-w-5xl p-4 sm:p-6">
-      <h1 className="text-3xl font-bold">QR Tickets</h1>
+    <main className="mx-auto w-full max-w-5xl px-4 py-4 sm:px-6 sm:py-6">
+      <h1 className="text-2xl font-bold sm:text-3xl">QR Tickets</h1>
       <p className="mt-2 text-slate-600">
         Edit your ticket sample directly. Then generate tickets and Print your tickets or Send Email links.
       </p>
@@ -223,14 +223,14 @@ export default function TicketEditor() {
       {result?.accessCode ? (
         <section className="mt-6 rounded border bg-white p-4">
           <p className="text-sm text-slate-600">Event access code</p>
-          <p className="text-3xl font-bold tracking-wider">{result.accessCode}</p>
+          <p className="break-all text-3xl font-bold tracking-wider">{result.accessCode}</p>
           <p className="mt-2 text-sm text-blue-700">
             Tickets generated. Go to Dashboard to start managing tickets and choose delivery methods.
           </p>
           <p className="mt-2 text-sm text-amber-700">
             Save this code now. It is very important. Do not share it with anyone. You will use it to access the event dashboard and open the scanner.
           </p>
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-3 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
             <AppButton
               variant="indigo"
               onClick={() => navigate(`/dashboard?code=${result.accessCode}`)}

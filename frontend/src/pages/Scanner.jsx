@@ -156,8 +156,8 @@ export default function Scanner() {
           : "bg-slate-100 text-slate-800";
 
   return (
-    <main className="mx-auto max-w-3xl p-6">
-      <h1 className="text-3xl font-bold">Scanner</h1>
+    <main className="mx-auto w-full max-w-3xl px-4 py-4 sm:px-6 sm:py-6">
+      <h1 className="text-2xl font-bold sm:text-3xl">Scanner</h1>
       <p className="mt-2 text-slate-600">Scan QR with camera or paste ticketPublicId manually.</p>
 
       <div className="mt-4 grid gap-3">
@@ -175,7 +175,7 @@ export default function Scanner() {
         />
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-2">
+      <div className="mt-4 flex flex-wrap gap-2 sm:flex-row">
         <AppButton
           onClick={scanManual}
           loading={checking}
@@ -204,9 +204,9 @@ export default function Scanner() {
         </AppButton>
       </div>
 
-      <div id={SCANNER_ID} className="mt-4 overflow-hidden rounded border bg-white" />
+      <div id={SCANNER_ID} className="mt-4 overflow-hidden rounded border bg-white [&_canvas]:max-w-full [&_video]:max-w-full" />
       <FeedbackBanner className="mt-2" kind={feedback.kind} message={feedback.message} />
-      <div className={`mt-5 rounded border p-6 text-center text-4xl font-bold ${stateClass}`}>{result}</div>
+      <div className={`mt-5 break-words rounded border p-4 text-center text-3xl font-bold sm:p-6 sm:text-4xl ${stateClass}`}>{result}</div>
     </main>
   );
 }

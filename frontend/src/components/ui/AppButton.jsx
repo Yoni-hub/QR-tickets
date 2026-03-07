@@ -1,5 +1,5 @@
 const BASE_CLASS =
-  "inline-flex items-center justify-center gap-2 rounded px-4 py-2 font-medium transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-60";
+  "inline-flex w-full items-center justify-center gap-2 rounded px-4 py-2 text-center font-medium leading-tight transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto";
 
 const VARIANT_CLASS = {
   primary: "bg-black text-white hover:bg-slate-800 focus-visible:ring-slate-500",

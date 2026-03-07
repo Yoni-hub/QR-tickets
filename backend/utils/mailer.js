@@ -21,30 +21,70 @@ const DEFAULT_BODY_TEMPLATE = [
   "Please present the QR code at the entrance.",
 ].join("\n");
 const DEFAULT_HTML_TEMPLATE = `
-<div style="margin:0;padding:0;background:#ffffff;">
-  <div style="max-width:600px;margin:0 auto;padding:24px 18px;font-family:Arial,sans-serif;color:#0f172a;line-height:1.5;text-align:center;">
-    <p style="margin:0 0 16px 0;">Hello,</p>
-    <p style="margin:0 0 16px 0;">Your <strong>{{ticketType}}</strong> ticket for <strong>{{eventName}}</strong> is ready.</p>
-    <p style="margin:0 0 4px 0;">Event: <strong>{{eventName}}</strong></p>
-    <p style="margin:0 0 4px 0;">Date: <strong>{{eventDate}}</strong></p>
-    <p style="margin:0 0 18px 0;">Location: <strong>{{eventAddress}}</strong></p>
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 16px 0;">
-      <tr>
-        <td align="center">
-          <a href="{{ticketUrl}}" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:#2d5bd1;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:6px;font-weight:600;">
-            View Your Ticket
-          </a>
-        </td>
-      </tr>
-    </table>
-    <p style="margin:0 0 6px 0;">If the button does not work, use this link:</p>
-    <p style="margin:0 0 16px 0;">
-      <a href="{{ticketUrl}}" target="_blank" rel="noopener noreferrer" style="color:#2d5bd1;word-break:break-all;text-decoration:none;font-weight:700;">{{ticketUrl}}</a>
-    </p>
-    <p style="margin:0 0 10px 0;">This ticket was sent to <strong>{{recipientEmail}}</strong>.</p>
-    <p style="margin:0;">Please present the QR code at the entrance.</p>
-  </div>
-</div>
+<table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#ffffff;padding:16px 0;">
+  <tr>
+    <td align="center">
+      <table width="520" cellpadding="24" cellspacing="0" role="presentation" style="background:#f5f7fb;border-radius:8px;font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
+        <tr>
+          <td align="center">
+            <p style="margin:0 0 18px 0;font-size:20px;font-weight:700;">
+              Ticket Confirmed
+            </p>
+
+            <p style="margin:0 0 16px 0;">
+              Hello,
+            </p>
+
+            <p style="margin:0 0 20px 0;">
+              Your <strong>{{ticketType}}</strong> ticket for <strong>{{eventName}}</strong> is ready.
+            </p>
+
+            <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;text-align:left;">
+              <tr>
+                <td style="padding:4px 10px 4px 0;">Event:</td>
+                <td><strong>{{eventName}}</strong></td>
+              </tr>
+              <tr>
+                <td style="padding:4px 10px 4px 0;">Date:</td>
+                <td><strong>{{eventDate}}</strong></td>
+              </tr>
+              <tr>
+                <td style="padding:4px 10px 4px 0;">Location:</td>
+                <td><strong>{{eventAddress}}</strong></td>
+              </tr>
+            </table>
+
+            <p style="margin:20px 0;text-align:center;">
+              Tap below to view your ticket for <strong>{{eventName}}</strong>.
+            </p>
+
+            <p style="text-align:center;margin:20px 0;">
+              <a href="{{ticketUrl}}" target="_blank" rel="noopener noreferrer" style="background:#2d5bd1;color:#ffffff;padding:12px 22px;border-radius:6px;text-decoration:none;font-weight:600;display:inline-block;">
+                View Your Ticket
+              </a>
+            </p>
+
+            <p style="margin:20px 0;">
+              If the button does not work, use this link:
+            </p>
+
+            <p style="margin:0 0 20px 0;word-break:break-all;">
+              <a href="{{ticketUrl}}" target="_blank" rel="noopener noreferrer" style="color:#2d5bd1;">{{ticketUrl}}</a>
+            </p>
+
+            <p style="margin:0 0 10px 0;">
+              This ticket was sent to <strong>{{recipientEmail}}</strong>.
+            </p>
+
+            <p style="margin:0;">
+              Please present the QR code at the entrance.
+            </p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
 `;
 
 function getTransporter() {
