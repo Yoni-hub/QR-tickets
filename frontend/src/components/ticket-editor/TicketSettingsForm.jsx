@@ -1,3 +1,4 @@
+import AppButton from "../ui/AppButton";
 const TICKET_TYPES = ["General", "VIP", "VVIP"];
 
 export default function TicketSettingsForm({ settings, onSettingsChange }) {
@@ -95,22 +96,22 @@ export default function TicketSettingsForm({ settings, onSettingsChange }) {
         ))}
 
         <div className="flex flex-wrap gap-2">
-          <button
+          <AppButton
             type="button"
-            className="rounded border px-3 py-2"
+            variant="secondary"
             onClick={addMoreTicketTypes}
             disabled={settings.ticketGroups.length >= TICKET_TYPES.length}
           >
             Add more ticket types
-          </button>
-          <button
+          </AppButton>
+          <AppButton
             type="button"
-            className="rounded border px-3 py-2"
+            variant="secondary"
             onClick={removeTicketType}
             disabled={settings.ticketGroups.length <= 1}
           >
             Remove ticket type
-          </button>
+          </AppButton>
         </div>
       </div>
     </section>

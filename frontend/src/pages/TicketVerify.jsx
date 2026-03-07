@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import api from "../lib/api";
+import AppButton from "../components/ui/AppButton";
 
 function resolveStatus(ticket, order) {
   if (!order || order.status !== "ACTIVE") return "DISABLED";
@@ -95,13 +96,13 @@ export default function TicketVerify() {
           </p>
         ) : null}
 
-        <button
+        <AppButton
           type="button"
-          className="mt-4 rounded bg-black px-4 py-2 text-white"
+          className="mt-4"
           onClick={() => setShowQr((prev) => !prev)}
         >
           {showQr ? "Hide QR" : "Show QR"}
-        </button>
+        </AppButton>
 
         {showQr ? (
           <div className="mt-4 w-fit rounded border p-3">
@@ -112,4 +113,3 @@ export default function TicketVerify() {
     </main>
   );
 }
-

@@ -1,0 +1,45 @@
+const BASE_CLASS =
+  "inline-flex items-center justify-center gap-2 rounded px-4 py-2 font-medium transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-60";
+
+const VARIANT_CLASS = {
+  primary: "bg-black text-white hover:bg-slate-800 focus-visible:ring-slate-500",
+  secondary: "border border-slate-300 bg-white text-slate-800 hover:bg-slate-50 focus-visible:ring-slate-400",
+  indigo: "bg-indigo-600 text-white hover:bg-indigo-500 focus-visible:ring-indigo-500",
+  success: "bg-green-600 text-white hover:bg-green-500 focus-visible:ring-green-500",
+  danger: "bg-red-600 text-white hover:bg-red-500 focus-visible:ring-red-500",
+};
+
+function Spinner() {
+  return (
+    <span
+      className="h-4 w-4 animate-spin rounded-full border-2 border-current border-r-transparent"
+      aria-hidden="true"
+    />
+  );
+}
+
+export default function AppButton({
+  children,
+  loading = false,
+  loadingText = "Processing...",
+  disabled = false,
+  type = "button",
+  variant = "primary",
+  className = "",
+  ...props
+}) {
+  const isDisabled = disabled || loading;
+  const label = loading ? loadingText : children;
+  return (
+    <button
+      type={type}
+      disabled={isDisabled}
+      aria-busy={loading}
+      className={`${BASE_CLASS} ${VARIANT_CLASS[variant] || VARIANT_CLASS.primary} ${className}`}
+      {...props}
+    >
+      {loading ? <Spinner /> : null}
+      <span>{label}</span>
+    </button>
+  );
+}

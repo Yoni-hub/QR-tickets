@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import EditableText from "./EditableText";
 import HeaderImageUploader from "./HeaderImageUploader";
+import AppButton from "../ui/AppButton";
 
 const TEXT_COLOR_MODES = {
   AUTO: "AUTO",
@@ -23,6 +24,7 @@ export default function TicketPreview({
   onTicketDesignChange,
   onHeaderImageUpload,
   onRemoveHeaderImage,
+  imageLoading,
   ticketTypeLabelOverride,
   priceTextOverride,
   title,
@@ -113,30 +115,34 @@ export default function TicketPreview({
           hasImage={Boolean(ticketDesign.headerImageDataUrl)}
           onUpload={onHeaderImageUpload}
           onRemove={onRemoveHeaderImage}
+          imageLoading={imageLoading}
         />
         <div className="mt-2 flex items-center gap-2 text-xs">
           <span className="font-medium text-slate-600">Text color</span>
-          <button
+          <AppButton
             type="button"
-            className={`rounded border px-2 py-1 ${textColorMode === TEXT_COLOR_MODES.AUTO ? "bg-slate-900 text-white" : "bg-white text-slate-700"}`}
+            variant={textColorMode === TEXT_COLOR_MODES.AUTO ? "primary" : "secondary"}
+            className="px-2 py-1 text-xs"
             onClick={() => updateField("headerTextColorMode", TEXT_COLOR_MODES.AUTO)}
           >
             Auto
-          </button>
-          <button
+          </AppButton>
+          <AppButton
             type="button"
-            className={`rounded border px-2 py-1 ${textColorMode === TEXT_COLOR_MODES.LIGHT ? "bg-slate-900 text-white" : "bg-white text-slate-700"}`}
+            variant={textColorMode === TEXT_COLOR_MODES.LIGHT ? "primary" : "secondary"}
+            className="px-2 py-1 text-xs"
             onClick={() => updateField("headerTextColorMode", TEXT_COLOR_MODES.LIGHT)}
           >
             Light
-          </button>
-          <button
+          </AppButton>
+          <AppButton
             type="button"
-            className={`rounded border px-2 py-1 ${textColorMode === TEXT_COLOR_MODES.DARK ? "bg-slate-900 text-white" : "bg-white text-slate-700"}`}
+            variant={textColorMode === TEXT_COLOR_MODES.DARK ? "primary" : "secondary"}
+            className="px-2 py-1 text-xs"
             onClick={() => updateField("headerTextColorMode", TEXT_COLOR_MODES.DARK)}
           >
             Dark
-          </button>
+          </AppButton>
         </div>
       </div>
 
@@ -208,7 +214,7 @@ export default function TicketPreview({
               </div>
             )}
             <p className="mt-2 font-mono text-xs text-slate-500">
-              {qrImageUrl ? "Generated ticket QR" : "Generated after Try Demo"}
+              {qrImageUrl ? "Generated ticket QR" : "Generated after you click Generate Tickets"}
             </p>
           </div>
         </div>

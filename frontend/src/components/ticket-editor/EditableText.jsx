@@ -48,11 +48,10 @@ export default function EditableText({ value, onChange, className = "", ariaLabe
     <button
       type="button"
       aria-label={ariaLabel}
-      className={`w-full text-left ${className}`}
+      className={`w-full rounded text-left transition hover:opacity-90 active:scale-[0.99] ${className}`}
       onClick={() => setEditing(true)}
     >
       {value}
     </button>
   );
 }
-

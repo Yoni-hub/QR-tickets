@@ -26,3 +26,14 @@
 - Added and documented automated memory checkpoint tooling (`ops/checkpoint.ps1`).
 - Updated orchestrator workflow to require checkpoint execution during handoff conditions.
 - Verified this checkpoint does not introduce new API routes or schema changes beyond already-documented camera/verify/PDF updates.
+
+## 2026-03-06 (Dashboard Email Preview Editor)
+- Added customizable email subject/body templates for `POST /api/orders/:accessCode/send-links`.
+- Added Dashboard email content preview editor with live template rendering before send.
+- Added placeholder support for `{{eventName}}`, `{{eventDate}}`, `{{eventAddress}}`, `{{ticketType}}`, `{{ticketUrl}}`, `{{recipientEmail}}`.
+- Kept send flow backward-compatible by using server defaults when custom template fields are not provided.
+
+## 2026-03-06 (PDF Tickets Per Page)
+- Added `tickets per page` selection in Dashboard PDF delivery flow (`1`, `2`, `3`, `4`).
+- Extended `GET /api/events/:eventId/tickets.pdf` with optional query `perPage`.
+- Updated HTML PDF renderer and fallback `pdf-lib` renderer to honor selected tickets-per-page count.

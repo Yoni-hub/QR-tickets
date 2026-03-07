@@ -88,7 +88,13 @@ async function getEventTickets(req, res) {
   res.json({ eventId, tickets });
 }
 
-async function buildTicketsPdfBuffer(event, tickets) {
+function normalizeTicketsPerPage(rawValue) {
+  const parsed = Number.parseInt(String(rawValue || ""), 10);
+  if (!Number.isFinite(parsed)) return 2;
+  return Math.min(4, Math.max(1, parsed));
+}
+
+async function buildTicketsPdfBuffer(event, tickets, ticketsPerPage) {
   const cards = [];
   for (const ticket of tickets) {
     const payload = ticket.qrPayload || buildQrPayload(ticket.ticketPublicId);
@@ -103,7 +109,22 @@ async function buildTicketsPdfBuffer(event, tickets) {
     );
   }
 
-  const html = renderTicketDocumentHtml({ cardsHtml: cards.join("") });
+  const safeTicketsPerPage = normalizeTicketsPerPage(ticketsPerPage);
+  const pageSections = [];
+  for (let index = 0; index < cards.length; index += safeTicketsPerPage) {
+    const pageCards = cards
+      .slice(index, index + safeTicketsPerPage)
+      .map((cardHtml) => `<div class="ticket-slot">${cardHtml}</div>`)
+      .join("");
+    pageSections.push(
+      `<section class="ticket-page mode-${safeTicketsPerPage}"><div class="ticket-grid">${pageCards}</div></section>`,
+    );
+  }
+
+  const html = renderTicketDocumentHtml({
+    pagesHtml: pageSections.join(""),
+    ticketsPerPage: safeTicketsPerPage,
+  });
   let browser;
   try {
     browser = await puppeteer.launch({
@@ -122,7 +143,7 @@ async function buildTicketsPdfBuffer(event, tickets) {
   }
 }
 
-async function buildFallbackPdfBuffer(event, tickets) {
+async function buildFallbackPdfBuffer(event, tickets, ticketsPerPage) {
   const pdf = await PDFDocument.create();
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
@@ -130,22 +151,29 @@ async function buildFallbackPdfBuffer(event, tickets) {
   const pageWidth = 595;
   const pageHeight = 842;
   const margin = 36;
-  const cardHeight = (pageHeight - margin * 3) / 2;
+  const safeTicketsPerPage = normalizeTicketsPerPage(ticketsPerPage);
+  const verticalGap = 12;
+  const usableHeight = pageHeight - margin * 2 - verticalGap * (safeTicketsPerPage - 1);
+  const cardHeight = usableHeight / safeTicketsPerPage;
 
   for (let index = 0; index < tickets.length; index += 1) {
-    if (index % 2 === 0) {
+    if (index % safeTicketsPerPage === 0) {
       pdf.addPage([pageWidth, pageHeight]);
     }
 
     const page = pdf.getPages()[pdf.getPageCount() - 1];
-    const slot = index % 2;
+    const slot = index % safeTicketsPerPage;
     const x = margin;
-    const y = slot === 0 ? pageHeight - margin - cardHeight : margin;
+    const y = pageHeight - margin - cardHeight - slot * (cardHeight + verticalGap);
     const ticket = tickets[index];
     const payload = ticket.qrPayload || buildQrPayload(ticket.ticketPublicId);
     const qrDataUrl = await QRCode.toDataURL(payload, { margin: 0, width: 256 });
     const qrBase64 = qrDataUrl.split(",")[1];
     const qrImage = await pdf.embedPng(Buffer.from(qrBase64, "base64"));
+    const headingSize = safeTicketsPerPage >= 4 ? 12 : safeTicketsPerPage === 3 ? 14 : 16;
+    const detailSize = safeTicketsPerPage >= 4 ? 8 : 10;
+    const ticketIdSize = safeTicketsPerPage >= 4 ? 9 : 11;
+    const qrSize = Math.min(120, Math.max(72, cardHeight - 42));
 
     page.drawRectangle({
       x,
@@ -156,11 +184,11 @@ async function buildFallbackPdfBuffer(event, tickets) {
       borderColor: rgb(0.8, 0.8, 0.8),
     });
 
-    page.drawText(event.eventName, { x: x + 16, y: y + cardHeight - 28, size: 16, font: bold });
-    page.drawText(new Date(event.eventDate).toLocaleString(), { x: x + 16, y: y + cardHeight - 48, size: 10, font });
-    page.drawText(event.eventAddress, { x: x + 16, y: y + cardHeight - 64, size: 10, font });
-    page.drawText(`Ticket ID: ${ticket.ticketPublicId}`, { x: x + 16, y: y + 24, size: 11, font: bold });
-    page.drawImage(qrImage, { x: pageWidth - margin - 150, y: y + 20, width: 120, height: 120 });
+    page.drawText(event.eventName, { x: x + 16, y: y + cardHeight - (headingSize + 12), size: headingSize, font: bold });
+    page.drawText(new Date(event.eventDate).toLocaleString(), { x: x + 16, y: y + cardHeight - (headingSize + detailSize + 16), size: detailSize, font });
+    page.drawText(event.eventAddress, { x: x + 16, y: y + cardHeight - (headingSize + detailSize * 2 + 20), size: detailSize, font });
+    page.drawText(`Ticket ID: ${ticket.ticketPublicId}`, { x: x + 16, y: y + 14, size: ticketIdSize, font: bold });
+    page.drawImage(qrImage, { x: pageWidth - margin - qrSize - 20, y: y + 10, width: qrSize, height: qrSize });
   }
 
   return Buffer.from(await pdf.save());
@@ -229,13 +257,15 @@ async function getTicketsPdf(req, res) {
       select: { ticketPublicId: true, qrPayload: true },
     });
 
-    // Do not re-implement a different ticket layout for PDF; PDF must use the same HTML/CSS spec as preview.
+    const ticketsPerPage = normalizeTicketsPerPage(req.query?.perPage);
+
+    // Use deterministic fixed HTML print wrappers first; fallback to pdf-lib only if html rendering fails.
     let pdfBuffer;
     try {
-      pdfBuffer = await buildTicketsPdfBuffer(event, tickets);
+      pdfBuffer = await buildTicketsPdfBuffer(event, tickets, ticketsPerPage);
     } catch (error) {
       console.error("html-pdf generation failed; using fallback pdf-lib renderer", error);
-      pdfBuffer = await buildFallbackPdfBuffer(event, tickets);
+      pdfBuffer = await buildFallbackPdfBuffer(event, tickets, ticketsPerPage);
     }
     const output = normalizePdfOutput(pdfBuffer);
     if (!output.length) {
