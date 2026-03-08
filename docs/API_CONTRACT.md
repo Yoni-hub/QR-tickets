@@ -28,3 +28,24 @@ Scan response results:
 - `VALID`
 - `USED`
 - `INVALID`
+
+## Admin APIs (Protected by `x-admin-key`)
+- `GET /api/admin/overview`
+- `GET /api/admin/events`
+- `GET /api/admin/events/:eventId`
+- `GET /api/admin/tickets`
+- `GET /api/admin/deliveries`
+- `GET /api/admin/scans`
+- `GET /api/admin/settings`
+- `GET /api/admin/audit-log`
+
+Admin action APIs:
+- `PATCH /api/admin/events/:eventId/disable`
+- `PATCH /api/admin/events/:eventId/enable`
+- `PATCH /api/admin/events/:eventId/archive`
+- `PATCH /api/admin/events/:eventId/rotate-access-code`
+- `PATCH /api/admin/tickets/:ticketPublicId/invalidate`
+- `PATCH /api/admin/tickets/:ticketPublicId/restore`
+- `PATCH /api/admin/tickets/:ticketPublicId/reset-usage`
+- `POST /api/admin/deliveries/:deliveryId/retry`
+- `PATCH /api/admin/scans/:scanId/mark-suspicious`

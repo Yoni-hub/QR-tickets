@@ -39,13 +39,20 @@ export default function Scanner() {
   const scannerRef = useRef(null);
   const coolDownUntilRef = useRef(0);
 
-  const submitScan = async (publicId) => {
+  const submitScan = async (publicId, rawValue = publicId, source = "manual") => {
     if (checking) return;
     setChecking(true);
     setFeedback({ kind: "", message: "" });
 
     try {
-      const response = await withMinDelay(api.post("/scans", { accessCode, ticketPublicId: publicId }));
+      const response = await withMinDelay(
+        api.post("/scans", {
+          accessCode,
+          ticketPublicId: publicId,
+          rawScannedValue: rawValue,
+          scannerSource: source,
+        }),
+      );
       const nextResult = response.data.result || "INVALID";
       setResult(nextResult);
 
@@ -90,7 +97,7 @@ export default function Scanner() {
             }
 
             setTicketPublicId(parsedId);
-            await submitScan(parsedId);
+            await submitScan(parsedId, decodedText, "camera");
           },
           () => {},
         ),
@@ -136,14 +143,15 @@ export default function Scanner() {
       return;
     }
 
-    const parsed = extractTicketPublicId(ticketPublicId);
+    const rawInput = ticketPublicId;
+    const parsed = extractTicketPublicId(rawInput);
     if (!parsed) {
       setFeedback({ kind: "error", message: "Enter a valid ticket id or QR text." });
       return;
     }
 
     setTicketPublicId(parsed);
-    await submitScan(parsed);
+    await submitScan(parsed, rawInput, "manual");
   };
 
   const stateClass =
