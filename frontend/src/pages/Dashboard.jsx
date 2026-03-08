@@ -1,16 +1,25 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import api from "../lib/api";
 import AppButton from "../components/ui/AppButton";
 import FeedbackBanner from "../components/ui/FeedbackBanner";
 import { withMinDelay } from "../lib/withMinDelay";
+import TicketEditor from "../components/ticket-editor/TicketEditor";
 
 const DELIVERY_METHODS = {
   PDF: "PDF",
   EMAIL_LINK: "EMAIL_LINK",
 };
-const PDF_TICKETS_PER_PAGE_OPTIONS = [1, 2, 3, 4];
 
+const DASHBOARD_MENUS = [
+  { id: "events", label: "Events" },
+  { id: "tickets", label: "Tickets" },
+  { id: "delivery", label: "Delivery Method" },
+  { id: "requests", label: "Ticket Requests" },
+  { id: "promoters", label: "Promoters" },
+];
+
+const PDF_TICKETS_PER_PAGE_OPTIONS = [1, 2, 3, 4];
 const DEFAULT_EMAIL_SUBJECT = "Your ticket for {{eventName}}";
 const DEFAULT_EMAIL_BODY = [
   "Hello,",
@@ -30,6 +39,7 @@ const DEFAULT_EMAIL_BODY = [
   "This ticket was sent to {{recipientEmail}}.",
   "Please present the QR code at the entrance.",
 ].join("\n");
+
 const DEFAULT_EMAIL_HTML_TEMPLATE = `
 <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#ffffff;padding:16px 0;">
   <tr>
@@ -37,49 +47,10 @@ const DEFAULT_EMAIL_HTML_TEMPLATE = `
       <table width="520" cellpadding="24" cellspacing="0" role="presentation" style="background:#f5f7fb;border-radius:8px;font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
         <tr>
           <td align="center">
-            <p style="margin:0 0 18px 0;font-size:20px;font-weight:700;">
-              Ticket Confirmed
-            </p>
-            <p style="margin:0 0 16px 0;">
-              Hello,
-            </p>
-            <p style="margin:0 0 20px 0;">
-              Your <strong>{{ticketType}}</strong> ticket for <strong>{{eventName}}</strong> is ready.
-            </p>
-            <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;text-align:left;">
-              <tr>
-                <td style="padding:4px 10px 4px 0;">Event:</td>
-                <td><strong>{{eventName}}</strong></td>
-              </tr>
-              <tr>
-                <td style="padding:4px 10px 4px 0;">Date:</td>
-                <td><strong>{{eventDate}}</strong></td>
-              </tr>
-              <tr>
-                <td style="padding:4px 10px 4px 0;">Location:</td>
-                <td><strong>{{eventAddress}}</strong></td>
-              </tr>
-            </table>
-            <p style="margin:20px 0;text-align:center;">
-              Tap below to view your ticket for <strong>{{eventName}}</strong>.
-            </p>
-            <p style="text-align:center;margin:20px 0;">
-              <a href="{{ticketUrl}}" target="_blank" rel="noopener noreferrer" style="background:#2d5bd1;color:#ffffff;padding:12px 22px;border-radius:6px;text-decoration:none;font-weight:600;display:inline-block;">
-                View Your Ticket
-              </a>
-            </p>
-            <p style="margin:20px 0;">
-              If the button does not work, use this link:
-            </p>
-            <p style="margin:0 0 20px 0;word-break:break-all;">
-              <a href="{{ticketUrl}}" target="_blank" rel="noopener noreferrer" style="color:#2d5bd1;">{{ticketUrl}}</a>
-            </p>
-            <p style="margin:0 0 10px 0;">
-              This ticket was sent to <strong>{{recipientEmail}}</strong>.
-            </p>
-            <p style="margin:0;">
-              Please present the QR code at the entrance.
-            </p>
+            <p style="margin:0 0 18px 0;font-size:20px;font-weight:700;">Ticket Confirmed</p>
+            <p style="margin:0 0 16px 0;">Hello,</p>
+            <p style="margin:0 0 20px 0;">Your <strong>{{ticketType}}</strong> ticket for <strong>{{eventName}}</strong> is ready.</p>
+            <p style="text-align:center;margin:20px 0;"><a href="{{ticketUrl}}" target="_blank" rel="noopener noreferrer" style="background:#2d5bd1;color:#ffffff;padding:12px 22px;border-radius:6px;text-decoration:none;font-weight:600;display:inline-block;">View Your Ticket</a></p>
           </td>
         </tr>
       </table>
@@ -140,11 +111,33 @@ function renderEmailHtmlPreview(textBody, ticketUrl) {
   return `<div style="text-align:center;line-height:1.5;">${content}</div>`;
 }
 
+function formatDate(value) {
+  if (!value) return "-";
+  return new Date(value).toLocaleString();
+}
+
+function toLocalDateTimeInputValue(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const offsetMs = date.getTimezoneOffset() * 60000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+}
+
 export default function Dashboard() {
   const [params, setParams] = useSearchParams();
+  const [activeMenu, setActiveMenu] = useState("events");
   const [code, setCode] = useState(params.get("code") || "");
+  const [showPublicPreview, setShowPublicPreview] = useState(false);
+  const [ticketPage, setTicketPage] = useState(1);
   const [summary, setSummary] = useState(null);
+  const [eventDraft, setEventDraft] = useState({ eventName: "", eventDate: "", eventAddress: "" });
+  const [savingEvent, setSavingEvent] = useState(false);
   const [tickets, setTickets] = useState([]);
+  const [ticketRequests, setTicketRequests] = useState([]);
+  const [promoters, setPromoters] = useState([]);
+  const [leaderboard, setLeaderboard] = useState([]);
+
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [sending, setSending] = useState(false);
@@ -156,6 +149,7 @@ export default function Dashboard() {
   const [showEmailPreview, setShowEmailPreview] = useState(true);
   const [sendSummary, setSendSummary] = useState(null);
   const [feedback, setFeedback] = useState({ kind: "", message: "" });
+  const [promoterForm, setPromoterForm] = useState({ name: "", code: "" });
 
   const recipientList = parseRecipientEmails(recipientEmails);
   const sampleRecipient = recipientList[0] || "customer@example.com";
@@ -175,6 +169,24 @@ export default function Dashboard() {
       ? renderEmailTemplate(DEFAULT_EMAIL_HTML_TEMPLATE, sampleData)
       : renderEmailHtmlPreview(previewBody, sampleData.ticketUrl);
 
+  const accessCode = useMemo(() => summary?.event?.accessCode || code.trim(), [summary, code]);
+  const totalTicketPages = Math.max(1, Math.ceil(tickets.length / 5));
+  const pagedTickets = tickets.slice((ticketPage - 1) * 5, ticketPage * 5);
+  useEffect(() => {
+    if (ticketPage > totalTicketPages) setTicketPage(totalTicketPages);
+  }, [ticketPage, totalTicketPages]);
+
+  const loadRequestsAndPromoters = async (targetCode) => {
+    if (!targetCode) return;
+    const [requestRes, promoterRes] = await Promise.all([
+      api.get(`/events/by-code/${encodeURIComponent(targetCode)}/ticket-requests`),
+      api.get(`/events/by-code/${encodeURIComponent(targetCode)}/promoters`),
+    ]);
+    setTicketRequests(requestRes.data.items || []);
+    setPromoters(promoterRes.data.items || []);
+    setLeaderboard(promoterRes.data.leaderboard || []);
+  };
+
   const load = async () => {
     if (!code.trim() || loading) return;
     setLoading(true);
@@ -184,15 +196,80 @@ export default function Dashboard() {
     try {
       const summaryRes = await withMinDelay(api.get(`/events/by-code/${encodeURIComponent(code.trim())}`));
       setSummary(summaryRes.data);
+      setEventDraft({
+        eventName: String(summaryRes.data?.event?.eventName || ""),
+        eventDate: toLocalDateTimeInputValue(summaryRes.data?.event?.eventDate),
+        eventAddress: String(summaryRes.data?.event?.eventAddress || ""),
+      });
+      setShowPublicPreview(false);
+      setTicketPage(1);
       const ticketsRes = await api.get(`/events/${summaryRes.data.event.id}/tickets`);
       setTickets(ticketsRes.data.tickets || []);
+      await loadRequestsAndPromoters(summaryRes.data.event.accessCode);
       setFeedback({ kind: "success", message: "Dashboard loaded." });
     } catch (requestError) {
       setFeedback({ kind: "error", message: requestError.response?.data?.error || "Unable to load dashboard." });
       setSummary(null);
       setTickets([]);
+      setTicketRequests([]);
+      setPromoters([]);
+      setLeaderboard([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const copyTicketUrl = async (ticketPublicId) => {
+    const url = `${window.location.origin}/t/${ticketPublicId}`;
+    await navigator.clipboard.writeText(url);
+    setFeedback({ kind: "success", message: "Ticket URL copied." });
+  };
+
+  const approveRequest = async (requestId) => {
+    try {
+      await api.post(`/ticket-requests/${encodeURIComponent(requestId)}/approve`, { accessCode });
+      await loadRequestsAndPromoters(accessCode);
+      const ticketsRes = await api.get(`/events/${summary.event.id}/tickets`);
+      setTickets(ticketsRes.data.tickets || []);
+      setFeedback({ kind: "success", message: "Request approved and ticket generated." });
+    } catch (requestError) {
+      setFeedback({ kind: "error", message: requestError.response?.data?.error || "Approve failed." });
+    }
+  };
+
+  const rejectRequest = async (requestId) => {
+    try {
+      await api.post(`/ticket-requests/${encodeURIComponent(requestId)}/reject`, { accessCode });
+      await loadRequestsAndPromoters(accessCode);
+      setFeedback({ kind: "info", message: "Request rejected." });
+    } catch (requestError) {
+      setFeedback({ kind: "error", message: requestError.response?.data?.error || "Reject failed." });
+    }
+  };
+
+  const addPromoter = async () => {
+    if (!promoterForm.name.trim()) {
+      setFeedback({ kind: "error", message: "Promoter name is required." });
+      return;
+    }
+
+    try {
+      await api.post("/promoters", { accessCode, name: promoterForm.name, code: promoterForm.code });
+      setPromoterForm({ name: "", code: "" });
+      await loadRequestsAndPromoters(accessCode);
+      setFeedback({ kind: "success", message: "Promoter added." });
+    } catch (requestError) {
+      setFeedback({ kind: "error", message: requestError.response?.data?.error || "Could not add promoter." });
+    }
+  };
+
+  const deletePromoter = async (promoterId) => {
+    try {
+      await api.delete(`/promoters/${encodeURIComponent(promoterId)}`, { data: { accessCode } });
+      await loadRequestsAndPromoters(accessCode);
+      setFeedback({ kind: "info", message: "Promoter deleted." });
+    } catch (requestError) {
+      setFeedback({ kind: "error", message: requestError.response?.data?.error || "Delete failed." });
     }
   };
 
@@ -232,18 +309,13 @@ export default function Dashboard() {
   };
 
   const sendTicketLinks = async () => {
-    const accessCode = summary?.event?.accessCode || code.trim();
     if (!accessCode || sending) return;
     if (!recipientList.length) {
       setFeedback({ kind: "error", message: "Add at least one valid recipient email." });
       return;
     }
-    if (!emailSubject.trim()) {
-      setFeedback({ kind: "error", message: "Email subject cannot be empty." });
-      return;
-    }
-    if (!emailBody.trim()) {
-      setFeedback({ kind: "error", message: "Email body cannot be empty." });
+    if (!emailSubject.trim() || !emailBody.trim()) {
+      setFeedback({ kind: "error", message: "Email subject and body cannot be empty." });
       return;
     }
 
@@ -268,207 +340,353 @@ export default function Dashboard() {
     }
   };
 
+  const handleTicketsGenerated = async () => {
+    if (!summary?.event?.id || !accessCode) return;
+    const [summaryRes, ticketsRes] = await Promise.all([
+      api.get(`/events/by-code/${encodeURIComponent(accessCode)}`),
+      api.get(`/events/${summary.event.id}/tickets`),
+    ]);
+    setSummary(summaryRes.data);
+    setTickets(ticketsRes.data.tickets || []);
+    setTicketPage(1);
+  };
+
+  const saveEventInline = async () => {
+    if (!summary?.event?.id || !accessCode || savingEvent) return;
+    setSavingEvent(true);
+    try {
+      const response = await api.patch(`/events/${summary.event.id}`, {
+        accessCode,
+        eventName: eventDraft.eventName,
+        eventDate: eventDraft.eventDate,
+        eventAddress: eventDraft.eventAddress,
+      });
+      setSummary((prev) => {
+        if (!prev) return prev;
+        return { ...prev, event: { ...prev.event, ...response.data.event } };
+      });
+      setFeedback({ kind: "success", message: "Event details updated." });
+    } catch (requestError) {
+      setFeedback({ kind: "error", message: requestError.response?.data?.error || "Could not update event." });
+    } finally {
+      setSavingEvent(false);
+    }
+  };
+
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-4 sm:px-6 sm:py-6">
-      <h1 className="text-2xl font-bold sm:text-3xl">Dashboard</h1>
+      <div className="flex flex-wrap items-center gap-2">
+        <h1 className="text-2xl font-bold sm:text-3xl">Dashboard</h1>
+        <span className="rounded border bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">
+          Current Access Code: <span className="font-mono">{accessCode || "-"}</span>
+        </span>
+      </div>
       <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-        <input
-          className="w-full rounded border p-2"
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
-          placeholder="Access code"
-        />
-        <AppButton onClick={load} loading={loading} loadingText="Loading..." variant="primary">
-          Load
-        </AppButton>
+        <input className="w-full rounded border p-2" value={code} onChange={(e) => setCode(e.target.value)} placeholder="Access code" />
+        <AppButton onClick={load} loading={loading} loadingText="Loading..." variant="primary">Load</AppButton>
       </div>
 
       <FeedbackBanner className="mt-3" kind={feedback.kind} message={feedback.message} />
 
       {summary ? (
         <>
-          <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div className="rounded border p-3"><p className="text-xs">Total</p><p className="text-2xl font-bold">{summary.totalTickets}</p></div>
-            <div className="rounded border p-3"><p className="text-xs">Scanned</p><p className="text-2xl font-bold">{summary.scannedTickets}</p></div>
-            <div className="rounded border p-3"><p className="text-xs">Remaining</p><p className="text-2xl font-bold">{summary.remainingTickets}</p></div>
-          </div>
-
-          <div className="mt-4 rounded border p-4">
-            <p className="break-words"><span className="font-semibold">Event:</span> {summary.event.eventName}</p>
-            <p className="break-words"><span className="font-semibold">Date:</span> {new Date(summary.event.eventDate).toLocaleString()}</p>
-            <p className="break-words"><span className="font-semibold">Location:</span> {summary.event.eventAddress}</p>
-          </div>
-
-          <div className="mt-4 rounded border p-4">
-            <p className="text-sm font-semibold">Delivery method</p>
-            <label className="mt-2 flex items-center gap-2 text-sm">
-              <input
-                type="radio"
-                name="deliveryMethod"
-                value={DELIVERY_METHODS.PDF}
-                checked={deliveryMethod === DELIVERY_METHODS.PDF}
-                onChange={(event) => setDeliveryMethod(event.target.value)}
-              />
-              <span>Download PDF</span>
-            </label>
-            <label className="mt-2 flex items-center gap-2 text-sm">
-              <input
-                type="radio"
-                name="deliveryMethod"
-                value={DELIVERY_METHODS.EMAIL_LINK}
-                checked={deliveryMethod === DELIVERY_METHODS.EMAIL_LINK}
-                onChange={(event) => setDeliveryMethod(event.target.value)}
-              />
-              <span>Send by email (links)</span>
-            </label>
-
-            {deliveryMethod === DELIVERY_METHODS.PDF ? (
-              <div className="mt-3">
-                <label className="mb-1 block text-sm font-medium">Tickets per page</label>
-                <select
-                  className="w-full rounded border p-2 text-sm sm:w-44"
-                  value={pdfTicketsPerPage}
-                  onChange={(event) => setPdfTicketsPerPage(Number.parseInt(event.target.value, 10) || 2)}
-                  disabled={downloading}
-                >
-                  {PDF_TICKETS_PER_PAGE_OPTIONS.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-
-                <AppButton
-                  className="mt-3"
-                  variant="secondary"
-                  onClick={downloadPdf}
-                  loading={downloading}
-                  loadingText="Downloading..."
-                >
-                  Download Tickets PDF
-                </AppButton>
-              </div>
-            ) : null}
-
-            {deliveryMethod === DELIVERY_METHODS.EMAIL_LINK ? (
-              <div className="mt-3">
-                <label className="mb-1 block text-sm font-medium">Recipient emails</label>
-                <textarea
-                  className="w-full rounded border p-2"
-                  rows={4}
-                  value={recipientEmails}
-                  onChange={(event) => setRecipientEmails(event.target.value)}
-                  placeholder="alice@email.com, bob@email.com"
-                />
-                <p className="mt-1 text-xs text-slate-600">We&apos;ll send one ticket link per email.</p>
-
-                <div className="mt-4 rounded border bg-slate-50 p-3">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-                    <p className="text-sm font-semibold">Email content preview editor</p>
-                    <div className="grid grid-cols-1 gap-2 sm:flex">
-                      <AppButton
-                        type="button"
-                        variant="secondary"
-                        className="px-2 py-1 text-xs"
-                        onClick={() => setShowEmailPreview((prev) => !prev)}
-                      >
-                        {showEmailPreview ? "Hide preview" : "Show preview"}
-                      </AppButton>
-                      <AppButton
-                        type="button"
-                        variant="secondary"
-                        className="px-2 py-1 text-xs"
-                        onClick={() => {
-                          setEmailSubject(DEFAULT_EMAIL_SUBJECT);
-                          setEmailBody(DEFAULT_EMAIL_BODY);
-                        }}
-                      >
-                        Reset template
-                      </AppButton>
-                    </div>
-                  </div>
-
-                  <p className="mt-2 text-xs text-slate-600">
-                    Available placeholders: {EMAIL_TEMPLATE_HELP.join(", ")}
-                  </p>
-
-                  <label className="mt-3 block text-xs font-medium text-slate-700">Email subject</label>
-                  <input
-                    className="mt-1 w-full rounded border p-2 text-sm"
-                    value={emailSubject}
-                    onChange={(event) => setEmailSubject(event.target.value)}
-                    placeholder="Your ticket for {{eventName}}"
-                  />
-
-                  <label className="mt-3 block text-xs font-medium text-slate-700">Email body</label>
-                  <textarea
-                    className="mt-1 w-full rounded border p-2 text-sm font-mono"
-                    rows={8}
-                    value={emailBody}
-                    onChange={(event) => setEmailBody(event.target.value)}
-                  />
-
-                  {showEmailPreview ? (
-                    <div className="mt-3 rounded border bg-white p-3 text-sm">
-                      <p className="text-xs text-slate-500">To: {sampleRecipient}</p>
-                      <p className="mt-2">
-                        <span className="font-semibold">Subject:</span> {previewSubject}
-                      </p>
-                      <div
-                        className="mt-2 overflow-hidden rounded bg-slate-50 p-2 text-sm text-slate-700 [&_a]:break-all [&_table]:max-w-full [&_table]:w-full [&_td]:break-words"
-                        dangerouslySetInnerHTML={{ __html: previewBodyHtml }}
-                      />
-                    </div>
-                  ) : null}
-                </div>
-
-                <AppButton
-                  className="mt-3"
-                  variant="indigo"
-                  onClick={sendTicketLinks}
-                  loading={sending}
-                  loadingText="Sending..."
-                >
-                  Send tickets
-                </AppButton>
-              </div>
-            ) : null}
-          </div>
-
-          {sendSummary ? (
-            <div className="mt-3 rounded border bg-emerald-50 p-3 text-sm">
-              <p>Links sent: {sendSummary.sent}</p>
-              <p>Failed: {sendSummary.failed?.length || 0}</p>
-            </div>
-          ) : null}
-
-          <div className="mt-5 space-y-3 lg:hidden">
-            {tickets.map((ticket) => (
-              <article key={ticket.ticketPublicId} className="rounded border bg-white p-3 text-sm">
-                <p className="text-xs text-slate-500">ticketPublicId</p>
-                <p className="break-all font-mono">{ticket.ticketPublicId}</p>
-                <p className="mt-2 text-xs text-slate-500">status</p>
-                <p>{ticket.status}</p>
-                <p className="mt-2 text-xs text-slate-500">scannedAt</p>
-                <p className="break-words">{ticket.scannedAt ? new Date(ticket.scannedAt).toLocaleString() : "-"}</p>
-              </article>
+          <div className="mt-4 flex flex-wrap items-center gap-2 text-sm font-semibold">
+            {DASHBOARD_MENUS.map((menu) => (
+              <button
+                key={menu.id}
+                type="button"
+                onClick={() => setActiveMenu(menu.id)}
+                className={`rounded border px-3 py-1.5 ${activeMenu === menu.id ? "bg-slate-900 text-white" : "bg-white text-slate-800"}`}
+              >
+                {menu.label}
+              </button>
             ))}
           </div>
 
-          <div className="mt-5 hidden overflow-hidden rounded border lg:block">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-100"><tr><th className="p-2">ticketPublicId</th><th className="p-2">status</th><th className="p-2">scannedAt</th></tr></thead>
-              <tbody>
-                {tickets.map((ticket) => (
-                  <tr key={ticket.ticketPublicId} className="border-t">
-                    <td className="break-all p-2 font-mono">{ticket.ticketPublicId}</td>
-                    <td className="p-2">{ticket.status}</td>
-                    <td className="break-words p-2">{ticket.scannedAt ? new Date(ticket.scannedAt).toLocaleString() : "-"}</td>
-                  </tr>
+          {activeMenu === "events" ? (
+            <section className="mt-4 rounded border p-4">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-[100px_1fr] sm:items-center">
+                <p className="font-semibold">Event:</p>
+                <input
+                  className="w-full rounded border p-2 text-sm"
+                  value={eventDraft.eventName}
+                  onChange={(e) => setEventDraft((prev) => ({ ...prev, eventName: e.target.value }))}
+                />
+                <p className="font-semibold">Date:</p>
+                <input
+                  type="datetime-local"
+                  className="w-full rounded border p-2 text-sm"
+                  value={eventDraft.eventDate}
+                  onChange={(e) => setEventDraft((prev) => ({ ...prev, eventDate: e.target.value }))}
+                />
+                <p className="font-semibold">Location:</p>
+                <input
+                  className="w-full rounded border p-2 text-sm"
+                  value={eventDraft.eventAddress}
+                  onChange={(e) => setEventDraft((prev) => ({ ...prev, eventAddress: e.target.value }))}
+                />
+              </div>
+              <AppButton className="mt-3" onClick={saveEventInline} loading={savingEvent} loadingText="Saving...">
+                Save Event
+              </AppButton>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <p className="break-all"><span className="font-semibold">Public Event Link:</span> {summary.event.slug ? `${window.location.origin}/e/${summary.event.slug}` : "Not available"}</p>
+                {summary.event.slug ? (
+                  <button
+                    type="button"
+                    className="rounded border px-2 py-1 text-xs"
+                    onClick={() => {
+                      navigator.clipboard.writeText(`${window.location.origin}/e/${summary.event.slug}`);
+                      setFeedback({ kind: "success", message: "Public event link copied." });
+                    }}
+                  >
+                    Copy
+                  </button>
+                ) : null}
+              </div>
+              {summary.event.slug ? (
+                <div className="mt-3 space-y-2">
+                  <button
+                    type="button"
+                    className="inline-flex rounded border bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    onClick={() => setShowPublicPreview((prev) => !prev)}
+                  >
+                    {showPublicPreview ? "Hide" : "Preview Public Ticket Page"}
+                  </button>
+                  {showPublicPreview ? (
+                    <div className="max-w-xl rounded border bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Public Ticket Page Sample</p>
+                      <h3 className="mt-2 text-xl font-bold">{eventDraft.eventName || summary.event.eventName}</h3>
+                      <p className="mt-1 text-sm text-slate-600">{formatDate(eventDraft.eventDate || summary.event.eventDate)} | {eventDraft.eventAddress || summary.event.eventAddress}</p>
+                      <p className="mt-1 text-sm">Price: {summary.event.ticketPrice ? `$${summary.event.ticketPrice}` : "Ask organizer"}</p>
+                      <p className="mt-1 text-sm">Tickets remaining: {summary.remainingTickets}</p>
+                      <div className="mt-3 border-t pt-3">
+                        <p className="text-sm font-semibold">Request Tickets</p>
+                        <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                          <input className="rounded border bg-white p-2 text-sm" value="Customer Name" readOnly />
+                          <input className="rounded border bg-white p-2 text-sm" value="Phone (optional)" readOnly />
+                          <input className="rounded border bg-white p-2 text-sm sm:col-span-2" value="Email (optional)" readOnly />
+                          <input className="rounded border bg-white p-2 text-sm" value="1" readOnly />
+                        </div>
+                        <button type="button" className="mt-3 rounded bg-slate-900 px-3 py-2 text-sm font-semibold text-white" disabled>
+                          Request Tickets
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+
+          {activeMenu === "tickets" ? (
+            <section className="mt-4 rounded border p-4">
+              <div className="mb-5">
+                <TicketEditor
+                  mode="append_to_event"
+                  accessCode={accessCode}
+                  eventId={summary.event.id}
+                  initialEventName={summary.event.eventName}
+                  initialEventAddress={summary.event.eventAddress}
+                  initialDateTimeText={formatDate(summary.event.eventDate)}
+                  initialTicketType={summary.event.ticketType || "General"}
+                  initialTicketPrice={summary.event.ticketPrice || ""}
+                  onGenerated={handleTicketsGenerated}
+                />
+              </div>
+              <div className="mb-3 grid grid-cols-3 gap-2">
+                <div className="rounded border bg-white p-2 text-center"><p className="text-[10px] uppercase text-slate-500">Total</p><p className="text-lg font-bold leading-none">{summary.totalTickets}</p></div>
+                <div className="rounded border bg-white p-2 text-center"><p className="text-[10px] uppercase text-slate-500">Scanned</p><p className="text-lg font-bold leading-none">{summary.scannedTickets}</p></div>
+                <div className="rounded border bg-white p-2 text-center"><p className="text-[10px] uppercase text-slate-500">Remaining</p><p className="text-lg font-bold leading-none">{summary.remainingTickets}</p></div>
+              </div>
+              <p className="text-sm font-semibold">Tickets setting</p>
+              <div className="mt-3 space-y-3 lg:hidden">
+                {pagedTickets.map((ticket) => (
+                  <article key={ticket.ticketPublicId} className="rounded border bg-white p-3 text-sm">
+                    <div className="grid grid-cols-[2.3fr_1fr_1fr_1fr] gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      <p>ticket id</p>
+                      <p>ticket type</p>
+                      <p>status</p>
+                      <p>scanned at</p>
+                    </div>
+                    <div className="mt-1 grid grid-cols-[2.3fr_1fr_1fr_1fr] gap-2 text-xs text-slate-900">
+                      <p className="break-all font-mono">{ticket.ticketPublicId}</p>
+                      <p>{summary.event.ticketType || "General"}</p>
+                      <p>{ticket.status}</p>
+                      <p>{formatDate(ticket.scannedAt)}</p>
+                    </div>
+                    <button className="mt-2 rounded border px-2 py-1 text-xs" onClick={() => copyTicketUrl(ticket.ticketPublicId)}>Copy</button>
+                  </article>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </div>
+              <div className="mt-3 hidden overflow-x-auto rounded border lg:block">
+                <table className="w-full min-w-[760px] text-left text-sm">
+                  <thead className="bg-slate-100"><tr><th className="p-2">Ticket ID</th><th className="p-2">Ticket Type</th><th className="p-2">Status</th><th className="p-2">Scanned At</th><th className="p-2">Copy</th></tr></thead>
+                  <tbody>
+                    {pagedTickets.map((ticket) => (
+                      <tr key={ticket.ticketPublicId} className="border-t">
+                        <td className="break-all p-2 font-mono">{ticket.ticketPublicId}</td>
+                        <td className="p-2">{summary.event.ticketType || "General"}</td>
+                        <td className="p-2">{ticket.status}</td>
+                        <td className="p-2">{formatDate(ticket.scannedAt)}</td>
+                        <td className="p-2"><button className="rounded border px-2 py-1 text-xs" onClick={() => copyTicketUrl(ticket.ticketPublicId)}>Copy</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="mt-3 flex items-center justify-between gap-2 text-sm">
+                <p>Page {ticketPage} of {totalTicketPages}</p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="rounded border px-2 py-1 disabled:opacity-50"
+                    onClick={() => setTicketPage((prev) => Math.max(1, prev - 1))}
+                    disabled={ticketPage <= 1}
+                  >
+                    Prev
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded border px-2 py-1 disabled:opacity-50"
+                    onClick={() => setTicketPage((prev) => Math.min(totalTicketPages, prev + 1))}
+                    disabled={ticketPage >= totalTicketPages}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            </section>
+          ) : null}
+
+          {activeMenu === "delivery" ? (
+            <section className="mt-4 rounded border p-4">
+              <p className="text-sm font-semibold">Delivery method settings</p>
+              <label className="mt-2 flex items-center gap-2 text-sm">
+                <input type="radio" name="deliveryMethod" value={DELIVERY_METHODS.PDF} checked={deliveryMethod === DELIVERY_METHODS.PDF} onChange={(event) => setDeliveryMethod(event.target.value)} />
+                <span>Download PDF</span>
+              </label>
+              <label className="mt-2 flex items-center gap-2 text-sm">
+                <input type="radio" name="deliveryMethod" value={DELIVERY_METHODS.EMAIL_LINK} checked={deliveryMethod === DELIVERY_METHODS.EMAIL_LINK} onChange={(event) => setDeliveryMethod(event.target.value)} />
+                <span>Send by email (links)</span>
+              </label>
+
+              {deliveryMethod === DELIVERY_METHODS.PDF ? (
+                <div className="mt-3">
+                  <label className="mb-1 block text-sm font-medium">Tickets per page</label>
+                  <select className="w-full rounded border p-2 text-sm sm:w-44" value={pdfTicketsPerPage} onChange={(event) => setPdfTicketsPerPage(Number.parseInt(event.target.value, 10) || 2)} disabled={downloading}>
+                    {PDF_TICKETS_PER_PAGE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                  <AppButton className="mt-3" variant="secondary" onClick={downloadPdf} loading={downloading} loadingText="Downloading...">Download Tickets PDF</AppButton>
+                </div>
+              ) : null}
+
+              {deliveryMethod === DELIVERY_METHODS.EMAIL_LINK ? (
+                <div className="mt-3">
+                  <label className="mb-1 block text-sm font-medium">Recipient emails</label>
+                  <textarea className="w-full rounded border p-2" rows={4} value={recipientEmails} onChange={(event) => setRecipientEmails(event.target.value)} placeholder="alice@email.com, bob@email.com" />
+                  <p className="mt-1 text-xs text-slate-600">We&apos;ll send one ticket link per email.</p>
+
+                  <div className="mt-4 rounded border bg-slate-50 p-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+                      <p className="text-sm font-semibold">Email content preview editor</p>
+                      <div className="grid grid-cols-1 gap-2 sm:flex">
+                        <AppButton type="button" variant="secondary" className="px-2 py-1 text-xs" onClick={() => setShowEmailPreview((prev) => !prev)}>{showEmailPreview ? "Hide preview" : "Show preview"}</AppButton>
+                        <AppButton type="button" variant="secondary" className="px-2 py-1 text-xs" onClick={() => { setEmailSubject(DEFAULT_EMAIL_SUBJECT); setEmailBody(DEFAULT_EMAIL_BODY); }}>Reset template</AppButton>
+                      </div>
+                    </div>
+
+                    <p className="mt-2 text-xs text-slate-600">Available placeholders: {EMAIL_TEMPLATE_HELP.join(", ")}</p>
+                    <label className="mt-3 block text-xs font-medium text-slate-700">Email subject</label>
+                    <input className="mt-1 w-full rounded border p-2 text-sm" value={emailSubject} onChange={(event) => setEmailSubject(event.target.value)} placeholder="Your ticket for {{eventName}}" />
+
+                    <label className="mt-3 block text-xs font-medium text-slate-700">Email body</label>
+                    <textarea className="mt-1 w-full rounded border p-2 text-sm font-mono" rows={8} value={emailBody} onChange={(event) => setEmailBody(event.target.value)} />
+
+                    {showEmailPreview ? (
+                      <div className="mt-3 rounded border bg-white p-3 text-sm">
+                        <p className="text-xs text-slate-500">To: {sampleRecipient}</p>
+                        <p className="mt-2"><span className="font-semibold">Subject:</span> {previewSubject}</p>
+                        <div className="mt-2 overflow-hidden rounded bg-slate-50 p-2 text-sm text-slate-700 [&_a]:break-all [&_table]:max-w-full [&_table]:w-full [&_td]:break-words" dangerouslySetInnerHTML={{ __html: previewBodyHtml }} />
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <AppButton className="mt-3" variant="indigo" onClick={sendTicketLinks} loading={sending} loadingText="Sending...">Send tickets</AppButton>
+                </div>
+              ) : null}
+
+              {sendSummary ? (
+                <div className="mt-3 rounded border bg-emerald-50 p-3 text-sm">
+                  <p>Links sent: {sendSummary.sent}</p>
+                  <p>Failed: {sendSummary.failed?.length || 0}</p>
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+
+          {activeMenu === "requests" ? (
+            <section className="mt-4 rounded border p-4">
+              <p className="text-sm font-semibold">Ticket requests</p>
+              <div className="mt-3 space-y-2">
+                {ticketRequests.map((item) => (
+                  <article key={item.id} className="rounded border bg-white p-3 text-sm">
+                    <p className="font-semibold">{item.name}</p>
+                    <p className="mt-1">Quantity: {item.quantity}</p>
+                    <p className="mt-1">Promoter: {item.promoter?.name || "-"}</p>
+                    <p className="mt-1">Status: {item.status}</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <AppButton className="px-2 py-1 text-xs" variant="success" onClick={() => approveRequest(item.id)}>Approve</AppButton>
+                      <AppButton className="px-2 py-1 text-xs" variant="danger" onClick={() => rejectRequest(item.id)}>Reject</AppButton>
+                    </div>
+                  </article>
+                ))}
+                {!ticketRequests.length ? <p className="text-sm text-slate-500">No ticket requests yet.</p> : null}
+              </div>
+            </section>
+          ) : null}
+
+          {activeMenu === "promoters" ? (
+            <section className="mt-4 rounded border p-4">
+              <p className="text-sm font-semibold">Promoters</p>
+              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <input className="rounded border p-2" placeholder="Name" value={promoterForm.name} onChange={(e) => setPromoterForm((prev) => ({ ...prev, name: e.target.value }))} />
+                <input className="rounded border p-2" placeholder="Code (optional)" value={promoterForm.code} onChange={(e) => setPromoterForm((prev) => ({ ...prev, code: e.target.value }))} />
+              </div>
+              <AppButton className="mt-3" onClick={addPromoter}>Add Promoter</AppButton>
+
+              <div className="mt-4 space-y-2">
+                {promoters.map((promoter) => (
+                  <article key={promoter.id} className="rounded border bg-white p-3 text-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-semibold">{promoter.name}</p>
+                      <p className="font-mono text-xs">{promoter.code}</p>
+                    </div>
+                    <p className="mt-1 break-all text-xs">{promoter.link}</p>
+                    <p className="mt-1 text-xs">Requests: {promoter.requestCount} | Approved: {promoter.approvedTickets} | Scanned: {promoter.scannedEntries}</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button className="rounded border px-2 py-1 text-xs" onClick={() => navigator.clipboard.writeText(promoter.link)}>Copy Link</button>
+                      <button className="rounded border px-2 py-1 text-xs" onClick={() => deletePromoter(promoter.id)}>Delete</button>
+                    </div>
+                  </article>
+                ))}
+                {!promoters.length ? <p className="text-sm text-slate-500">No promoters yet.</p> : null}
+              </div>
+
+              <div className="mt-4 rounded border bg-white p-3 text-sm">
+                <p className="font-semibold">Promoter Leaderboard</p>
+                <div className="mt-2 space-y-1">
+                  {leaderboard.map((row, index) => (
+                    <div key={row.promoterId} className="flex items-center justify-between rounded border p-2">
+                      <p>{index + 1}. {row.name}</p>
+                      <p className="font-semibold">{row.ticketsSold}</p>
+                    </div>
+                  ))}
+                  {!leaderboard.length ? <p className="text-slate-500">No data yet.</p> : null}
+                </div>
+              </div>
+            </section>
+          ) : null}
         </>
       ) : null}
     </main>

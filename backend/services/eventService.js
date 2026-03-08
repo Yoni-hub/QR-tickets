@@ -28,20 +28,44 @@ function resolveEventDate(payload) {
   return new Date();
 }
 
+function slugify(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "")
+    .slice(0, 72);
+}
+
+async function generateEventSlug(eventName) {
+  const base = slugify(eventName) || "event";
+  let slug = base;
+  let index = 2;
+  while (true) {
+    const exists = await prisma.userEvent.findUnique({ where: { slug } });
+    if (!exists) return slug;
+    slug = `${base}-${index}`;
+    index += 1;
+  }
+}
+
 async function createEvent(payload, isDemo = false) {
-  const quantity = Math.max(1, Number.parseInt(payload.quantity, 10) || 1);
+  const requestedQuantity = Number.parseInt(payload.quantity, 10);
+  const quantity = payload.generateAccessOnly ? 0 : Math.max(1, Number.isFinite(requestedQuantity) ? requestedQuantity : 1);
   const accessCode = await generateAccessCode(async (code) => {
     const existing = await prisma.userEvent.findUnique({ where: { accessCode: code } });
     return !existing;
   });
 
+  const slug = await generateEventSlug(payload.eventSlug || payload.eventName || "event");
   const event = await prisma.userEvent.create({
     data: {
       eventName: payload.eventName || "QR Tickets Demo Event",
       eventDate: resolveEventDate(payload),
       eventAddress: payload.eventAddress || "Demo Venue",
+      slug,
       ticketType: payload.ticketType || null,
       ticketPrice: payload.ticketPrice ? Number(payload.ticketPrice) : null,
+      paymentInstructions: String(payload.paymentInstructions || "").trim() || null,
       designJson:
         payload.designJson && typeof payload.designJson === "object" ? payload.designJson : null,
       quantity,
@@ -66,7 +90,9 @@ async function createEvent(payload, isDemo = false) {
     });
   }
 
-  await prisma.ticket.createMany({ data: tickets });
+  if (tickets.length) {
+    await prisma.ticket.createMany({ data: tickets });
+  }
   return { eventId: event.id, accessCode };
 }
 

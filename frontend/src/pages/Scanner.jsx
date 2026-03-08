@@ -31,6 +31,7 @@ export default function Scanner() {
   const [accessCode, setAccessCode] = useState(params.get("code") || "");
   const [ticketPublicId, setTicketPublicId] = useState("");
   const [result, setResult] = useState("READY");
+  const [scanDetails, setScanDetails] = useState(null);
   const [feedback, setFeedback] = useState({ kind: "", message: "" });
   const [checking, setChecking] = useState(false);
   const [cameraActionLoading, setCameraActionLoading] = useState("");
@@ -55,6 +56,7 @@ export default function Scanner() {
       );
       const nextResult = response.data.result || "INVALID";
       setResult(nextResult);
+      setScanDetails(response.data.ticket || null);
 
       if (nextResult === "VALID") {
         setFeedback({ kind: "success", message: "Ticket validated." });
@@ -66,6 +68,7 @@ export default function Scanner() {
     } catch (requestError) {
       setFeedback({ kind: "error", message: requestError.response?.data?.error || "Scan failed." });
       setResult("ERROR");
+      setScanDetails(null);
     } finally {
       setChecking(false);
     }
@@ -215,6 +218,13 @@ export default function Scanner() {
       <div id={SCANNER_ID} className="mt-4 overflow-hidden rounded border bg-white [&_canvas]:max-w-full [&_video]:max-w-full" />
       <FeedbackBanner className="mt-2" kind={feedback.kind} message={feedback.message} />
       <div className={`mt-5 break-words rounded border p-4 text-center text-3xl font-bold sm:p-6 sm:text-4xl ${stateClass}`}>{result}</div>
+      {scanDetails ? (
+        <div className="mt-3 rounded border bg-white p-3 text-sm">
+          <p><span className="font-semibold">Name:</span> {scanDetails.attendeeName || "-"}</p>
+          <p><span className="font-semibold">Tickets:</span> {scanDetails.quantity || 1}</p>
+          <p><span className="font-semibold">Promoter:</span> {scanDetails.promoterName || "-"}</p>
+        </div>
+      ) : null}
     </main>
   );
 }
