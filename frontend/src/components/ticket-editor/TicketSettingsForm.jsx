@@ -1,5 +1,4 @@
 import AppButton from "../ui/AppButton";
-const TICKET_TYPES = ["General", "VIP", "VVIP"];
 
 export default function TicketSettingsForm({ settings, onSettingsChange }) {
   const onTicketGroupChange = (index, field, value) => {
@@ -11,19 +10,8 @@ export default function TicketSettingsForm({ settings, onSettingsChange }) {
     }));
   };
 
-  const getAvailableTypes = (index) => {
-    const selectedByOthers = new Set(
-      settings.ticketGroups.filter((_, i) => i !== index).map((group) => group.ticketType),
-    );
-    return TICKET_TYPES.filter(
-      (type) => type === settings.ticketGroups[index].ticketType || !selectedByOthers.has(type),
-    );
-  };
-
   const addMoreTicketTypes = () => {
-    const selected = new Set(settings.ticketGroups.map((group) => group.ticketType));
-    const nextType = TICKET_TYPES.find((type) => !selected.has(type));
-    if (!nextType) return;
+    const nextType = `Type ${settings.ticketGroups.length + 1}`;
     onSettingsChange((prev) => ({
       ...prev,
       ticketGroups: [...prev.ticketGroups, { ticketType: nextType, ticketPrice: "0", quantity: "1" }],
@@ -46,7 +34,7 @@ export default function TicketSettingsForm({ settings, onSettingsChange }) {
     .join(" & ");
 
   return (
-    <section className="mt-6 rounded-xl border bg-white p-4">
+    <section className="mt-6">
       <h2 className="text-lg font-semibold">Ticket settings</h2>
 
       <div className="mt-4 space-y-3">
@@ -57,20 +45,16 @@ export default function TicketSettingsForm({ settings, onSettingsChange }) {
         </div>
 
         {settings.ticketGroups.map((group, index) => (
-          <div key={group.ticketType} className="grid grid-cols-1 gap-2 rounded border p-3 sm:grid-cols-3">
+          <div key={`${index}-${group.ticketType}`} className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             <div>
               <label className="mb-1 block text-xs font-medium sm:text-sm">Ticket type</label>
-              <select
+              <input
                 className="w-full rounded border p-2 text-sm"
+                type="text"
                 value={group.ticketType}
                 onChange={(event) => onTicketGroupChange(index, "ticketType", event.target.value)}
-              >
-                {getAvailableTypes(index).map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
-              </select>
+                placeholder="e.g. Early Bird / VIP Table / Guest List"
+              />
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium sm:text-sm">Ticket price</label>
@@ -100,7 +84,6 @@ export default function TicketSettingsForm({ settings, onSettingsChange }) {
             type="button"
             variant="secondary"
             onClick={addMoreTicketTypes}
-            disabled={settings.ticketGroups.length >= TICKET_TYPES.length}
           >
             Add more ticket types
           </AppButton>

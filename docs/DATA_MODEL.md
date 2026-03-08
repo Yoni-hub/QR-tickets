@@ -12,6 +12,9 @@
 ## Ticket
 - `ticketPublicId` (unique)
 - `qrPayload` (always `${PUBLIC_BASE_URL}/t/${ticketPublicId}`)
+- `ticketType` (per-ticket type label)
+- `ticketPrice` (per-ticket price)
+- `designJson` (per-ticket design snapshot; supports per-type header image/text styling)
 - attendee fields: `attendeeName`, `attendeeEmail`, `attendeePhone`
 - optional links: `promoterId`, `ticketRequestId`
 - `status`: `UNUSED` | `USED`
@@ -41,7 +44,7 @@
 
 ## TicketRequest
 - created from public event page requests
-- fields: `eventId`, `name`, `phone`, `email`, `quantity`, `promoterId`
+- fields: `eventId`, `name`, `phone`, `email`, `ticketType`, `ticketPrice`, `totalPrice`, `quantity`, `promoterId`
 - `status`: `PENDING_PAYMENT` | `APPROVED` | `REJECTED`
 - approved requests generate tickets linked by `ticketRequestId`
 

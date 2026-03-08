@@ -37,6 +37,9 @@ model Ticket {
   eventId        String
   ticketPublicId String       @unique
   qrPayload      String
+  ticketType     String?
+  ticketPrice    Decimal?     @db.Decimal(10, 2)
+  designJson     Json?
   attendeeName   String?
   attendeePhone  String?
   attendeeEmail  String?
@@ -142,6 +145,11 @@ model TicketRequest {
   name       String
   phone      String?
   email      String?
+  ticketType String?
+  ticketPrice Decimal? @db.Decimal(10, 2)
+  totalPrice Decimal? @db.Decimal(10, 2)
+  ticketSelections Json?
+  evidenceImageDataUrl String?
   quantity   Int
   promoterId String?
   status     TicketRequestStatus @default(PENDING_PAYMENT)

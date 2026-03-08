@@ -221,6 +221,8 @@ export default function Scanner() {
       {scanDetails ? (
         <div className="mt-3 rounded border bg-white p-3 text-sm">
           <p><span className="font-semibold">Name:</span> {scanDetails.attendeeName || "-"}</p>
+          <p><span className="font-semibold">Type:</span> {scanDetails.ticketType || "-"}</p>
+          <p><span className="font-semibold">Price:</span> {scanDetails.ticketPrice != null ? `$${Number(scanDetails.ticketPrice).toFixed(2)}` : "-"}</p>
           <p><span className="font-semibold">Tickets:</span> {scanDetails.quantity || 1}</p>
           <p><span className="font-semibold">Promoter:</span> {scanDetails.promoterName || "-"}</p>
         </div>

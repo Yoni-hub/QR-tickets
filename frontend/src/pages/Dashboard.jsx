@@ -12,8 +12,8 @@ const DELIVERY_METHODS = {
 };
 
 const DASHBOARD_MENUS = [
-  { id: "events", label: "Events" },
   { id: "tickets", label: "Tickets" },
+  { id: "events", label: "Events" },
   { id: "delivery", label: "Delivery Method" },
   { id: "requests", label: "Ticket Requests" },
   { id: "promoters", label: "Promoters" },
@@ -124,15 +124,24 @@ function toLocalDateTimeInputValue(value) {
   return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
 }
 
+function normalizeTicketPrice(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 export default function Dashboard() {
   const [params, setParams] = useSearchParams();
-  const [activeMenu, setActiveMenu] = useState("events");
+  const [activeMenu, setActiveMenu] = useState("tickets");
   const [code, setCode] = useState(params.get("code") || "");
   const [showPublicPreview, setShowPublicPreview] = useState(false);
   const [ticketPage, setTicketPage] = useState(1);
+  const [ticketTypeFilter, setTicketTypeFilter] = useState("ALL");
   const [summary, setSummary] = useState(null);
-  const [eventDraft, setEventDraft] = useState({ eventName: "", eventDate: "", eventAddress: "" });
+  const [eventDraft, setEventDraft] = useState({ eventName: "", eventDate: "", eventAddress: "", paymentInstructions: "" });
   const [savingEvent, setSavingEvent] = useState(false);
+  const [savingTicketDraft, setSavingTicketDraft] = useState(false);
   const [tickets, setTickets] = useState([]);
   const [ticketRequests, setTicketRequests] = useState([]);
   const [promoters, setPromoters] = useState([]);
@@ -158,7 +167,7 @@ export default function Dashboard() {
     eventName: summary?.event?.eventName || "Your Event",
     eventDate: summary?.event?.eventDate ? new Date(summary.event.eventDate).toLocaleString() : "Event date",
     eventAddress: summary?.event?.eventAddress || "Event address",
-    ticketType: summary?.event?.ticketType || "General",
+    ticketType: tickets[0]?.ticketType || summary?.event?.ticketType || "General",
     ticketUrl: `${window.location.origin}/t/${sampleTicketPublicId}`,
     recipientEmail: sampleRecipient,
   };
@@ -170,11 +179,31 @@ export default function Dashboard() {
       : renderEmailHtmlPreview(previewBody, sampleData.ticketUrl);
 
   const accessCode = useMemo(() => summary?.event?.accessCode || code.trim(), [summary, code]);
-  const totalTicketPages = Math.max(1, Math.ceil(tickets.length / 5));
-  const pagedTickets = tickets.slice((ticketPage - 1) * 5, ticketPage * 5);
+  const ticketTypeOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          tickets
+            .map((ticket) => String(ticket.ticketType || summary?.event?.ticketType || "General").trim())
+            .filter(Boolean),
+        ),
+      ),
+    [tickets, summary?.event?.ticketType],
+  );
+  const filteredTickets = useMemo(() => {
+    if (ticketTypeFilter === "ALL") return tickets;
+    return tickets.filter(
+      (ticket) => String(ticket.ticketType || summary?.event?.ticketType || "General").trim() === ticketTypeFilter,
+    );
+  }, [tickets, ticketTypeFilter, summary?.event?.ticketType]);
+  const totalTicketPages = Math.max(1, Math.ceil(filteredTickets.length / 5));
+  const pagedTickets = filteredTickets.slice((ticketPage - 1) * 5, ticketPage * 5);
   useEffect(() => {
     if (ticketPage > totalTicketPages) setTicketPage(totalTicketPages);
   }, [ticketPage, totalTicketPages]);
+  useEffect(() => {
+    setTicketPage(1);
+  }, [ticketTypeFilter]);
 
   const loadRequestsAndPromoters = async (targetCode) => {
     if (!targetCode) return;
@@ -200,7 +229,10 @@ export default function Dashboard() {
         eventName: String(summaryRes.data?.event?.eventName || ""),
         eventDate: toLocalDateTimeInputValue(summaryRes.data?.event?.eventDate),
         eventAddress: String(summaryRes.data?.event?.eventAddress || ""),
+        paymentInstructions: String(summaryRes.data?.event?.paymentInstructions || ""),
       });
+      setTicketTypeFilter("ALL");
+      setActiveMenu("tickets");
       setShowPublicPreview(false);
       setTicketPage(1);
       const ticketsRes = await api.get(`/events/${summaryRes.data.event.id}/tickets`);
@@ -214,6 +246,7 @@ export default function Dashboard() {
       setTicketRequests([]);
       setPromoters([]);
       setLeaderboard([]);
+      setTicketTypeFilter("ALL");
     } finally {
       setLoading(false);
     }
@@ -360,6 +393,7 @@ export default function Dashboard() {
         eventName: eventDraft.eventName,
         eventDate: eventDraft.eventDate,
         eventAddress: eventDraft.eventAddress,
+        paymentInstructions: eventDraft.paymentInstructions,
       });
       setSummary((prev) => {
         if (!prev) return prev;
@@ -370,6 +404,67 @@ export default function Dashboard() {
       setFeedback({ kind: "error", message: requestError.response?.data?.error || "Could not update event." });
     } finally {
       setSavingEvent(false);
+    }
+  };
+
+  const applyTicketEditorDraft = (draft) => {
+    if (!draft) return;
+    setSummary((prev) => {
+      if (!prev?.event) return prev;
+      return {
+        ...prev,
+        event: {
+          ...prev.event,
+          eventName: draft.eventName || prev.event.eventName,
+          eventAddress: draft.eventAddress || prev.event.eventAddress,
+          ...(draft.eventDate ? { eventDate: draft.eventDate } : {}),
+          ticketType: draft.ticketType || prev.event.ticketType,
+          ticketPrice: normalizeTicketPrice(draft.ticketPrice),
+          ...(draft.designJson ? { designJson: draft.designJson } : {}),
+        },
+      };
+    });
+
+    setEventDraft((prev) => ({
+      ...prev,
+      ...(draft.eventName ? { eventName: draft.eventName } : {}),
+      ...(draft.eventAddress ? { eventAddress: draft.eventAddress } : {}),
+      ...(draft.eventDate ? { eventDate: toLocalDateTimeInputValue(draft.eventDate) } : {}),
+    }));
+  };
+
+  const saveTicketEditorDraft = async (draft) => {
+    if (!summary?.event?.id || !accessCode || savingTicketDraft) return;
+    setSavingTicketDraft(true);
+    try {
+      const payload = {
+        accessCode,
+        eventName: draft?.eventName || summary.event.eventName,
+        eventAddress: draft?.eventAddress || summary.event.eventAddress,
+        ticketType: draft?.ticketType || summary.event.ticketType || "",
+        ticketPrice: draft?.ticketPrice ?? summary.event.ticketPrice ?? "",
+        designJson: draft?.designJson || summary.event.designJson || null,
+      };
+      if (draft?.eventDate) {
+        payload.eventDate = draft.eventDate;
+      }
+
+      const response = await api.patch(`/events/${summary.event.id}`, payload);
+      setSummary((prev) => {
+        if (!prev) return prev;
+        return { ...prev, event: { ...prev.event, ...response.data.event } };
+      });
+      setEventDraft({
+        eventName: String(response.data?.event?.eventName || ""),
+        eventDate: toLocalDateTimeInputValue(response.data?.event?.eventDate),
+        eventAddress: String(response.data?.event?.eventAddress || ""),
+        paymentInstructions: String(response.data?.event?.paymentInstructions || ""),
+      });
+      setFeedback({ kind: "success", message: "Ticket editor changes saved." });
+    } catch (requestError) {
+      setFeedback({ kind: "error", message: requestError.response?.data?.error || "Could not save ticket changes." });
+    } finally {
+      setSavingTicketDraft(false);
     }
   };
 
@@ -425,6 +520,14 @@ export default function Dashboard() {
                   value={eventDraft.eventAddress}
                   onChange={(e) => setEventDraft((prev) => ({ ...prev, eventAddress: e.target.value }))}
                 />
+                <p className="font-semibold">Payment:</p>
+                <textarea
+                  className="w-full rounded border p-2 text-sm"
+                  rows={3}
+                  placeholder="How should clients pay? (e.g. CashApp $..., Zelle ..., bank transfer...)"
+                  value={eventDraft.paymentInstructions}
+                  onChange={(e) => setEventDraft((prev) => ({ ...prev, paymentInstructions: e.target.value }))}
+                />
               </div>
               <AppButton className="mt-3" onClick={saveEventInline} loading={savingEvent} loadingText="Saving...">
                 Save Event
@@ -451,11 +554,11 @@ export default function Dashboard() {
                     className="inline-flex rounded border bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                     onClick={() => setShowPublicPreview((prev) => !prev)}
                   >
-                    {showPublicPreview ? "Hide" : "Preview Public Ticket Page"}
+                    {showPublicPreview ? "Hide" : "Preview Public Event Page"}
                   </button>
                   {showPublicPreview ? (
                     <div className="max-w-xl rounded border bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Public Ticket Page Sample</p>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Public Event Page Sample</p>
                       <h3 className="mt-2 text-xl font-bold">{eventDraft.eventName || summary.event.eventName}</h3>
                       <p className="mt-1 text-sm text-slate-600">{formatDate(eventDraft.eventDate || summary.event.eventDate)} | {eventDraft.eventAddress || summary.event.eventAddress}</p>
                       <p className="mt-1 text-sm">Price: {summary.event.ticketPrice ? `$${summary.event.ticketPrice}` : "Ask organizer"}</p>
@@ -483,6 +586,7 @@ export default function Dashboard() {
             <section className="mt-4 rounded border p-4">
               <div className="mb-5">
                 <TicketEditor
+                  key={summary.event.id}
                   mode="append_to_event"
                   accessCode={accessCode}
                   eventId={summary.event.id}
@@ -492,6 +596,9 @@ export default function Dashboard() {
                   initialTicketType={summary.event.ticketType || "General"}
                   initialTicketPrice={summary.event.ticketPrice || ""}
                   onGenerated={handleTicketsGenerated}
+                  onDraftChange={applyTicketEditorDraft}
+                  onSave={saveTicketEditorDraft}
+                  saveLoading={savingTicketDraft}
                 />
               </div>
               <div className="mb-3 grid grid-cols-3 gap-2">
@@ -499,7 +606,24 @@ export default function Dashboard() {
                 <div className="rounded border bg-white p-2 text-center"><p className="text-[10px] uppercase text-slate-500">Scanned</p><p className="text-lg font-bold leading-none">{summary.scannedTickets}</p></div>
                 <div className="rounded border bg-white p-2 text-center"><p className="text-[10px] uppercase text-slate-500">Remaining</p><p className="text-lg font-bold leading-none">{summary.remainingTickets}</p></div>
               </div>
-              <p className="text-sm font-semibold">Tickets setting</p>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm font-semibold">Generated tickets</p>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-medium text-slate-600">Filter type</label>
+                  <select
+                    className="rounded border p-1.5 text-xs"
+                    value={ticketTypeFilter}
+                    onChange={(event) => setTicketTypeFilter(event.target.value)}
+                  >
+                    <option value="ALL">All types</option>
+                    {ticketTypeOptions.map((type) => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
               <div className="mt-3 space-y-3 lg:hidden">
                 {pagedTickets.map((ticket) => (
                   <article key={ticket.ticketPublicId} className="rounded border bg-white p-3 text-sm">
@@ -511,13 +635,14 @@ export default function Dashboard() {
                     </div>
                     <div className="mt-1 grid grid-cols-[2.3fr_1fr_1fr_1fr] gap-2 text-xs text-slate-900">
                       <p className="break-all font-mono">{ticket.ticketPublicId}</p>
-                      <p>{summary.event.ticketType || "General"}</p>
+                      <p>{ticket.ticketType || summary.event.ticketType || "General"}</p>
                       <p>{ticket.status}</p>
                       <p>{formatDate(ticket.scannedAt)}</p>
                     </div>
                     <button className="mt-2 rounded border px-2 py-1 text-xs" onClick={() => copyTicketUrl(ticket.ticketPublicId)}>Copy</button>
                   </article>
                 ))}
+                {!pagedTickets.length ? <p className="text-sm text-slate-500">No tickets for selected type.</p> : null}
               </div>
               <div className="mt-3 hidden overflow-x-auto rounded border lg:block">
                 <table className="w-full min-w-[760px] text-left text-sm">
@@ -526,12 +651,17 @@ export default function Dashboard() {
                     {pagedTickets.map((ticket) => (
                       <tr key={ticket.ticketPublicId} className="border-t">
                         <td className="break-all p-2 font-mono">{ticket.ticketPublicId}</td>
-                        <td className="p-2">{summary.event.ticketType || "General"}</td>
+                        <td className="p-2">{ticket.ticketType || summary.event.ticketType || "General"}</td>
                         <td className="p-2">{ticket.status}</td>
                         <td className="p-2">{formatDate(ticket.scannedAt)}</td>
                         <td className="p-2"><button className="rounded border px-2 py-1 text-xs" onClick={() => copyTicketUrl(ticket.ticketPublicId)}>Copy</button></td>
                       </tr>
                     ))}
+                    {!pagedTickets.length ? (
+                      <tr className="border-t">
+                        <td className="p-3 text-slate-500" colSpan={5}>No tickets for selected type.</td>
+                      </tr>
+                    ) : null}
                   </tbody>
                 </table>
               </div>
@@ -628,20 +758,58 @@ export default function Dashboard() {
           {activeMenu === "requests" ? (
             <section className="mt-4 rounded border p-4">
               <p className="text-sm font-semibold">Ticket requests</p>
-              <div className="mt-3 space-y-2">
-                {ticketRequests.map((item) => (
-                  <article key={item.id} className="rounded border bg-white p-3 text-sm">
-                    <p className="font-semibold">{item.name}</p>
-                    <p className="mt-1">Quantity: {item.quantity}</p>
-                    <p className="mt-1">Promoter: {item.promoter?.name || "-"}</p>
-                    <p className="mt-1">Status: {item.status}</p>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <AppButton className="px-2 py-1 text-xs" variant="success" onClick={() => approveRequest(item.id)}>Approve</AppButton>
-                      <AppButton className="px-2 py-1 text-xs" variant="danger" onClick={() => rejectRequest(item.id)}>Reject</AppButton>
-                    </div>
-                  </article>
-                ))}
-                {!ticketRequests.length ? <p className="text-sm text-slate-500">No ticket requests yet.</p> : null}
+              <div className="mt-3 overflow-x-auto rounded border">
+                <table className="w-full min-w-[900px] text-left text-sm">
+                  <thead className="bg-slate-100">
+                    <tr>
+                      <th className="p-2">Name</th>
+                      <th className="p-2">Email</th>
+                      <th className="p-2">Ticket Types</th>
+                      <th className="p-2">Quantity</th>
+                      <th className="p-2">Evidence</th>
+                      <th className="p-2">Status</th>
+                      <th className="p-2">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ticketRequests.map((item) => {
+                      const selections = Array.isArray(item.ticketSelections) ? item.ticketSelections : [];
+                      return (
+                        <tr key={item.id} className="border-t align-top">
+                          <td className="p-2 font-semibold">{item.name}</td>
+                          <td className="p-2">{item.email || "-"}</td>
+                          <td className="p-2">
+                            {selections.length
+                              ? selections.map((selection) => `${selection.ticketType} x${selection.quantity}`).join(", ")
+                              : item.ticketType || "-"}
+                          </td>
+                          <td className="p-2">{item.quantity}</td>
+                          <td className="p-2">
+                            {item.evidenceImageDataUrl ? (
+                              <a href={item.evidenceImageDataUrl} target="_blank" rel="noreferrer" className="inline-block">
+                                <img src={item.evidenceImageDataUrl} alt="Payment evidence" className="h-12 w-12 rounded border object-cover" />
+                              </a>
+                            ) : (
+                              "-"
+                            )}
+                          </td>
+                          <td className="p-2">{item.status}</td>
+                          <td className="p-2">
+                            <div className="flex flex-wrap gap-2">
+                              <AppButton className="px-2 py-1 text-xs" variant="success" onClick={() => approveRequest(item.id)}>Approve</AppButton>
+                              <AppButton className="px-2 py-1 text-xs" variant="danger" onClick={() => rejectRequest(item.id)}>Reject</AppButton>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {!ticketRequests.length ? (
+                      <tr>
+                        <td className="p-3 text-slate-500" colSpan={7}>No ticket requests yet.</td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
               </div>
             </section>
           ) : null}

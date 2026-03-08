@@ -17,8 +17,10 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
-function resolveTicketDesign(event) {
-  const source = event?.designJson && typeof event.designJson === "object" ? event.designJson : {};
+function resolveTicketDesign(event, ticket = null) {
+  const ticketSource = ticket?.designJson && typeof ticket.designJson === "object" ? ticket.designJson : null;
+  const eventSource = event?.designJson && typeof event.designJson === "object" ? event.designJson : {};
+  const source = ticketSource || eventSource;
   const merged = {
     ...DEFAULT_TICKET_DESIGN,
     ...source,
@@ -27,6 +29,8 @@ function resolveTicketDesign(event) {
   if (!source.eventName && event?.eventName) merged.eventName = event.eventName;
   if (!source.location && event?.eventAddress) merged.location = event.eventAddress;
   if (!source.dateTimeText && event?.eventDate) merged.dateTimeText = new Date(event.eventDate).toLocaleString();
+  if (!source.ticketTypeLabel && ticket?.ticketType) merged.ticketTypeLabel = ticket.ticketType;
+  if (!source.priceText && ticket?.ticketPrice != null) merged.priceText = String(ticket.ticketPrice);
   if (!source.ticketTypeLabel && event?.ticketType) merged.ticketTypeLabel = event.ticketType;
   if (!source.priceText && event?.ticketPrice != null) merged.priceText = String(event.ticketPrice);
   return merged;

@@ -11,6 +11,7 @@
 - `POST /api/events/by-code/:accessCode/guests`
 - `POST /api/events/by-code/:accessCode/guests/bulk`
 - `GET /api/events/:eventId/tickets`
+  - returns ticket-level fields including `ticketType` and `ticketPrice`
 - `GET /api/events/:eventId/tickets.pdf`
   - optional query param: `perPage` (`1` | `2` | `3` | `4`) for PDF ticket count per page (default `2`)
 
@@ -23,6 +24,7 @@
 
 ## Public Request APIs
 - `GET /api/public/events/:eventSlug`
+  - returns `event.ticketTypes[]` with `{ ticketType, price, ticketsRemaining }`
 - `POST /api/public/ticket-request`
 
 ## Organizer Request/Promoter APIs
@@ -35,8 +37,9 @@
 Public ticket request body:
 - `eventSlug: string` (required)
 - `name: string` (required)
+- `email: string` (required)
 - `phone?: string`
-- `email?: string`
+- `ticketType: string` (required)
 - `quantity: number` (>= 1)
 - `promoterCode?: string`
 
@@ -50,6 +53,9 @@ Send-links request body:
 - `baseUrl: string` (optional)
 - `emailSubject: string` (optional, supports placeholders: `{{eventName}}`, `{{eventDate}}`, `{{eventAddress}}`, `{{ticketType}}`, `{{ticketUrl}}`, `{{recipientEmail}}`)
 - `emailBody: string` (optional, same placeholders as subject)
+
+Delivery behavior:
+- `POST /api/orders/:accessCode/send-links` now resolves `{{ticketType}}` from each assigned ticket first, then falls back to event-level `ticketType`.
 
 ## Scan API
 - `POST /api/scans`
