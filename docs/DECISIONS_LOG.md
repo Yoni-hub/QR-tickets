@@ -24,3 +24,23 @@
 - Context: Duplicate local repositories caused path confusion and risk of editing the wrong copy.
 - Decision: Treat `C:\Users\yonat\Downloads\QR_Tickets` as the single active working repository; `C:\Users\yonat\OneDrive\Desktop\QR_Tickets` is archived/read-only unless explicitly requested.
 - Consequence: All future implementation and context loading default to the Downloads repository path.
+
+## DEC-006 (2026-03-08)
+- Context: Need internal system-level controls without introducing full auth/roles yet.
+- Decision: Protect admin APIs with an environment-driven shared key (`ADMIN_PANEL_KEY`) using `x-admin-key` middleware.
+- Consequence: Admin panel is usable immediately for internal operations, with a clear migration path to role-based auth later.
+
+## DEC-007 (2026-03-08)
+- Context: Club/nightlife workflows require manual payment confirmation before ticket issuance.
+- Decision: Introduce `TicketRequest` lifecycle (`PENDING_PAYMENT`, `APPROVED`, `REJECTED`) and issue tickets only on organizer approval.
+- Consequence: Payment remains off-platform while ticket issuance is controlled and auditable.
+
+## DEC-008 (2026-03-08)
+- Context: Promoter-led sales links need attribution for requests, approvals, and door scans.
+- Decision: Add per-event `Promoter` entities with referral links (`/e/:slug?ref=:code`) and attach promoter IDs to ticket requests and tickets.
+- Consequence: Dashboard can show promoter leaderboard and operational metrics without changing scan rules.
+
+## DEC-009 (2026-03-08)
+- Context: Access control and operator workflow center on event access codes, not account identities.
+- Decision: Keep all organizer operational actions scoped to event `accessCode` (ticket generation, requests, promoters, guest import).
+- Consequence: Every dashboard action is bound to the currently loaded event context and avoids cross-event leakage.
