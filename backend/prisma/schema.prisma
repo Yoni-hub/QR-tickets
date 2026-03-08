@@ -15,6 +15,9 @@ model UserEvent {
   ticketType  String?
   ticketPrice Decimal?    @db.Decimal(10, 2)
   designJson  Json?
+  adminStatus EventAdminStatus @default(ACTIVE)
+  adminDisabledAt DateTime?
+  archivedAt  DateTime?
   quantity    Int
   accessCode  String      @unique
   isDemo      Boolean     @default(false)
@@ -22,6 +25,7 @@ model UserEvent {
   updatedAt   DateTime    @updatedAt
   tickets     Ticket[]
   scanRecords ScanRecord[]
+  auditLogs   AdminAuditLog[]
 }
 
 model Ticket {
@@ -30,12 +34,15 @@ model Ticket {
   ticketPublicId String       @unique
   qrPayload      String
   status         TicketStatus @default(UNUSED)
+  isInvalidated  Boolean      @default(false)
+  invalidatedAt  DateTime?
   scannedAt      DateTime?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   event          UserEvent    @relation(fields: [eventId], references: [id], onDelete: Cascade)
   scanRecords    ScanRecord[]
   deliveries     TicketDelivery[]
+  viewLogs       TicketViewLog[]
 
   @@index([eventId])
 }
@@ -61,6 +68,10 @@ model ScanRecord {
   eventId      String
   ticketId     String?
   ticketPublicId String
+  rawScannedValue String?
+  normalizedTicketPublicId String?
+  scannerSource String?
+  note        String?
   result       ScanResult
   scannedAt    DateTime    @default(now())
   createdAt    DateTime    @default(now())
@@ -76,6 +87,12 @@ enum TicketStatus {
   USED
 }
 
+enum EventAdminStatus {
+  ACTIVE
+  DISABLED
+  ARCHIVED
+}
+
 enum ScanResult {
   VALID
   USED
@@ -89,4 +106,33 @@ enum DeliveryMethod {
 enum DeliveryStatus {
   SENT
   FAILED
+}
+
+model TicketViewLog {
+  id        String   @id @default(cuid())
+  ticketId  String
+  source    String?
+  userAgent String?
+  ipAddress String?
+  openedAt  DateTime @default(now())
+  createdAt DateTime @default(now())
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@index([openedAt])
+}
+
+model AdminAuditLog {
+  id         String   @id @default(cuid())
+  action     String
+  targetType String
+  targetId   String
+  metadata   Json?
+  eventId    String?
+  createdAt  DateTime @default(now())
+  event      UserEvent? @relation(fields: [eventId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([targetType, targetId])
+  @@index([eventId])
 }

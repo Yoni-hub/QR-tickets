@@ -24,6 +24,7 @@ async function getTicketByPublicId(req, res) {
           eventAddress: true,
           accessCode: true,
           isDemo: true,
+          adminStatus: true,
         },
       },
     },
@@ -34,10 +35,27 @@ async function getTicketByPublicId(req, res) {
     return;
   }
 
+  const source = String(req.query?.source || "public-page").trim() || "public-page";
+  const userAgent = String(req.header("user-agent") || "").slice(0, 500) || null;
+  const forwardedFor = String(req.header("x-forwarded-for") || "").split(",")[0].trim();
+  const ipAddress = forwardedFor || req.ip || null;
+  prisma.ticketViewLog
+    .create({
+      data: {
+        ticketId: ticket.id,
+        source,
+        userAgent,
+        ipAddress,
+      },
+    })
+    .catch((error) => {
+      console.error("ticket view log write failed", error);
+    });
+
   const order = {
     eventId: ticket.event.id,
     accessCode: ticket.event.accessCode,
-    status: "ACTIVE",
+    status: ticket.event.adminStatus === "ACTIVE" ? "ACTIVE" : "DISABLED",
   };
 
   res.json({ ticket, order });
@@ -48,4 +66,3 @@ async function getPublicTicketByPublicId(req, res) {
 }
 
 module.exports = { getTicketByPublicId, getPublicTicketByPublicId };
-
