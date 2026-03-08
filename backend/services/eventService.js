@@ -76,6 +76,11 @@ async function createEvent(payload, isDemo = false) {
 
   const ids = new Set();
   const tickets = [];
+  const ticketType = String(payload.ticketType || "").trim() || null;
+  const ticketPriceRaw = String(payload.ticketPrice ?? "").trim();
+  const parsedTicketPrice = ticketPriceRaw === "" ? null : Number(ticketPriceRaw);
+  const ticketPrice = Number.isFinite(parsedTicketPrice) ? parsedTicketPrice : null;
+  const designJson = payload.designJson && typeof payload.designJson === "object" ? payload.designJson : null;
   for (let index = 0; index < quantity; index += 1) {
     let ticketPublicId = generateTicketPublicId();
     while (ids.has(ticketPublicId)) {
@@ -87,6 +92,9 @@ async function createEvent(payload, isDemo = false) {
       ticketPublicId,
       qrPayload: buildQrPayload(ticketPublicId),
       status: "UNUSED",
+      ticketType,
+      ticketPrice,
+      designJson,
     });
   }
 

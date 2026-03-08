@@ -91,6 +91,7 @@ async function sendOrderTicketLinks(req, res) {
       id: true,
       ticketPublicId: true,
       status: true,
+      ticketType: true,
     },
   });
 
@@ -112,7 +113,7 @@ async function sendOrderTicketLinks(req, res) {
         eventName: event.eventName,
         eventDate: event.eventDate,
         eventAddress: event.eventAddress,
-        ticketType: event.ticketType || "General",
+        ticketType: ticket.ticketType || event.ticketType || "General",
         ticketUrl,
         subjectTemplate,
         bodyTemplate,

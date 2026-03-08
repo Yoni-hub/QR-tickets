@@ -47,6 +47,11 @@ async function getOrganizerTicketRequests(req, res) {
       name: true,
       phone: true,
       email: true,
+      ticketType: true,
+      ticketPrice: true,
+      totalPrice: true,
+      ticketSelections: true,
+      evidenceImageDataUrl: true,
       quantity: true,
       status: true,
       createdAt: true,
@@ -67,27 +72,74 @@ async function getOrganizerTicketRequests(req, res) {
   });
 }
 
+function resolveTicketDesignByType(event, ticketType, ticketPrice) {
+  const eventDesign = event.designJson && typeof event.designJson === "object" ? event.designJson : null;
+  const groups = Array.isArray(eventDesign?.ticketGroups) ? eventDesign.ticketGroups : [];
+  const group = groups.find((item) => String(item?.ticketType || "").trim() === String(ticketType || "").trim());
+  const parsedPrice = Number(ticketPrice);
+  const priceText =
+    Number.isFinite(parsedPrice) && parsedPrice > 0 ? `$${parsedPrice.toFixed(2)}` : Number.isFinite(parsedPrice) ? "Free" : "Free";
+
+  return {
+    ...(eventDesign || {}),
+    ...(group ? {
+      headerImageDataUrl: group.headerImageDataUrl || null,
+      headerOverlay: Number(group.headerOverlay ?? 0.25),
+      headerTextColorMode: String(group.headerTextColorMode || "AUTO"),
+    } : {}),
+    ticketTypeLabel: String(ticketType || event.ticketType || "General").toUpperCase(),
+    priceText,
+  };
+}
+
 async function createTicketsForRequest({ event, request }) {
   const ids = new Set();
   const rows = [];
+  const rawSelections = Array.isArray(request.ticketSelections) ? request.ticketSelections : [];
+  const normalizedSelections = rawSelections.length
+    ? rawSelections
+      .map((item) => ({
+        ticketType: String(item?.ticketType || "").trim(),
+        quantity: Math.max(0, Number.parseInt(String(item?.quantity || "0"), 10) || 0),
+        unitPrice:
+          item?.unitPrice != null
+            ? Number(item.unitPrice)
+            : request.ticketPrice != null
+              ? Number(request.ticketPrice)
+              : event.ticketPrice != null
+                ? Number(event.ticketPrice)
+                : null,
+      }))
+      .filter((item) => item.ticketType && item.quantity > 0)
+    : [{
+      ticketType: request.ticketType || event.ticketType || "General",
+      quantity: request.quantity,
+      unitPrice: request.ticketPrice != null ? Number(request.ticketPrice) : event.ticketPrice != null ? Number(event.ticketPrice) : null,
+    }];
 
-  for (let index = 0; index < request.quantity; index += 1) {
-    let ticketPublicId = generateTicketPublicId();
-    while (ids.has(ticketPublicId)) {
-      ticketPublicId = generateTicketPublicId();
+  for (const selection of normalizedSelections) {
+    const resolvedDesign = resolveTicketDesignByType(event, selection.ticketType, selection.unitPrice);
+    for (let index = 0; index < selection.quantity; index += 1) {
+      let ticketPublicId = generateTicketPublicId();
+      while (ids.has(ticketPublicId)) {
+        ticketPublicId = generateTicketPublicId();
+      }
+      ids.add(ticketPublicId);
+      rows.push({
+        eventId: event.id,
+        ticketPublicId,
+        qrPayload: buildQrPayload(ticketPublicId),
+        status: "UNUSED",
+        ticketType: selection.ticketType,
+        ticketPrice: selection.unitPrice,
+        designJson: resolvedDesign,
+        attendeeName: request.name,
+        attendeePhone: request.phone,
+        attendeeEmail: request.email,
+        promoterId: request.promoterId,
+        ticketRequestId: request.id,
+      });
     }
-    ids.add(ticketPublicId);
-    rows.push({
-      eventId: event.id,
-      ticketPublicId,
-      qrPayload: buildQrPayload(ticketPublicId),
-      status: "UNUSED",
-      attendeeName: request.name,
-      attendeePhone: request.phone,
-      attendeeEmail: request.email,
-      promoterId: request.promoterId,
-      ticketRequestId: request.id,
-    });
   }
 
   await prisma.ticket.createMany({ data: rows });
@@ -111,7 +163,7 @@ async function deliverApprovedTickets({ event, request, tickets }) {
         eventName: event.eventName,
         eventDate: event.eventDate,
         eventAddress: event.eventAddress,
-        ticketType: event.ticketType || "General",
+        ticketType: request.ticketType || event.ticketType || "General",
         ticketUrl: firstTicketUrl,
       });
 
@@ -192,6 +244,10 @@ async function approveTicketRequest(req, res) {
       id: true,
       status: true,
       quantity: true,
+      ticketType: true,
+      ticketPrice: true,
+      totalPrice: true,
+      ticketSelections: true,
       name: true,
       phone: true,
       email: true,

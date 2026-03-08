@@ -10,6 +10,26 @@ const {
   resolveTicketDesign,
 } = require("../services/ticketTemplate");
 
+function slugify(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "")
+    .slice(0, 72);
+}
+
+async function generateEventSlug(eventName, currentEventId = "") {
+  const base = slugify(eventName) || "event";
+  let slug = base;
+  let index = 2;
+  while (true) {
+    const existing = await prisma.userEvent.findUnique({ where: { slug } });
+    if (!existing || existing.id === currentEventId) return slug;
+    slug = `${base}-${index}`;
+    index += 1;
+  }
+}
+
 async function createLiveEvent(req, res) {
   try {
     const data = await createEvent(req.body || {}, false);
@@ -87,7 +107,14 @@ async function getEventTickets(req, res) {
   const tickets = await prisma.ticket.findMany({
     where: { eventId },
     orderBy: { createdAt: "asc" },
-    select: { ticketPublicId: true, status: true, scannedAt: true, qrPayload: true },
+    select: {
+      ticketPublicId: true,
+      status: true,
+      scannedAt: true,
+      qrPayload: true,
+      ticketType: true,
+      ticketPrice: true,
+    },
   });
 
   res.json({ eventId, tickets });
@@ -95,7 +122,6 @@ async function getEventTickets(req, res) {
 
 async function generateTicketsByAccessCode(req, res) {
   const accessCode = (req.params.accessCode || "").trim();
-  const quantity = Math.max(1, Number.parseInt(String(req.body?.quantity || "1"), 10) || 1);
   if (!accessCode) {
     res.status(400).json({ error: "accessCode is required." });
     return;
@@ -114,43 +140,87 @@ async function generateTicketsByAccessCode(req, res) {
   const eventAddress = String(req.body?.eventAddress || "").trim();
   const rawEventDate = String(req.body?.eventDateTime || req.body?.dateTimeText || "").trim();
   const parsedEventDate = rawEventDate ? new Date(rawEventDate) : null;
-  const ticketType = String(req.body?.ticketType || "").trim();
-  const ticketPriceRaw = String(req.body?.ticketPrice || "").trim();
-  const ticketPrice = ticketPriceRaw && !Number.isNaN(Number(ticketPriceRaw)) ? Number(ticketPriceRaw) : null;
   const designJson = req.body?.designJson && typeof req.body.designJson === "object" ? req.body.designJson : null;
+  const designGroups = Array.isArray(designJson?.ticketGroups) ? designJson.ticketGroups : [];
+
+  const fallbackQuantity = Math.max(1, Number.parseInt(String(req.body?.quantity || "1"), 10) || 1);
+  const fallbackType = String(req.body?.ticketType || "").trim();
+  const fallbackPriceRaw = String(req.body?.ticketPrice || "").trim();
+
+  const normalizedGroups = (designGroups.length ? designGroups : [{
+    ticketType: fallbackType || "General",
+    ticketPrice: fallbackPriceRaw,
+    quantity: String(fallbackQuantity),
+    headerImageDataUrl: designJson?.headerImageDataUrl || null,
+    headerOverlay: designJson?.headerOverlay ?? 0.25,
+    headerTextColorMode: designJson?.headerTextColorMode || "AUTO",
+  }])
+    .map((group, index) => {
+      const quantity = Math.max(1, Number.parseInt(String(group?.quantity || "1"), 10) || 1);
+      const ticketType = String(group?.ticketType || "").trim() || `Type ${index + 1}`;
+      const ticketPriceRaw = String(group?.ticketPrice ?? "").trim();
+      const parsedPrice = ticketPriceRaw === "" ? null : Number(ticketPriceRaw);
+      const ticketPrice = Number.isFinite(parsedPrice) ? parsedPrice : null;
+      const resolvedPriceText = ticketPriceRaw
+        ? Number.isFinite(parsedPrice) && parsedPrice > 0
+          ? `$${parsedPrice.toFixed(2)}`
+          : ticketPriceRaw
+        : "Free";
+      return {
+        quantity,
+        ticketType,
+        ticketPrice,
+        groupDesign: {
+          ...(designJson && typeof designJson === "object" ? designJson : {}),
+          ticketTypeLabel: ticketType.toUpperCase(),
+          priceText: resolvedPriceText,
+          headerImageDataUrl: group?.headerImageDataUrl || null,
+          headerOverlay: Number(group?.headerOverlay ?? 0.25),
+          headerTextColorMode: String(group?.headerTextColorMode || "AUTO"),
+        },
+      };
+    });
 
   const ids = new Set();
   const rows = [];
-  for (let index = 0; index < quantity; index += 1) {
-    let ticketPublicId = generateTicketPublicId();
-    while (ids.has(ticketPublicId)) {
-      ticketPublicId = generateTicketPublicId();
+  for (const group of normalizedGroups) {
+    for (let index = 0; index < group.quantity; index += 1) {
+      let ticketPublicId = generateTicketPublicId();
+      while (ids.has(ticketPublicId)) {
+        ticketPublicId = generateTicketPublicId();
+      }
+      ids.add(ticketPublicId);
+      rows.push({
+        eventId: event.id,
+        ticketPublicId,
+        qrPayload: buildQrPayload(ticketPublicId),
+        status: "UNUSED",
+        ticketType: group.ticketType,
+        ticketPrice: group.ticketPrice,
+        designJson: group.groupDesign,
+      });
     }
-    ids.add(ticketPublicId);
-    rows.push({
-      eventId: event.id,
-      ticketPublicId,
-      qrPayload: buildQrPayload(ticketPublicId),
-      status: "UNUSED",
-    });
   }
 
+  const createdCount = rows.length;
   await prisma.ticket.createMany({ data: rows });
+
+  const primaryGroup = normalizedGroups[0];
   await prisma.userEvent.update({
     where: { id: event.id },
     data: {
-      quantity: (event.quantity || 0) + quantity,
+      quantity: (event.quantity || 0) + createdCount,
       ...(eventName ? { eventName } : {}),
       ...(eventAddress ? { eventAddress } : {}),
       ...(parsedEventDate && !Number.isNaN(parsedEventDate.getTime()) ? { eventDate: parsedEventDate } : {}),
-      ...(ticketType ? { ticketType } : {}),
-      ...(ticketPriceRaw ? { ticketPrice } : {}),
+      ...(primaryGroup?.ticketType ? { ticketType: primaryGroup.ticketType } : {}),
+      ...(primaryGroup && primaryGroup.ticketPrice != null ? { ticketPrice: primaryGroup.ticketPrice } : {}),
       ...(designJson ? { designJson } : {}),
     },
   });
 
   res.status(201).json({
-    created: quantity,
+    created: createdCount,
     eventId: event.id,
     accessCode: event.accessCode,
   });
@@ -166,7 +236,7 @@ async function updateEventInline(req, res) {
 
   const existing = await prisma.userEvent.findUnique({
     where: { id: eventId },
-    select: { id: true, accessCode: true },
+    select: { id: true, accessCode: true, eventName: true },
   });
   if (!existing) {
     res.status(404).json({ error: "Event not found." });
@@ -179,19 +249,43 @@ async function updateEventInline(req, res) {
 
   const eventName = String(req.body?.eventName || "").trim();
   const eventAddress = String(req.body?.eventAddress || "").trim();
+  const paymentInstructions = String(req.body?.paymentInstructions || "").trim();
   const eventDateRaw = String(req.body?.eventDate || "").trim();
   const parsedEventDate = eventDateRaw ? new Date(eventDateRaw) : null;
+  const ticketType = String(req.body?.ticketType || "").trim();
+  const hasTicketPrice = Object.prototype.hasOwnProperty.call(req.body || {}, "ticketPrice");
+  const ticketPriceRaw = String(req.body?.ticketPrice ?? "").trim();
+  const parsedTicketPrice = ticketPriceRaw === "" ? null : Number(ticketPriceRaw);
+  const hasDesignJson =
+    Object.prototype.hasOwnProperty.call(req.body || {}, "designJson") &&
+    req.body?.designJson &&
+    typeof req.body.designJson === "object";
+
   if (eventDateRaw && Number.isNaN(parsedEventDate?.getTime())) {
     res.status(400).json({ error: "Invalid eventDate." });
     return;
   }
+  if (hasTicketPrice && ticketPriceRaw !== "" && Number.isNaN(parsedTicketPrice)) {
+    res.status(400).json({ error: "Invalid ticketPrice." });
+    return;
+  }
+
+  const nextSlug =
+    eventName && eventName !== existing.eventName ? await generateEventSlug(eventName, existing.id) : undefined;
 
   const updated = await prisma.userEvent.update({
     where: { id: eventId },
     data: {
       ...(eventName ? { eventName } : {}),
       ...(eventAddress ? { eventAddress } : {}),
+      ...(nextSlug ? { slug: nextSlug } : {}),
+      ...(Object.prototype.hasOwnProperty.call(req.body || {}, "paymentInstructions")
+        ? { paymentInstructions: paymentInstructions || null }
+        : {}),
       ...(parsedEventDate ? { eventDate: parsedEventDate } : {}),
+      ...(ticketType ? { ticketType } : {}),
+      ...(hasTicketPrice ? { ticketPrice: parsedTicketPrice } : {}),
+      ...(hasDesignJson ? { designJson: req.body.designJson } : {}),
     },
     select: {
       id: true,
@@ -203,6 +297,7 @@ async function updateEventInline(req, res) {
       ticketType: true,
       ticketPrice: true,
       paymentInstructions: true,
+      designJson: true,
     },
   });
 
@@ -220,7 +315,7 @@ async function buildTicketsPdfBuffer(event, tickets, ticketsPerPage) {
   for (const ticket of tickets) {
     const payload = ticket.qrPayload || buildQrPayload(ticket.ticketPublicId);
     const qrDataUrl = await QRCode.toDataURL(payload, { margin: 0, width: 320 });
-    const design = resolveTicketDesign(event);
+    const design = resolveTicketDesign(event, ticket);
     cards.push(
       renderTicketCardHtml({
         design,
@@ -287,6 +382,7 @@ async function buildFallbackPdfBuffer(event, tickets, ticketsPerPage) {
     const x = margin;
     const y = pageHeight - margin - cardHeight - slot * (cardHeight + verticalGap);
     const ticket = tickets[index];
+    const design = resolveTicketDesign(event, ticket);
     const payload = ticket.qrPayload || buildQrPayload(ticket.ticketPublicId);
     const qrDataUrl = await QRCode.toDataURL(payload, { margin: 0, width: 256 });
     const qrBase64 = qrDataUrl.split(",")[1];
@@ -305,10 +401,12 @@ async function buildFallbackPdfBuffer(event, tickets, ticketsPerPage) {
       borderColor: rgb(0.8, 0.8, 0.8),
     });
 
-    page.drawText(event.eventName, { x: x + 16, y: y + cardHeight - (headingSize + 12), size: headingSize, font: bold });
-    page.drawText(new Date(event.eventDate).toLocaleString(), { x: x + 16, y: y + cardHeight - (headingSize + detailSize + 16), size: detailSize, font });
-    page.drawText(event.eventAddress, { x: x + 16, y: y + cardHeight - (headingSize + detailSize * 2 + 20), size: detailSize, font });
-    page.drawText(`Ticket ID: ${ticket.ticketPublicId}`, { x: x + 16, y: y + 14, size: ticketIdSize, font: bold });
+    page.drawText(String(design.eventName || event.eventName || ""), { x: x + 16, y: y + cardHeight - (headingSize + 12), size: headingSize, font: bold });
+    page.drawText(String(design.dateTimeText || new Date(event.eventDate).toLocaleString()), { x: x + 16, y: y + cardHeight - (headingSize + detailSize + 16), size: detailSize, font });
+    page.drawText(String(design.location || event.eventAddress || ""), { x: x + 16, y: y + cardHeight - (headingSize + detailSize * 2 + 20), size: detailSize, font });
+    page.drawText(`Type: ${String(design.ticketTypeLabel || ticket.ticketType || "General")}`, { x: x + 16, y: y + 30, size: detailSize, font });
+    page.drawText(`Price: ${String(design.priceText || ticket.ticketPrice || "Free")}`, { x: x + 16, y: y + 18, size: detailSize, font });
+    page.drawText(`Ticket ID: ${ticket.ticketPublicId}`, { x: x + 16, y: y + 6, size: ticketIdSize, font: bold });
     page.drawImage(qrImage, { x: pageWidth - margin - qrSize - 20, y: y + 10, width: qrSize, height: qrSize });
   }
 
@@ -375,7 +473,13 @@ async function getTicketsPdf(req, res) {
     const tickets = await prisma.ticket.findMany({
       where: { eventId },
       orderBy: { createdAt: "asc" },
-      select: { ticketPublicId: true, qrPayload: true },
+      select: {
+        ticketPublicId: true,
+        qrPayload: true,
+        ticketType: true,
+        ticketPrice: true,
+        designJson: true,
+      },
     });
 
     const ticketsPerPage = normalizeTicketsPerPage(req.query?.perPage);

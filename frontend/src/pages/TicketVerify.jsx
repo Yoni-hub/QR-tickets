@@ -84,6 +84,12 @@ export default function TicketVerify() {
         <p className="break-words">
           <span className="font-semibold">Location:</span> {ticket.event.eventAddress}
         </p>
+        <p className="break-words">
+          <span className="font-semibold">Type:</span> {ticket.ticketType || "General"}
+        </p>
+        <p className="break-words">
+          <span className="font-semibold">Price:</span> {ticket.ticketPrice != null ? `$${Number(ticket.ticketPrice).toFixed(2)}` : "Free"}
+        </p>
         <p className="break-all">
           <span className="font-semibold">Ticket ID:</span> <span className="font-mono">{ticket.ticketPublicId}</span>
         </p>

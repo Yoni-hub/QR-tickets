@@ -20,29 +20,30 @@ function luminanceFromRgb(r, g, b) {
 
 export default function TicketPreview({
   ticketDesign,
+  ticketGroup,
   previewQrPayload,
   onTicketDesignChange,
+  onTicketGroupChange,
   onHeaderImageUpload,
   onRemoveHeaderImage,
   imageLoading,
-  ticketTypeLabelOverride,
-  priceTextOverride,
   title,
   helperText,
 }) {
   const [autoTextColor, setAutoTextColor] = useState("#ffffff");
 
-  const updateField = (field, nextValue) => {
+  const updateDesignField = (field, nextValue) => {
     onTicketDesignChange((prev) => ({ ...prev, [field]: nextValue }));
   };
-  const resolvedTicketTypeLabel = ticketTypeLabelOverride || ticketDesign.ticketTypeLabel;
-  const resolvedPriceText = priceTextOverride || ticketDesign.priceText;
-  const hasTypeOverride = Boolean(ticketTypeLabelOverride);
-  const hasPriceOverride = Boolean(priceTextOverride);
+  const updateGroupField = (field, nextValue) => {
+    onTicketGroupChange(field, nextValue);
+  };
+  const resolvedTicketTypeLabel = String(ticketGroup?.ticketType || "").trim() || "General";
+  const resolvedPriceText = String(ticketGroup?.ticketPrice || "").trim() || "0";
 
-  const headerStyle = ticketDesign.headerImageDataUrl
+  const headerStyle = ticketGroup?.headerImageDataUrl
     ? {
-        backgroundImage: `url(${ticketDesign.headerImageDataUrl})`,
+        backgroundImage: `url(${ticketGroup.headerImageDataUrl})`,
         backgroundSize: "cover",
         backgroundPosition: "center",
       }
@@ -53,13 +54,13 @@ export default function TicketPreview({
   const qrImageUrl = previewQrPayload
     ? `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(previewQrPayload)}`
     : null;
-  const textColorMode = ticketDesign.headerTextColorMode || TEXT_COLOR_MODES.AUTO;
+  const textColorMode = ticketGroup?.headerTextColorMode || TEXT_COLOR_MODES.AUTO;
   const resolvedHeaderTextColor =
     textColorMode === TEXT_COLOR_MODES.LIGHT ? "#ffffff" : textColorMode === TEXT_COLOR_MODES.DARK ? "#0f172a" : autoTextColor;
   const headerTextShadow = resolvedHeaderTextColor === "#ffffff" ? "0 1px 2px rgba(2, 6, 23, 0.65)" : "0 1px 2px rgba(255, 255, 255, 0.4)";
 
   useEffect(() => {
-    const src = ticketDesign.headerImageDataUrl;
+    const src = ticketGroup?.headerImageDataUrl;
     if (!src) {
       setAutoTextColor("#ffffff");
       return;
@@ -94,13 +95,13 @@ export default function TicketPreview({
       }
 
       const imageLuminance = luminanceSum / count;
-      const overlay = ticketDesign.headerImageDataUrl ? Number(ticketDesign.headerOverlay || 0) : 0;
+      const overlay = ticketGroup?.headerImageDataUrl ? Number(ticketGroup?.headerOverlay || 0) : 0;
       const effectiveLuminance = imageLuminance * Math.max(0, 1 - overlay);
       setAutoTextColor(effectiveLuminance > 0.26 ? "#0f172a" : "#ffffff");
     };
     image.onerror = () => setAutoTextColor("#ffffff");
     image.src = src;
-  }, [ticketDesign.headerImageDataUrl, ticketDesign.headerOverlay]);
+  }, [ticketGroup?.headerImageDataUrl, ticketGroup?.headerOverlay]);
 
   return (
     <section className="mx-auto w-full max-w-xl overflow-hidden">
@@ -112,34 +113,34 @@ export default function TicketPreview({
       ) : null}
       <div className="mb-3">
         <HeaderImageUploader
-          hasImage={Boolean(ticketDesign.headerImageDataUrl)}
+          hasImage={Boolean(ticketGroup?.headerImageDataUrl)}
           onUpload={onHeaderImageUpload}
           onRemove={onRemoveHeaderImage}
           imageLoading={imageLoading}
         />
-        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+        <div className="mt-2 flex flex-row flex-wrap items-center gap-2 text-xs">
           <span className="font-medium text-slate-600">Text color</span>
           <AppButton
             type="button"
             variant={textColorMode === TEXT_COLOR_MODES.AUTO ? "primary" : "secondary"}
-            className="px-2 py-1 text-xs"
-            onClick={() => updateField("headerTextColorMode", TEXT_COLOR_MODES.AUTO)}
+            className="!w-auto shrink-0 px-2 py-1 text-xs"
+            onClick={() => updateGroupField("headerTextColorMode", TEXT_COLOR_MODES.AUTO)}
           >
             Auto
           </AppButton>
           <AppButton
             type="button"
             variant={textColorMode === TEXT_COLOR_MODES.LIGHT ? "primary" : "secondary"}
-            className="px-2 py-1 text-xs"
-            onClick={() => updateField("headerTextColorMode", TEXT_COLOR_MODES.LIGHT)}
+            className="!w-auto shrink-0 px-2 py-1 text-xs"
+            onClick={() => updateGroupField("headerTextColorMode", TEXT_COLOR_MODES.LIGHT)}
           >
             Light
           </AppButton>
           <AppButton
             type="button"
             variant={textColorMode === TEXT_COLOR_MODES.DARK ? "primary" : "secondary"}
-            className="px-2 py-1 text-xs"
-            onClick={() => updateField("headerTextColorMode", TEXT_COLOR_MODES.DARK)}
+            className="!w-auto shrink-0 px-2 py-1 text-xs"
+            onClick={() => updateGroupField("headerTextColorMode", TEXT_COLOR_MODES.DARK)}
           >
             Dark
           </AppButton>
@@ -150,24 +151,24 @@ export default function TicketPreview({
         <div className="relative min-h-[160px] p-3 text-white sm:min-h-[180px] sm:p-4" style={headerStyle}>
           <div
             className="absolute inset-0 bg-slate-950"
-            style={{ opacity: ticketDesign.headerImageDataUrl ? ticketDesign.headerOverlay : 0 }}
+            style={{ opacity: ticketGroup?.headerImageDataUrl ? ticketGroup?.headerOverlay : 0 }}
           />
           <div className="relative z-10" style={{ color: resolvedHeaderTextColor, textShadow: headerTextShadow }}>
             <EditableText
               value={ticketDesign.eventName}
-              onChange={(next) => updateField("eventName", next)}
+              onChange={(next) => updateDesignField("eventName", next)}
               className="break-words text-2xl font-extrabold leading-tight sm:text-3xl"
               ariaLabel="Edit event name"
             />
             <EditableText
               value={ticketDesign.location}
-              onChange={(next) => updateField("location", next)}
+              onChange={(next) => updateDesignField("location", next)}
               className="mt-2 break-words text-sm font-medium"
               ariaLabel="Edit event location"
             />
             <EditableText
               value={ticketDesign.dateTimeText}
-              onChange={(next) => updateField("dateTimeText", next)}
+              onChange={(next) => updateDesignField("dateTimeText", next)}
               className="mt-1 break-words text-sm"
               ariaLabel="Edit event date and time text"
             />
@@ -177,28 +178,20 @@ export default function TicketPreview({
         <div className="flex flex-col gap-4 p-3 sm:flex-row sm:items-start sm:justify-between sm:p-4">
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Type</p>
-            {hasTypeOverride ? (
-              <p className="mt-1 break-words text-lg font-bold text-slate-900">{resolvedTicketTypeLabel}</p>
-            ) : (
-              <EditableText
-                value={resolvedTicketTypeLabel}
-                onChange={(next) => updateField("ticketTypeLabel", next)}
-                className="mt-1 text-lg font-bold text-slate-900"
-                ariaLabel="Edit ticket type label"
-              />
-            )}
+            <EditableText
+              value={resolvedTicketTypeLabel}
+              onChange={(next) => updateGroupField("ticketType", next)}
+              className="mt-1 text-lg font-bold text-slate-900"
+              ariaLabel="Edit ticket type label"
+            />
 
             <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Price</p>
-            {hasPriceOverride ? (
-              <p className="mt-1 break-words text-xl font-extrabold text-slate-900">{resolvedPriceText}</p>
-            ) : (
-              <EditableText
-                value={resolvedPriceText}
-                onChange={(next) => updateField("priceText", next)}
-                className="mt-1 text-xl font-extrabold text-slate-900"
-                ariaLabel="Edit ticket price text"
-              />
-            )}
+            <EditableText
+              value={resolvedPriceText}
+              onChange={(next) => updateGroupField("ticketPrice", next)}
+              className="mt-1 text-xl font-extrabold text-slate-900"
+              ariaLabel="Edit ticket price text"
+            />
           </div>
 
           <div className="w-full shrink-0 sm:w-[132px]">

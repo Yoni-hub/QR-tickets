@@ -98,6 +98,8 @@ async function scanTicket(req, res) {
       scannedAt: ticket.scannedAt,
       ticket: {
         ticketPublicId: ticket.ticketPublicId,
+        ticketType: ticket.ticketType || event.ticketType || null,
+        ticketPrice: ticket.ticketPrice != null ? Number(ticket.ticketPrice) : null,
         attendeeName: ticket.attendeeName || null,
         attendeeEmail: ticket.attendeeEmail || null,
         attendeePhone: ticket.attendeePhone || null,
@@ -132,6 +134,8 @@ async function scanTicket(req, res) {
     scannedAt,
     ticket: {
       ticketPublicId: ticket.ticketPublicId,
+      ticketType: ticket.ticketType || event.ticketType || null,
+      ticketPrice: ticket.ticketPrice != null ? Number(ticket.ticketPrice) : null,
       attendeeName: ticket.attendeeName || null,
       attendeeEmail: ticket.attendeeEmail || null,
       attendeePhone: ticket.attendeePhone || null,

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../../lib/api";
 import TicketPreview from "./TicketPreview";
-import TicketSettingsForm from "./TicketSettingsForm";
 import AppButton from "../ui/AppButton";
 import FeedbackBanner from "../ui/FeedbackBanner";
 import { withMinDelay } from "../../lib/withMinDelay";
@@ -10,6 +9,8 @@ import { withMinDelay } from "../../lib/withMinDelay";
 const HEADER_IMAGE_WIDTH = 1200;
 const HEADER_IMAGE_HEIGHT = 600;
 const HEADER_IMAGE_QUALITY = 0.82;
+const DEFAULT_OVERLAY = 0.25;
+const DEFAULT_TEXT_COLOR_MODE = "AUTO";
 
 function optimizeHeaderImage(file) {
   return new Promise((resolve, reject) => {
@@ -65,6 +66,9 @@ export default function TicketEditor({
   initialTicketType = "",
   initialTicketPrice = "",
   onGenerated = null,
+  onDraftChange = null,
+  onSave = null,
+  saveLoading = false,
 }) {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
@@ -76,19 +80,20 @@ export default function TicketEditor({
     eventName: initialEventName || "QR Tickets Demo Event",
     location: initialEventAddress || "Sample Venue",
     dateTimeText: initialDateTimeText || "May 15, 2024 | 7:00 PM",
-    ticketTypeLabel: (initialTicketType || "General Admission").toUpperCase(),
-    priceText:
-      initialTicketPrice && Number(initialTicketPrice) > 0
-        ? `$${Number(initialTicketPrice).toFixed(2)}`
-        : "Free",
     codeText: "CODE123",
-    headerImageDataUrl: null,
-    headerOverlay: 0.25,
-    headerTextColorMode: "AUTO",
   });
   const [settings, setSettings] = useState({
     quantity: 10,
-    ticketGroups: [{ ticketType: initialTicketType || "General", ticketPrice: initialTicketPrice || "0", quantity: "10" }],
+    ticketGroups: [
+      {
+        ticketType: initialTicketType || "General",
+        ticketPrice: String(initialTicketPrice || "0"),
+        quantity: "10",
+        headerImageDataUrl: null,
+        headerOverlay: DEFAULT_OVERLAY,
+        headerTextColorMode: DEFAULT_TEXT_COLOR_MODE,
+      },
+    ],
   });
 
   useEffect(() => {
@@ -109,24 +114,10 @@ export default function TicketEditor({
     [settings.ticketGroups],
   );
 
-  const syncDesignFromPrimaryGroup = (groups) => {
-    const firstGroup = groups[0];
-    if (!firstGroup) return;
-    setTicketDesign((prev) => ({
-      ...prev,
-      ticketTypeLabel: firstGroup.ticketType ? firstGroup.ticketType.toUpperCase() : prev.ticketTypeLabel,
-      priceText:
-        firstGroup.ticketPrice && Number(firstGroup.ticketPrice) > 0
-          ? `$${Number(firstGroup.ticketPrice).toFixed(2)}`
-          : "Free",
-    }));
-  };
-
   const updateSettings = (updater) => {
     setSettings((prev) => {
       const next = typeof updater === "function" ? updater(prev) : updater;
       const groups = next.ticketGroups || prev.ticketGroups;
-      syncDesignFromPrimaryGroup(groups);
       const nextQuantity = Math.max(
         1,
         groups.reduce((sum, group) => sum + (Number.parseInt(group.quantity, 10) || 0), 0),
@@ -135,19 +126,29 @@ export default function TicketEditor({
     });
   };
 
-  const onHeaderImageUpload = async (event) => {
+  const onHeaderImageUpload = async (groupIndex, event) => {
     const file = event.target.files?.[0];
     if (!file) return;
     setImageLoading(true);
     setFeedback({ kind: "", message: "" });
     try {
       const optimizedImage = await withMinDelay(optimizeHeaderImage(file), 300);
-      setTicketDesign((prev) => ({ ...prev, headerImageDataUrl: optimizedImage }));
+      updateSettings((prev) => ({
+        ...prev,
+        ticketGroups: prev.ticketGroups.map((group, index) =>
+          index === groupIndex ? { ...group, headerImageDataUrl: optimizedImage } : group,
+        ),
+      }));
       setFeedback({ kind: "success", message: "Header image uploaded." });
     } catch {
       const reader = new FileReader();
       reader.onload = () => {
-        setTicketDesign((prev) => ({ ...prev, headerImageDataUrl: String(reader.result || "") }));
+        updateSettings((prev) => ({
+          ...prev,
+          ticketGroups: prev.ticketGroups.map((group, index) =>
+            index === groupIndex ? { ...group, headerImageDataUrl: String(reader.result || "") } : group,
+          ),
+        }));
         setFeedback({ kind: "success", message: "Header image uploaded." });
       };
       reader.readAsDataURL(file);
@@ -155,6 +156,32 @@ export default function TicketEditor({
       setImageLoading(false);
     }
     event.target.value = "";
+  };
+
+  const updateTicketGroup = (groupIndex, field, value) => {
+    updateSettings((prev) => ({
+      ...prev,
+      ticketGroups: prev.ticketGroups.map((group, index) =>
+        index === groupIndex ? { ...group, [field]: value } : group,
+      ),
+    }));
+  };
+
+  const addMoreTicketTypes = () => {
+    updateSettings((prev) => ({
+      ...prev,
+      ticketGroups: [
+        ...prev.ticketGroups,
+        {
+          ticketType: `Type ${prev.ticketGroups.length + 1}`,
+          ticketPrice: "0",
+          quantity: "1",
+          headerImageDataUrl: null,
+          headerOverlay: DEFAULT_OVERLAY,
+          headerTextColorMode: DEFAULT_TEXT_COLOR_MODE,
+        },
+      ],
+    }));
   };
 
   const generate = async () => {
@@ -173,7 +200,7 @@ export default function TicketEditor({
         ticketType: singleGroup ? singleGroup.ticketType : "Mixed",
         ticketPrice: singleGroup ? singleGroup.ticketPrice : "",
         quantity: String(totalQuantity),
-        designJson: ticketDesign,
+        designJson: buildDraft(ticketDesign, settings).designJson,
       };
 
       if (mode === "append_to_event") {
@@ -228,47 +255,95 @@ export default function TicketEditor({
     }
   };
 
-  const formatGroupPrice = (group) =>
-    group.ticketPrice && Number(group.ticketPrice) > 0 ? `$${Number(group.ticketPrice).toFixed(2)}` : "Free";
+  const buildDraft = (design = ticketDesign, nextSettings = settings) => {
+    const primaryGroup = nextSettings.ticketGroups?.[0] || { ticketType: "", ticketPrice: "" };
+    const parsedDate = new Date(String(design.dateTimeText || "").replace(/\s*\|\s*/g, " "));
+    const primaryPrice = String(primaryGroup.ticketPrice || "").trim();
+    const parsedPrimaryPrice = Number(primaryPrice);
+    const resolvedPriceText =
+      primaryPrice && Number.isFinite(parsedPrimaryPrice) && parsedPrimaryPrice > 0
+        ? `$${parsedPrimaryPrice.toFixed(2)}`
+        : primaryPrice || "Free";
+    return {
+      eventName: String(design.eventName || "").trim(),
+      eventAddress: String(design.location || "").trim(),
+      eventDate: Number.isNaN(parsedDate.getTime()) ? null : parsedDate.toISOString(),
+      ticketType: String(primaryGroup.ticketType || "").trim(),
+      ticketPrice: primaryPrice,
+      designJson: {
+        ...design,
+        ticketTypeLabel: String(primaryGroup.ticketType || "General").toUpperCase(),
+        priceText: resolvedPriceText,
+        headerImageDataUrl: primaryGroup.headerImageDataUrl || null,
+        headerOverlay: Number(primaryGroup.headerOverlay ?? DEFAULT_OVERLAY),
+        headerTextColorMode: primaryGroup.headerTextColorMode || DEFAULT_TEXT_COLOR_MODE,
+        ticketGroups: nextSettings.ticketGroups.map((group) => ({ ...group })),
+      },
+    };
+  };
+
+  useEffect(() => {
+    if (typeof onDraftChange === "function") {
+      onDraftChange(buildDraft(ticketDesign, settings));
+    }
+  }, [ticketDesign, settings, onDraftChange]);
 
   const rootClass =
     mode === "append_to_event"
-      ? "w-full rounded border bg-white p-4"
+      ? "w-full"
       : "mx-auto w-full max-w-5xl px-4 py-4 sm:px-6 sm:py-6";
 
   return (
     <main className={rootClass}>
-      <h1 className="text-2xl font-bold sm:text-3xl">{mode === "append_to_event" ? "Tickets Editor" : "QR Tickets"}</h1>
-      <p className="mt-2 text-slate-600">
-        {mode === "append_to_event"
-          ? "Edit your ticket sample and generate tickets for the current access code."
-          : "Edit your ticket sample directly. Then generate tickets and Print your tickets or Send Email links."}
-      </p>
-
-      <TicketSettingsForm settings={{ ...settings, quantity: totalQuantity }} onSettingsChange={updateSettings} />
-
-      <section className="mt-6 space-y-6">
+      <section className="space-y-6">
         {settings.ticketGroups.map((group, index) => (
-          <TicketPreview
-            key={`${group.ticketType}-${index}`}
-            ticketDesign={ticketDesign}
-            previewQrPayload={previewQrPayload}
-            onTicketDesignChange={setTicketDesign}
-            onHeaderImageUpload={onHeaderImageUpload}
-            onRemoveHeaderImage={() => setTicketDesign((prev) => ({ ...prev, headerImageDataUrl: null }))}
-            imageLoading={imageLoading}
-            ticketTypeLabelOverride={group.ticketType ? group.ticketType.toUpperCase() : ticketDesign.ticketTypeLabel}
-            priceTextOverride={formatGroupPrice(group)}
-            title={`Live ticket preview: ${group.ticketType}`}
-            helperText="(you can change the event name, location and time directly on the ticket preview)"
-          />
+          <div key={`${index}-${group.ticketType}`} className="space-y-3">
+            <TicketPreview
+              ticketDesign={ticketDesign}
+              ticketGroup={group}
+              previewQrPayload={previewQrPayload}
+              onTicketDesignChange={setTicketDesign}
+              onTicketGroupChange={(field, value) => updateTicketGroup(index, field, value)}
+              onHeaderImageUpload={(event) => onHeaderImageUpload(index, event)}
+              onRemoveHeaderImage={() => updateTicketGroup(index, "headerImageDataUrl", null)}
+              imageLoading={imageLoading}
+              title={`Live ticket preview: ${group.ticketType || `Ticket ${index + 1}`}`}
+              helperText="(you can change the event name, location, time, type and price directly on the ticket preview)"
+            />
+            <div className="mx-auto w-full max-w-xl">
+              <label className="mb-1 block text-sm font-medium">Quantity</label>
+              <input
+                className="w-full rounded border p-2 text-sm"
+                type="number"
+                min="1"
+                value={group.quantity}
+                onChange={(event) => updateTicketGroup(index, "quantity", event.target.value)}
+              />
+            </div>
+          </div>
         ))}
       </section>
 
       <div className="mt-6">
-        <AppButton type="button" onClick={generate} loading={loading} loadingText="Generating..." variant="primary">
-          Generate Tickets
-        </AppButton>
+        <div className="flex flex-wrap items-center gap-2">
+          <AppButton type="button" variant="secondary" onClick={addMoreTicketTypes}>
+            Add more ticket types
+          </AppButton>
+          {mode === "append_to_event" && typeof onSave === "function" ? (
+            <AppButton
+              type="button"
+              variant="secondary"
+              onClick={() => onSave(buildDraft(ticketDesign, settings))}
+              loading={saveLoading}
+              loadingText="Saving..."
+            >
+              Save Changes
+            </AppButton>
+          ) : null}
+          <AppButton type="button" onClick={generate} loading={loading} loadingText="Generating..." variant="primary">
+            Generate Tickets
+          </AppButton>
+        </div>
       </div>
 
       <FeedbackBanner className="mt-3" kind={feedback.kind} message={feedback.message} />
