@@ -12,8 +12,10 @@ model UserEvent {
   eventName   String
   eventDate   DateTime
   eventAddress String
+  slug        String?     @unique
   ticketType  String?
   ticketPrice Decimal?    @db.Decimal(10, 2)
+  paymentInstructions String?
   designJson  Json?
   adminStatus EventAdminStatus @default(ACTIVE)
   adminDisabledAt DateTime?
@@ -26,6 +28,8 @@ model UserEvent {
   tickets     Ticket[]
   scanRecords ScanRecord[]
   auditLogs   AdminAuditLog[]
+  ticketRequests TicketRequest[]
+  promoters   Promoter[]
 }
 
 model Ticket {
@@ -33,6 +37,11 @@ model Ticket {
   eventId        String
   ticketPublicId String       @unique
   qrPayload      String
+  attendeeName   String?
+  attendeePhone  String?
+  attendeeEmail  String?
+  promoterId     String?
+  ticketRequestId String?
   status         TicketStatus @default(UNUSED)
   isInvalidated  Boolean      @default(false)
   invalidatedAt  DateTime?
@@ -40,11 +49,15 @@ model Ticket {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   event          UserEvent    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  promoter       Promoter?    @relation(fields: [promoterId], references: [id], onDelete: SetNull)
+  ticketRequest  TicketRequest? @relation(fields: [ticketRequestId], references: [id], onDelete: SetNull)
   scanRecords    ScanRecord[]
   deliveries     TicketDelivery[]
   viewLogs       TicketViewLog[]
 
   @@index([eventId])
+  @@index([promoterId])
+  @@index([ticketRequestId])
 }
 
 model TicketDelivery {
@@ -106,6 +119,47 @@ enum DeliveryMethod {
 enum DeliveryStatus {
   SENT
   FAILED
+}
+
+model Promoter {
+  id        String   @id @default(cuid())
+  eventId   String
+  name      String
+  code      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  event     UserEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  tickets   Ticket[]
+  ticketRequests TicketRequest[]
+
+  @@unique([eventId, code])
+  @@index([eventId])
+}
+
+model TicketRequest {
+  id         String   @id @default(cuid())
+  eventId    String
+  name       String
+  phone      String?
+  email      String?
+  quantity   Int
+  promoterId String?
+  status     TicketRequestStatus @default(PENDING_PAYMENT)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  event      UserEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  promoter   Promoter? @relation(fields: [promoterId], references: [id], onDelete: SetNull)
+  tickets    Ticket[]
+
+  @@index([eventId])
+  @@index([promoterId])
+  @@index([status])
+}
+
+enum TicketRequestStatus {
+  PENDING_PAYMENT
+  APPROVED
+  REJECTED
 }
 
 model TicketViewLog {

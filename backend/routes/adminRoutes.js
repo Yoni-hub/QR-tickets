@@ -19,6 +19,15 @@ const {
   markScanSuspicious,
 } = require("../controllers/adminController");
 const { requireAdminAccess } = require("../middleware/adminAuth");
+const {
+  getOrganizerTicketRequests,
+  approveTicketRequest,
+  rejectTicketRequest,
+  listPromoters,
+  createPromoter,
+  updatePromoter,
+  deletePromoter,
+} = require("../controllers/organizerController");
 
 const router = express.Router();
 
@@ -45,5 +54,14 @@ router.patch("/scans/:scanId/mark-suspicious", markScanSuspicious);
 
 router.get("/settings", getAdminSettings);
 router.get("/audit-log", listAdminAuditLog);
+
+// Requested aliases for club/manual ticketing flows.
+router.get("/ticket-requests", getOrganizerTicketRequests);
+router.post("/ticket-requests/:id/approve", approveTicketRequest);
+router.post("/ticket-requests/:id/reject", rejectTicketRequest);
+router.post("/promoters", createPromoter);
+router.get("/promoters", listPromoters);
+router.patch("/promoters/:id", updatePromoter);
+router.delete("/promoters/:id", deletePromoter);
 
 module.exports = router;

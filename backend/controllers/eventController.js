@@ -3,6 +3,7 @@ const QRCode = require("qrcode");
 const { PDFDocument, StandardFonts, rgb } = require("pdf-lib");
 const prisma = require("../utils/prisma");
 const { createEvent, buildQrPayload } = require("../services/eventService");
+const { generateTicketPublicId } = require("../utils/ticketPublicId");
 const {
   renderTicketCardHtml,
   renderTicketDocumentHtml,
@@ -38,10 +39,14 @@ async function getEventByCode(req, res) {
     where: { accessCode },
     select: {
       id: true,
+      slug: true,
       eventName: true,
       eventDate: true,
       eventAddress: true,
       accessCode: true,
+      ticketType: true,
+      ticketPrice: true,
+      paymentInstructions: true,
       isDemo: true,
       createdAt: true,
       designJson: true,
@@ -86,6 +91,122 @@ async function getEventTickets(req, res) {
   });
 
   res.json({ eventId, tickets });
+}
+
+async function generateTicketsByAccessCode(req, res) {
+  const accessCode = (req.params.accessCode || "").trim();
+  const quantity = Math.max(1, Number.parseInt(String(req.body?.quantity || "1"), 10) || 1);
+  if (!accessCode) {
+    res.status(400).json({ error: "accessCode is required." });
+    return;
+  }
+
+  const event = await prisma.userEvent.findUnique({
+    where: { accessCode },
+    select: { id: true, accessCode: true, quantity: true },
+  });
+  if (!event) {
+    res.status(404).json({ error: "Event not found." });
+    return;
+  }
+
+  const eventName = String(req.body?.eventName || "").trim();
+  const eventAddress = String(req.body?.eventAddress || "").trim();
+  const rawEventDate = String(req.body?.eventDateTime || req.body?.dateTimeText || "").trim();
+  const parsedEventDate = rawEventDate ? new Date(rawEventDate) : null;
+  const ticketType = String(req.body?.ticketType || "").trim();
+  const ticketPriceRaw = String(req.body?.ticketPrice || "").trim();
+  const ticketPrice = ticketPriceRaw && !Number.isNaN(Number(ticketPriceRaw)) ? Number(ticketPriceRaw) : null;
+  const designJson = req.body?.designJson && typeof req.body.designJson === "object" ? req.body.designJson : null;
+
+  const ids = new Set();
+  const rows = [];
+  for (let index = 0; index < quantity; index += 1) {
+    let ticketPublicId = generateTicketPublicId();
+    while (ids.has(ticketPublicId)) {
+      ticketPublicId = generateTicketPublicId();
+    }
+    ids.add(ticketPublicId);
+    rows.push({
+      eventId: event.id,
+      ticketPublicId,
+      qrPayload: buildQrPayload(ticketPublicId),
+      status: "UNUSED",
+    });
+  }
+
+  await prisma.ticket.createMany({ data: rows });
+  await prisma.userEvent.update({
+    where: { id: event.id },
+    data: {
+      quantity: (event.quantity || 0) + quantity,
+      ...(eventName ? { eventName } : {}),
+      ...(eventAddress ? { eventAddress } : {}),
+      ...(parsedEventDate && !Number.isNaN(parsedEventDate.getTime()) ? { eventDate: parsedEventDate } : {}),
+      ...(ticketType ? { ticketType } : {}),
+      ...(ticketPriceRaw ? { ticketPrice } : {}),
+      ...(designJson ? { designJson } : {}),
+    },
+  });
+
+  res.status(201).json({
+    created: quantity,
+    eventId: event.id,
+    accessCode: event.accessCode,
+  });
+}
+
+async function updateEventInline(req, res) {
+  const eventId = (req.params.eventId || "").trim();
+  const accessCode = (req.body?.accessCode || "").trim();
+  if (!eventId || !accessCode) {
+    res.status(400).json({ error: "eventId and accessCode are required." });
+    return;
+  }
+
+  const existing = await prisma.userEvent.findUnique({
+    where: { id: eventId },
+    select: { id: true, accessCode: true },
+  });
+  if (!existing) {
+    res.status(404).json({ error: "Event not found." });
+    return;
+  }
+  if (existing.accessCode !== accessCode) {
+    res.status(403).json({ error: "Invalid access code for this event." });
+    return;
+  }
+
+  const eventName = String(req.body?.eventName || "").trim();
+  const eventAddress = String(req.body?.eventAddress || "").trim();
+  const eventDateRaw = String(req.body?.eventDate || "").trim();
+  const parsedEventDate = eventDateRaw ? new Date(eventDateRaw) : null;
+  if (eventDateRaw && Number.isNaN(parsedEventDate?.getTime())) {
+    res.status(400).json({ error: "Invalid eventDate." });
+    return;
+  }
+
+  const updated = await prisma.userEvent.update({
+    where: { id: eventId },
+    data: {
+      ...(eventName ? { eventName } : {}),
+      ...(eventAddress ? { eventAddress } : {}),
+      ...(parsedEventDate ? { eventDate: parsedEventDate } : {}),
+    },
+    select: {
+      id: true,
+      slug: true,
+      eventName: true,
+      eventDate: true,
+      eventAddress: true,
+      accessCode: true,
+      ticketType: true,
+      ticketPrice: true,
+      paymentInstructions: true,
+    },
+  });
+
+  res.json({ event: updated });
 }
 
 function normalizeTicketsPerPage(rawValue) {
@@ -288,5 +409,7 @@ module.exports = {
   createDemoEvent,
   getEventByCode,
   getEventTickets,
+  generateTicketsByAccessCode,
   getTicketsPdf,
+  updateEventInline,
 };

@@ -32,7 +32,24 @@ async function scanTicket(req, res) {
     return;
   }
 
-  const ticket = await prisma.ticket.findFirst({ where: { eventId: event.id, ticketPublicId } });
+  const ticket = await prisma.ticket.findFirst({
+    where: { eventId: event.id, ticketPublicId },
+    include: {
+      promoter: {
+        select: {
+          id: true,
+          name: true,
+          code: true,
+        },
+      },
+      ticketRequest: {
+        select: {
+          id: true,
+          quantity: true,
+        },
+      },
+    },
+  });
   if (!ticket) {
     await prisma.scanRecord.create({
       data: {
@@ -76,7 +93,18 @@ async function scanTicket(req, res) {
         result: "USED",
       },
     });
-    res.json({ result: "USED", scannedAt: ticket.scannedAt });
+    res.json({
+      result: "USED",
+      scannedAt: ticket.scannedAt,
+      ticket: {
+        ticketPublicId: ticket.ticketPublicId,
+        attendeeName: ticket.attendeeName || null,
+        attendeeEmail: ticket.attendeeEmail || null,
+        attendeePhone: ticket.attendeePhone || null,
+        quantity: ticket.ticketRequest?.quantity || 1,
+        promoterName: ticket.promoter?.name || null,
+      },
+    });
     return;
   }
 
@@ -99,7 +127,18 @@ async function scanTicket(req, res) {
     },
   });
 
-  res.json({ result: "VALID", scannedAt });
+  res.json({
+    result: "VALID",
+    scannedAt,
+    ticket: {
+      ticketPublicId: ticket.ticketPublicId,
+      attendeeName: ticket.attendeeName || null,
+      attendeeEmail: ticket.attendeeEmail || null,
+      attendeePhone: ticket.attendeePhone || null,
+      quantity: ticket.ticketRequest?.quantity || 1,
+      promoterName: ticket.promoter?.name || null,
+    },
+  });
 }
 
 module.exports = { scanTicket };

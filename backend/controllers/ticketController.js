@@ -13,9 +13,26 @@ async function getTicketByPublicId(req, res) {
       id: true,
       ticketPublicId: true,
       qrPayload: true,
+      attendeeName: true,
+      attendeePhone: true,
+      attendeeEmail: true,
       status: true,
       scannedAt: true,
       createdAt: true,
+      promoter: {
+        select: {
+          id: true,
+          name: true,
+          code: true,
+        },
+      },
+      ticketRequest: {
+        select: {
+          id: true,
+          quantity: true,
+          status: true,
+        },
+      },
       event: {
         select: {
           id: true,
