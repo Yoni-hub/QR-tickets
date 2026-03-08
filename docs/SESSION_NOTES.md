@@ -37,3 +37,27 @@
 - Added `tickets per page` selection in Dashboard PDF delivery flow (`1`, `2`, `3`, `4`).
 - Extended `GET /api/events/:eventId/tickets.pdf` with optional query `perPage`.
 - Updated HTML PDF renderer and fallback `pdf-lib` renderer to honor selected tickets-per-page count.
+
+## 2026-03-08 (Admin Panel Phase 1)
+- Added protected internal admin panel routes under `/admin/*` with `x-admin-key` backend protection.
+- Added admin read endpoints for overview/events/event detail/tickets/deliveries/scans/settings/audit.
+- Added admin action endpoints for event disable/enable/archive/access-code-rotate, ticket invalidate/restore/reset-usage, delivery retry, and scan suspicious marking.
+- Added lightweight admin audit logging model and API.
+- Added extended scan metadata capture (`rawScannedValue`, normalized ID, source) and ticket view logging.
+
+## 2026-03-08 (Club Ticketing + Manual Payment + Promoters)
+- Added public event request flow: `/e/:eventSlug` and `/e/:eventSlug/confirm`.
+- Added public APIs for event lookup by slug and ticket request creation (`PENDING_PAYMENT`).
+- Added organizer approval flow for ticket requests (approve/reject) with ticket generation and optional delivery.
+- Added promoter model and promoter management APIs (create/list/update/delete) with referral links (`?ref=code`).
+- Added promoter metrics/leaderboard (requests, approved tickets, scanned entries).
+- Added scanner response enrichment with attendee/promoter details for `VALID` and `USED`.
+- Added organizer manual guest add and CSV bulk import flows tied to the event access code.
+
+## 2026-03-08 (Dashboard / Homepage Workflow Update)
+- Reorganized Dashboard into menu-based sections: Events, Tickets, Delivery Method, Ticket Requests, Promoters.
+- Added inline event editing in Events section with save endpoint.
+- Added native public ticket page sample preview card in Events section (non-iframe).
+- Added compact tickets list mobile layout and pagination (`5` tickets per page).
+- Home page now focuses on access-code start flow (`Get Started`) without ticket generation.
+- Restored full ticket editor in Dashboard Tickets section, configured to generate tickets for the currently loaded access code/event only.

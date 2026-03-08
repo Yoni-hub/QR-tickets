@@ -4,6 +4,8 @@
 - `POST /api/events`
 - `POST /api/demo/events`
 - `GET /api/events/by-code/:accessCode`
+- `PATCH /api/events/:eventId` (inline update, requires `accessCode` in body)
+- `POST /api/events/by-code/:accessCode/generate-tickets` (generate tickets for existing event/access code)
 - `GET /api/events/by-code/:accessCode/ticket-requests`
 - `GET /api/events/by-code/:accessCode/promoters`
 - `POST /api/events/by-code/:accessCode/guests`
@@ -30,6 +32,19 @@
 - `PATCH /api/promoters/:id`
 - `DELETE /api/promoters/:id`
 
+Public ticket request body:
+- `eventSlug: string` (required)
+- `name: string` (required)
+- `phone?: string`
+- `email?: string`
+- `quantity: number` (>= 1)
+- `promoterCode?: string`
+
+Ticket request statuses:
+- `PENDING_PAYMENT`
+- `APPROVED`
+- `REJECTED`
+
 Send-links request body:
 - `emails: string[]` (required)
 - `baseUrl: string` (optional)
@@ -44,6 +59,19 @@ Scan response results:
 - `USED`
 - `INVALID`
 
+Scan request supports:
+- `accessCode: string` (required)
+- `ticketPublicId: string` (required)
+- `rawScannedValue?: string`
+- `scannerSource?: string` (`manual` | `camera` | custom)
+
+`VALID` / `USED` responses also include `ticket` summary fields when available:
+- `attendeeName`
+- `attendeeEmail`
+- `attendeePhone`
+- `quantity`
+- `promoterName`
+
 ## Admin APIs (Protected by `x-admin-key`)
 - `GET /api/admin/overview`
 - `GET /api/admin/events`
@@ -53,6 +81,13 @@ Scan response results:
 - `GET /api/admin/scans`
 - `GET /api/admin/settings`
 - `GET /api/admin/audit-log`
+- `GET /api/admin/ticket-requests` (requires `accessCode` query/body/param)
+- `POST /api/admin/ticket-requests/:id/approve` (requires `accessCode`)
+- `POST /api/admin/ticket-requests/:id/reject` (requires `accessCode`)
+- `GET /api/admin/promoters` (requires `accessCode`)
+- `POST /api/admin/promoters` (requires `accessCode`)
+- `PATCH /api/admin/promoters/:id` (requires `accessCode`)
+- `DELETE /api/admin/promoters/:id` (requires `accessCode`)
 
 Admin action APIs:
 - `PATCH /api/admin/events/:eventId/disable`
