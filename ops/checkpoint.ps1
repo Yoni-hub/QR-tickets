@@ -32,7 +32,7 @@ function Ensure-FileExists([string]$path, [string]$fallbackHeader) {
 
 function Add-CheckpointBullet([string]$path, [string]$heading, [string]$noteText) {
   $content = Get-Content -Raw -Path $path
-  $line = "- $dateOnly: $noteText"
+  $line = "- ${dateOnly}: $noteText"
   if ($content -match "(?m)^## $([regex]::Escape($heading))\s*$") {
     Add-Content -Path $path -Value "`r`n$line" -Encoding utf8
   } else {

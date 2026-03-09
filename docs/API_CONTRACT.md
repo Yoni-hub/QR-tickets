@@ -105,3 +105,7 @@ Admin action APIs:
 - `PATCH /api/admin/tickets/:ticketPublicId/reset-usage`
 - `POST /api/admin/deliveries/:deliveryId/retry`
 - `PATCH /api/admin/scans/:scanId/mark-suspicious`
+
+## Checkpoint Updates
+
+- 2026-03-09: Added chat endpoints for organizer/client request messaging, added admin client token listing endpoint, and updated public ticket request validation expectations.

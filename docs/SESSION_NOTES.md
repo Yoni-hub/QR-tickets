@@ -67,3 +67,6 @@
 - Added reconciliation migration `20260308160000_ticket_request_base_and_relations` with idempotent SQL (`IF NOT EXISTS` / guarded constraints) to establish missing base objects safely.
 - Used `npx prisma migrate resolve --applied` for already-reflected historical migrations so migration history matched the actual schema without destructive reset.
 - Then applied `20260309110000_ticket_request_client_access_token` via `npx prisma migrate dev`; `npx prisma migrate status` now reports schema up to date.
+
+## 2026-03-09 (Checkpoint)
+- [2026-03-09 16:15:57 -04:00] Implemented organizer-client request chat, admin client token tooling, admin pagination updates, and public/client request flow refinements.
