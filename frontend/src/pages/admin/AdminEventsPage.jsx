@@ -8,6 +8,7 @@ import LoadingState from "../../components/admin/LoadingState";
 import ErrorState from "../../components/admin/ErrorState";
 import EmptyState from "../../components/admin/EmptyState";
 import ConfirmActionModal from "../../components/admin/ConfirmActionModal";
+import PaginationControls from "../../components/admin/PaginationControls";
 
 function formatDate(value) {
   if (!value) return "-";
@@ -22,6 +23,7 @@ const EVENT_ACTIONS = {
 };
 
 export default function AdminEventsPage() {
+  const PAGE_SIZE = 5;
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [dateFrom, setDateFrom] = useState("");
@@ -31,6 +33,7 @@ export default function AdminEventsPage() {
   const [items, setItems] = useState([]);
   const [action, setAction] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [page, setPage] = useState(1);
 
   const queryParams = useMemo(
     () => ({
@@ -48,6 +51,7 @@ export default function AdminEventsPage() {
     try {
       const response = await adminApi.get("/events", { params: queryParams });
       setItems(response.data.items || []);
+      setPage(1);
     } catch (requestError) {
       setError(requestError.response?.data?.error || "Could not load events.");
     } finally {
@@ -98,7 +102,7 @@ export default function AdminEventsPage() {
 
       {!loading && !error && items.length ? (
         <div className="space-y-2">
-          {items.map((event) => (
+          {items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((event) => (
             <article key={event.eventId} className="rounded border bg-white p-3 text-sm">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="font-semibold">{event.eventName}</p>
@@ -112,6 +116,7 @@ export default function AdminEventsPage() {
 
               <div className="mt-2 flex flex-wrap gap-2">
                 <Link className="rounded border px-2 py-1 text-xs" to={`/admin/events/${event.eventId}`}>View Event</Link>
+                <Link className="rounded border px-2 py-1 text-xs" to={`/admin/tickets?eventId=${encodeURIComponent(event.eventId)}`}>Tickets</Link>
                 <button className="rounded border px-2 py-1 text-xs" onClick={() => setAction({ type: "disable", ...event })}>Disable</button>
                 <button className="rounded border px-2 py-1 text-xs" onClick={() => setAction({ type: "enable", ...event })}>Enable</button>
                 <button className="rounded border px-2 py-1 text-xs" onClick={() => setAction({ type: "archive", ...event })}>Archive</button>
@@ -119,6 +124,14 @@ export default function AdminEventsPage() {
               </div>
             </article>
           ))}
+          <PaginationControls
+            page={page}
+            totalPages={Math.max(1, Math.ceil(items.length / PAGE_SIZE))}
+            totalItems={items.length}
+            pageSize={PAGE_SIZE}
+            onPrev={() => setPage((prev) => Math.max(1, prev - 1))}
+            onNext={() => setPage((prev) => Math.min(Math.max(1, Math.ceil(items.length / PAGE_SIZE)), prev + 1))}
+          />
         </div>
       ) : null}
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { adminApi } from "../../lib/adminApi";
 import SearchInput from "../../components/admin/SearchInput";
 import LoadingState from "../../components/admin/LoadingState";
@@ -7,6 +7,7 @@ import ErrorState from "../../components/admin/ErrorState";
 import EmptyState from "../../components/admin/EmptyState";
 import StatusBadge from "../../components/admin/StatusBadge";
 import ConfirmActionModal from "../../components/admin/ConfirmActionModal";
+import PaginationControls from "../../components/admin/PaginationControls";
 
 function formatDate(value) {
   if (!value) return "-";
@@ -20,21 +21,29 @@ const TICKET_ACTIONS = {
 };
 
 export default function AdminTicketsPage() {
+  const PAGE_SIZE = 5;
+  const [params, setParams] = useSearchParams();
+  const eventIdFilter = String(params.get("eventId") || "").trim();
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [items, setItems] = useState([]);
   const [action, setAction] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [page, setPage] = useState(1);
 
   const load = async () => {
     setLoading(true);
     setError("");
     try {
       const response = await adminApi.get("/tickets", {
-        params: { search: search.trim() || undefined },
+        params: {
+          search: search.trim() || undefined,
+          eventId: eventIdFilter || undefined,
+        },
       });
       setItems(response.data.items || []);
+      setPage(1);
     } catch (requestError) {
       setError(requestError.response?.data?.error || "Could not load tickets.");
     } finally {
@@ -44,7 +53,7 @@ export default function AdminTicketsPage() {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [eventIdFilter]);
 
   const executeAction = async () => {
     if (!action) return;
@@ -72,6 +81,21 @@ export default function AdminTicketsPage() {
     <section className="space-y-3">
       <div className="rounded border bg-white p-3">
         <SearchInput value={search} onChange={setSearch} placeholder="Search ticketPublicId, attendeeEmail, eventName, accessCode" />
+        {eventIdFilter ? (
+          <p className="mt-2 text-xs text-slate-600">
+            Filtering by eventId: <span className="font-mono">{eventIdFilter}</span>{" "}
+            <button
+              className="text-blue-700 underline"
+              onClick={() => {
+                const next = new URLSearchParams(params);
+                next.delete("eventId");
+                setParams(next);
+              }}
+            >
+              Clear
+            </button>
+          </p>
+        ) : null}
         <button className="mt-2 rounded border px-3 py-1 text-sm" onClick={load}>Search</button>
       </div>
 
@@ -81,7 +105,7 @@ export default function AdminTicketsPage() {
 
       {!loading && !error && items.length ? (
         <div className="space-y-2">
-          {items.map((ticket) => (
+          {items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((ticket) => (
             <article key={ticket.ticketPublicId} className="rounded border bg-white p-3 text-sm">
               <p className="font-mono text-xs break-all">{ticket.ticketPublicId}</p>
               <p className="mt-1">Event: {ticket.eventName}</p>
@@ -102,6 +126,14 @@ export default function AdminTicketsPage() {
               </div>
             </article>
           ))}
+          <PaginationControls
+            page={page}
+            totalPages={Math.max(1, Math.ceil(items.length / PAGE_SIZE))}
+            totalItems={items.length}
+            pageSize={PAGE_SIZE}
+            onPrev={() => setPage((prev) => Math.max(1, prev - 1))}
+            onNext={() => setPage((prev) => Math.min(Math.max(1, Math.ceil(items.length / PAGE_SIZE)), prev + 1))}
+          />
         </div>
       ) : null}
 

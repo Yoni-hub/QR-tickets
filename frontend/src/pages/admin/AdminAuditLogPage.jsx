@@ -4,6 +4,7 @@ import SearchInput from "../../components/admin/SearchInput";
 import LoadingState from "../../components/admin/LoadingState";
 import ErrorState from "../../components/admin/ErrorState";
 import EmptyState from "../../components/admin/EmptyState";
+import PaginationControls from "../../components/admin/PaginationControls";
 
 function formatDate(value) {
   if (!value) return "-";
@@ -11,10 +12,12 @@ function formatDate(value) {
 }
 
 export default function AdminAuditLogPage() {
+  const PAGE_SIZE = 5;
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [items, setItems] = useState([]);
+  const [page, setPage] = useState(1);
 
   const load = async () => {
     setLoading(true);
@@ -24,6 +27,7 @@ export default function AdminAuditLogPage() {
         params: { search: search.trim() || undefined },
       });
       setItems(response.data.items || []);
+      setPage(1);
     } catch (requestError) {
       setError(requestError.response?.data?.error || "Could not load audit log.");
     } finally {
@@ -48,7 +52,7 @@ export default function AdminAuditLogPage() {
 
       {!loading && !error && items.length ? (
         <div className="space-y-2">
-          {items.map((entry) => (
+          {items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((entry) => (
             <article key={entry.logId} className="rounded border bg-white p-3 text-sm">
               <p className="font-semibold">{entry.adminAction}</p>
               <p className="mt-1 text-slate-600">{formatDate(entry.timestamp)}</p>
@@ -58,6 +62,14 @@ export default function AdminAuditLogPage() {
               ) : null}
             </article>
           ))}
+          <PaginationControls
+            page={page}
+            totalPages={Math.max(1, Math.ceil(items.length / PAGE_SIZE))}
+            totalItems={items.length}
+            pageSize={PAGE_SIZE}
+            onPrev={() => setPage((prev) => Math.max(1, prev - 1))}
+            onNext={() => setPage((prev) => Math.min(Math.max(1, Math.ceil(items.length / PAGE_SIZE)), prev + 1))}
+          />
         </div>
       ) : null}
     </section>

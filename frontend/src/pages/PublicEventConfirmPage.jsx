@@ -23,8 +23,13 @@ export default function PublicEventConfirmPage() {
       <p className="mt-2 text-slate-700">
         {isFreeRequest
           ? "Thanks for the request. The organizer will send your tickets in a few minutes."
-          : "Thank you for your payment. The organizer will process your payment and send the tickets to your email in a few minutes."}
+          : "Thank you for your payment. The organizer will process your payment and send the tickets to your client dashboard in a few minutes."}
       </p>
+      {clientAccessToken ? (
+        <p className="mt-2 text-sm text-red-600">
+          Save your client access token. Never share it with people you don&apos;t know. You will use it to access your dashboard and see your tickets.
+        </p>
+      ) : null}
 
       <div className="mt-4 rounded border bg-white p-4 text-sm">
         <p><span className="font-semibold">Status:</span> {request?.status || "PENDING_PAYMENT"}</p>
@@ -32,7 +37,7 @@ export default function PublicEventConfirmPage() {
         <p><span className="font-semibold">Quantity:</span> {payment?.totalQuantity || request?.quantity || "-"}</p>
         <p><span className="font-semibold">Total payment:</span> {isFreeRequest ? "FREE" : `$${totalPrice.toFixed(2)}`}</p>
         <p><span className="font-semibold">Request ID:</span> <span className="font-mono">{request?.id || "-"}</span></p>
-        <p><span className="font-semibold">Client Access Token:</span> <span className="font-mono break-all">{clientAccessToken || "-"}</span></p>
+        <p><span className="font-semibold">Client Access Token:</span> <span className="font-mono break-all text-green-600">{clientAccessToken || "-"}</span></p>
       </div>
 
       <div className="mt-4 flex flex-col gap-2 sm:flex-row">
