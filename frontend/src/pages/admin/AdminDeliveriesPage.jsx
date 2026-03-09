@@ -8,6 +8,7 @@ import LoadingState from "../../components/admin/LoadingState";
 import ErrorState from "../../components/admin/ErrorState";
 import EmptyState from "../../components/admin/EmptyState";
 import ConfirmActionModal from "../../components/admin/ConfirmActionModal";
+import PaginationControls from "../../components/admin/PaginationControls";
 
 function formatDate(value) {
   if (!value) return "-";
@@ -15,6 +16,7 @@ function formatDate(value) {
 }
 
 export default function AdminDeliveriesPage() {
+  const PAGE_SIZE = 5;
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [dateFrom, setDateFrom] = useState("");
@@ -24,6 +26,7 @@ export default function AdminDeliveriesPage() {
   const [items, setItems] = useState([]);
   const [retryTarget, setRetryTarget] = useState(null);
   const [retryLoading, setRetryLoading] = useState(false);
+  const [page, setPage] = useState(1);
 
   const load = async () => {
     setLoading(true);
@@ -38,6 +41,7 @@ export default function AdminDeliveriesPage() {
         },
       });
       setItems(response.data.items || []);
+      setPage(1);
     } catch (requestError) {
       setError(requestError.response?.data?.error || "Could not load deliveries.");
     } finally {
@@ -83,7 +87,7 @@ export default function AdminDeliveriesPage() {
 
       {!loading && !error && items.length ? (
         <div className="space-y-2">
-          {items.map((delivery) => (
+          {items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((delivery) => (
             <article key={delivery.deliveryId} className="rounded border bg-white p-3 text-sm">
               <p className="font-semibold">{delivery.eventName}</p>
               <p className="mt-1 text-xs">Access Code: <span className="font-mono">{delivery.accessCode}</span></p>
@@ -101,6 +105,14 @@ export default function AdminDeliveriesPage() {
               </div>
             </article>
           ))}
+          <PaginationControls
+            page={page}
+            totalPages={Math.max(1, Math.ceil(items.length / PAGE_SIZE))}
+            totalItems={items.length}
+            pageSize={PAGE_SIZE}
+            onPrev={() => setPage((prev) => Math.max(1, prev - 1))}
+            onNext={() => setPage((prev) => Math.min(Math.max(1, Math.ceil(items.length / PAGE_SIZE)), prev + 1))}
+          />
         </div>
       ) : null}
 

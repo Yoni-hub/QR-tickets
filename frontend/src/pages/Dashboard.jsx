@@ -20,6 +20,12 @@ const DASHBOARD_MENUS = [
 ];
 
 const PDF_TICKETS_PER_PAGE_OPTIONS = [1, 2, 3, 4];
+const TICKET_STATUS_FILTERS = {
+  TOTAL: "TOTAL",
+  SOLD: "SOLD",
+  SCANNED: "SCANNED",
+  REMAINING: "REMAINING",
+};
 const DEFAULT_EMAIL_SUBJECT = "Your ticket for {{eventName}}";
 const DEFAULT_EMAIL_BODY = [
   "Hello,",
@@ -58,15 +64,6 @@ const DEFAULT_EMAIL_HTML_TEMPLATE = `
   </tr>
 </table>
 `;
-
-const EMAIL_TEMPLATE_HELP = [
-  "{{eventName}}",
-  "{{eventDate}}",
-  "{{eventAddress}}",
-  "{{ticketType}}",
-  "{{ticketUrl}}",
-  "{{recipientEmail}}",
-];
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DEFAULT_TICKET_TYPE = "General";
@@ -154,6 +151,7 @@ export default function Dashboard() {
   const [showPublicPreview, setShowPublicPreview] = useState(false);
   const [ticketPage, setTicketPage] = useState(1);
   const [ticketTypeFilter, setTicketTypeFilter] = useState("ALL");
+  const [ticketStatusFilter, setTicketStatusFilter] = useState(TICKET_STATUS_FILTERS.TOTAL);
   const [summary, setSummary] = useState(null);
   const [eventDraft, setEventDraft] = useState({ eventName: "", eventDate: "", eventAddress: "", paymentInstructions: "" });
   const [savingEvent, setSavingEvent] = useState(false);
@@ -177,6 +175,11 @@ export default function Dashboard() {
   const [sendSummary, setSendSummary] = useState(null);
   const [feedback, setFeedback] = useState({ kind: "", message: "" });
   const [promoterForm, setPromoterForm] = useState({ name: "", code: "" });
+  const [chatContext, setChatContext] = useState(null);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatSending, setChatSending] = useState(false);
 
   const recipientList = parseRecipientEmails(recipientEmails);
   const sampleRecipient = recipientList[0] || "customer@example.com";
@@ -250,19 +253,41 @@ export default function Dashboard() {
     setEmailBody(template.body);
   }, [deliveryTicketType, deliveryTicketTypeOptions, emailTemplatesByType]);
   const filteredTickets = useMemo(() => {
-    if (ticketTypeFilter === "ALL") return tickets;
-    return tickets.filter(
-      (ticket) => String(ticket.ticketType || summary?.event?.ticketType || "General").trim() === ticketTypeFilter,
-    );
-  }, [tickets, ticketTypeFilter, summary?.event?.ticketType]);
+    return tickets.filter((ticket) => {
+      const ticketTypeMatches =
+        ticketTypeFilter === "ALL"
+          || String(ticket.ticketType || summary?.event?.ticketType || "General").trim() === ticketTypeFilter;
+      if (!ticketTypeMatches) return false;
+
+      if (ticketStatusFilter === TICKET_STATUS_FILTERS.SOLD) return Boolean(ticket.ticketRequestId);
+      if (ticketStatusFilter === TICKET_STATUS_FILTERS.SCANNED) return ticket.status === "USED";
+      if (ticketStatusFilter === TICKET_STATUS_FILTERS.REMAINING) {
+        return !ticket.ticketRequestId && ticket.status !== "USED";
+      }
+      return true;
+    });
+  }, [tickets, ticketTypeFilter, ticketStatusFilter, summary?.event?.ticketType]);
   const totalTicketPages = Math.max(1, Math.ceil(filteredTickets.length / 5));
   const pagedTickets = filteredTickets.slice((ticketPage - 1) * 5, ticketPage * 5);
+  const soldTicketsCount = useMemo(() => tickets.filter((ticket) => Boolean(ticket.ticketRequestId)).length, [tickets]);
+  const scannedTicketsCount = useMemo(() => tickets.filter((ticket) => ticket.status === "USED").length, [tickets]);
+  const remainingTicketsCount = useMemo(
+    () => tickets.filter((ticket) => !ticket.ticketRequestId && ticket.status !== "USED").length,
+    [tickets],
+  );
   useEffect(() => {
     if (ticketPage > totalTicketPages) setTicketPage(totalTicketPages);
   }, [ticketPage, totalTicketPages]);
   useEffect(() => {
     setTicketPage(1);
-  }, [ticketTypeFilter]);
+  }, [ticketTypeFilter, ticketStatusFilter]);
+  useEffect(() => {
+    if (!chatContext?.id || !accessCode) return undefined;
+    const interval = setInterval(() => {
+      loadChatMessages(chatContext.id, { silent: true });
+    }, 8000);
+    return () => clearInterval(interval);
+  }, [chatContext?.id, accessCode]);
 
   const loadRequestsAndPromoters = async (targetCode) => {
     if (!targetCode) return;
@@ -291,6 +316,7 @@ export default function Dashboard() {
         paymentInstructions: String(summaryRes.data?.event?.paymentInstructions || ""),
       });
       setTicketTypeFilter("ALL");
+      setTicketStatusFilter(TICKET_STATUS_FILTERS.TOTAL);
       setActiveMenu("tickets");
       setShowPublicPreview(false);
       setTicketPage(1);
@@ -306,6 +332,7 @@ export default function Dashboard() {
       setPromoters([]);
       setLeaderboard([]);
       setTicketTypeFilter("ALL");
+      setTicketStatusFilter(TICKET_STATUS_FILTERS.TOTAL);
     } finally {
       setLoading(false);
     }
@@ -315,6 +342,25 @@ export default function Dashboard() {
     const url = `${window.location.origin}/t/${ticketPublicId}`;
     await navigator.clipboard.writeText(url);
     setFeedback({ kind: "success", message: "Ticket URL copied." });
+  };
+
+  const openEvidenceImage = (dataUrl) => {
+    const value = String(dataUrl || "").trim();
+    if (!value) return;
+    const nextWindow = window.open("", "_blank", "noopener,noreferrer");
+    if (!nextWindow) {
+      setFeedback({ kind: "error", message: "Popup blocked. Please allow popups to view evidence." });
+      return;
+    }
+    nextWindow.document.write(`
+      <html>
+        <head><title>Payment Evidence</title></head>
+        <body style="margin:0;padding:12px;background:#0f172a;display:flex;align-items:center;justify-content:center;">
+          <img src="${value}" alt="Payment evidence" style="max-width:100%;max-height:95vh;border-radius:8px;background:#fff;" />
+        </body>
+      </html>
+    `);
+    nextWindow.document.close();
   };
 
   const approveRequest = async (requestId) => {
@@ -329,13 +375,56 @@ export default function Dashboard() {
     }
   };
 
-  const rejectRequest = async (requestId) => {
+  const loadChatMessages = async (requestId, { silent = false } = {}) => {
+    if (!requestId || !accessCode) return;
+    if (!silent) setChatLoading(true);
     try {
-      await api.post(`/ticket-requests/${encodeURIComponent(requestId)}/reject`, { accessCode });
-      await loadRequestsAndPromoters(accessCode);
-      setFeedback({ kind: "info", message: "Request rejected." });
+      const response = await api.get(`/ticket-requests/${encodeURIComponent(requestId)}/messages`, {
+        params: { accessCode },
+      });
+      setChatMessages(response.data.messages || []);
+      setTicketRequests((prev) =>
+        prev.map((item) => (item.id === requestId ? { ...item, unreadClientMessages: 0 } : item)),
+      );
     } catch (requestError) {
-      setFeedback({ kind: "error", message: requestError.response?.data?.error || "Reject failed." });
+      if (!silent) {
+        setFeedback({ kind: "error", message: requestError.response?.data?.error || "Could not load chat." });
+      }
+    } finally {
+      if (!silent) setChatLoading(false);
+    }
+  };
+
+  const openRequestChat = async (requestItem) => {
+    setChatContext(requestItem);
+    setChatInput("");
+    await loadChatMessages(requestItem.id);
+  };
+
+  const closeRequestChat = () => {
+    setChatContext(null);
+    setChatInput("");
+    setChatMessages([]);
+  };
+
+  const sendChatMessage = async () => {
+    const requestId = chatContext?.id;
+    const message = String(chatInput || "").trim();
+    if (!requestId || !message || chatSending) return;
+
+    setChatSending(true);
+    try {
+      await api.post(`/ticket-requests/${encodeURIComponent(requestId)}/messages`, {
+        accessCode,
+        message,
+      });
+      setChatInput("");
+      await loadChatMessages(requestId, { silent: true });
+      await loadRequestsAndPromoters(accessCode);
+    } catch (requestError) {
+      setFeedback({ kind: "error", message: requestError.response?.data?.error || "Could not send message." });
+    } finally {
+      setChatSending(false);
     }
   };
 
@@ -666,15 +755,44 @@ export default function Dashboard() {
                   saveLoading={savingTicketDraft}
                 />
               </div>
-              <div className="mb-3 grid grid-cols-3 gap-2">
-                <div className="rounded border bg-white p-2 text-center"><p className="text-[10px] uppercase text-slate-500">Total</p><p className="text-lg font-bold leading-none">{summary.totalTickets}</p></div>
-                <div className="rounded border bg-white p-2 text-center"><p className="text-[10px] uppercase text-slate-500">Scanned</p><p className="text-lg font-bold leading-none">{summary.scannedTickets}</p></div>
-                <div className="rounded border bg-white p-2 text-center"><p className="text-[10px] uppercase text-slate-500">Remaining</p><p className="text-lg font-bold leading-none">{summary.remainingTickets}</p></div>
+              <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <button
+                  type="button"
+                  className={`rounded border p-2 text-center ${ticketStatusFilter === TICKET_STATUS_FILTERS.TOTAL ? "border-slate-900 bg-slate-100" : "bg-white"}`}
+                  onClick={() => setTicketStatusFilter(TICKET_STATUS_FILTERS.TOTAL)}
+                >
+                  <p className="text-[10px] uppercase text-slate-500">Total</p>
+                  <p className="text-lg font-bold leading-none">{tickets.length}</p>
+                </button>
+                <button
+                  type="button"
+                  className={`rounded border p-2 text-center ${ticketStatusFilter === TICKET_STATUS_FILTERS.SOLD ? "border-slate-900 bg-slate-100" : "bg-white"}`}
+                  onClick={() => setTicketStatusFilter(TICKET_STATUS_FILTERS.SOLD)}
+                >
+                  <p className="text-[10px] uppercase text-slate-500">Sold</p>
+                  <p className="text-lg font-bold leading-none">{soldTicketsCount}</p>
+                </button>
+                <button
+                  type="button"
+                  className={`rounded border p-2 text-center ${ticketStatusFilter === TICKET_STATUS_FILTERS.SCANNED ? "border-slate-900 bg-slate-100" : "bg-white"}`}
+                  onClick={() => setTicketStatusFilter(TICKET_STATUS_FILTERS.SCANNED)}
+                >
+                  <p className="text-[10px] uppercase text-slate-500">Scanned</p>
+                  <p className="text-lg font-bold leading-none">{scannedTicketsCount}</p>
+                </button>
+                <button
+                  type="button"
+                  className={`rounded border p-2 text-center ${ticketStatusFilter === TICKET_STATUS_FILTERS.REMAINING ? "border-slate-900 bg-slate-100" : "bg-white"}`}
+                  onClick={() => setTicketStatusFilter(TICKET_STATUS_FILTERS.REMAINING)}
+                >
+                  <p className="text-[10px] uppercase text-slate-500">Remaining</p>
+                  <p className="text-lg font-bold leading-none">{remainingTicketsCount}</p>
+                </button>
               </div>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-sm font-semibold">Generated tickets</p>
-                <div className="flex items-center gap-2">
-                  <label className="text-xs font-medium text-slate-600">Filter type</label>
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="text-xs font-medium text-slate-600">Type</label>
                   <select
                     className="rounded border p-1.5 text-xs"
                     value={ticketTypeFilter}
@@ -709,7 +827,7 @@ export default function Dashboard() {
                     <button className="mt-2 rounded border px-2 py-1 text-xs" onClick={() => copyTicketUrl(ticket.ticketPublicId)}>Copy</button>
                   </article>
                 ))}
-                {!pagedTickets.length ? <p className="text-sm text-slate-500">No tickets for selected type.</p> : null}
+                {!pagedTickets.length ? <p className="text-sm text-slate-500">No tickets for selected filters.</p> : null}
               </div>
               <div className="mt-3 hidden overflow-x-auto rounded border lg:block">
                 <table className="w-full min-w-[860px] text-left text-sm">
@@ -727,7 +845,7 @@ export default function Dashboard() {
                     ))}
                     {!pagedTickets.length ? (
                       <tr className="border-t">
-                        <td className="p-3 text-slate-500" colSpan={6}>No tickets for selected type.</td>
+                        <td className="p-3 text-slate-500" colSpan={6}>No tickets for selected filters.</td>
                       </tr>
                     ) : null}
                   </tbody>
@@ -797,69 +915,12 @@ export default function Dashboard() {
                   <p className="mt-1 text-xs text-slate-600">Send one ticket type at a time. Group similar buyers together, then switch type for the next batch.</p>
 
                   <div className="mt-4 rounded border bg-slate-50 p-3">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-                      <p className="text-sm font-semibold">Email content preview editor</p>
-                      <div className="grid grid-cols-1 gap-2 sm:flex">
-                        <AppButton type="button" variant="secondary" className="px-2 py-1 text-xs" onClick={() => setShowEmailPreview((prev) => !prev)}>{showEmailPreview ? "Hide preview" : "Show preview"}</AppButton>
-                        <AppButton
-                          type="button"
-                          variant="secondary"
-                          className="px-2 py-1 text-xs"
-                          onClick={() => {
-                            const nextTemplate = {
-                              subject: buildDefaultEmailSubject(deliveryTicketType || DEFAULT_TICKET_TYPE),
-                              body: buildDefaultEmailBody(deliveryTicketType || DEFAULT_TICKET_TYPE),
-                            };
-                            setEmailTemplatesByType((prev) => ({
-                              ...prev,
-                              [deliveryTicketType || DEFAULT_TICKET_TYPE]: nextTemplate,
-                            }));
-                            setEmailSubject(nextTemplate.subject);
-                            setEmailBody(nextTemplate.body);
-                          }}
-                        >
-                          Reset template
-                        </AppButton>
-                      </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-semibold">Email content preview (we send one ticket per email)</p>
+                      <AppButton type="button" variant="secondary" className="px-2 py-1 text-xs" onClick={() => setShowEmailPreview((prev) => !prev)}>
+                        {showEmailPreview ? "Hide preview" : "View preview"}
+                      </AppButton>
                     </div>
-
-                    <p className="mt-2 text-xs text-slate-600">Available placeholders: {EMAIL_TEMPLATE_HELP.join(", ")}</p>
-                    <label className="mt-3 block text-xs font-medium text-slate-700">Email subject</label>
-                    <input
-                      className="mt-1 w-full rounded border p-2 text-sm"
-                      value={emailSubject}
-                      onChange={(event) => {
-                        const nextValue = event.target.value;
-                        setEmailSubject(nextValue);
-                        setEmailTemplatesByType((prev) => ({
-                          ...prev,
-                          [deliveryTicketType || DEFAULT_TICKET_TYPE]: {
-                            subject: nextValue,
-                            body: emailBody,
-                          },
-                        }));
-                      }}
-                      placeholder="Your ticket for {{eventName}}"
-                    />
-
-                    <label className="mt-3 block text-xs font-medium text-slate-700">Email body</label>
-                    <textarea
-                      className="mt-1 w-full rounded border p-2 text-sm font-mono"
-                      rows={8}
-                      value={emailBody}
-                      onChange={(event) => {
-                        const nextValue = event.target.value;
-                        setEmailBody(nextValue);
-                        setEmailTemplatesByType((prev) => ({
-                          ...prev,
-                          [deliveryTicketType || DEFAULT_TICKET_TYPE]: {
-                            subject: emailSubject,
-                            body: nextValue,
-                          },
-                        }));
-                      }}
-                    />
-
                     {showEmailPreview ? (
                       <div className="mt-3 rounded border bg-white p-3 text-sm">
                         <p className="text-xs text-slate-500">To: {sampleRecipient}</p>
@@ -885,7 +946,45 @@ export default function Dashboard() {
           {activeMenu === "requests" ? (
             <section className="mt-4 rounded border p-4">
               <p className="text-sm font-semibold">Ticket requests</p>
-              <div className="mt-3 overflow-x-auto rounded border">
+              <div className="mt-3 space-y-3 lg:hidden">
+                {ticketRequests.map((item) => {
+                  const selections = Array.isArray(item.ticketSelections) ? item.ticketSelections : [];
+                  return (
+                    <article key={item.id} className="rounded border bg-white p-3 text-sm">
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <p><span className="font-semibold">Name:</span> {item.name}</p>
+                        <p><span className="font-semibold">Email:</span> {item.email || "-"}</p>
+                        <p className="col-span-2">
+                          <span className="font-semibold">Ticket Types:</span>{" "}
+                          {selections.length
+                            ? selections.map((selection) => `${selection.ticketType} x${selection.quantity}`).join(", ")
+                            : item.ticketType || "-"}
+                        </p>
+                        <p><span className="font-semibold">Quantity:</span> {item.quantity}</p>
+                        <p><span className="font-semibold">Delivery:</span> {item.deliveryStatus || "PENDING"}</p>
+                        <p className="col-span-2"><span className="font-semibold">Status:</span> {item.status}</p>
+                        <p className="col-span-2">
+                          <span className="font-semibold">Evidence:</span>{" "}
+                          {item.evidenceImageDataUrl ? (
+                            <button className="text-blue-700 underline" onClick={() => openEvidenceImage(item.evidenceImageDataUrl)}>View</button>
+                          ) : (
+                            "-"
+                          )}
+                        </p>
+                        {item.organizerMessage ? <p className="col-span-2 text-slate-600"><span className="font-semibold">Message:</span> {item.organizerMessage}</p> : null}
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <AppButton className="px-2 py-1 text-xs" variant="success" onClick={() => approveRequest(item.id)}>Approve</AppButton>
+                        <AppButton className="px-2 py-1 text-xs" variant="secondary" onClick={() => openRequestChat(item)}>
+                          Message buyer{item.unreadClientMessages ? ` (${item.unreadClientMessages})` : ""}
+                        </AppButton>
+                      </div>
+                    </article>
+                  );
+                })}
+                {!ticketRequests.length ? <p className="text-sm text-slate-500">No ticket requests yet.</p> : null}
+              </div>
+              <div className="mt-3 hidden overflow-x-auto rounded border lg:block">
                 <table className="w-full min-w-[900px] text-left text-sm">
                   <thead className="bg-slate-100">
                     <tr>
@@ -915,20 +1014,25 @@ export default function Dashboard() {
                           <td className="p-2">{item.quantity}</td>
                           <td className="p-2">
                             {item.evidenceImageDataUrl ? (
-                              <a href={item.evidenceImageDataUrl} target="_blank" rel="noreferrer" className="inline-block">
+                              <button className="inline-block" onClick={() => openEvidenceImage(item.evidenceImageDataUrl)}>
                                 <img src={item.evidenceImageDataUrl} alt="Payment evidence" className="h-12 w-12 rounded border object-cover" />
-                              </a>
+                              </button>
                             ) : (
                               "-"
                             )}
                           </td>
                           <td className="p-2 font-mono text-xs break-all">{Array.isArray(item.ticketIds) && item.ticketIds.length ? item.ticketIds.join(", ") : "-"}</td>
-                          <td className="p-2">{item.status}</td>
+                          <td className="p-2">
+                            <p>{item.status}</p>
+                            {item.organizerMessage ? <p className="mt-1 text-xs text-slate-600">{item.organizerMessage}</p> : null}
+                          </td>
                           <td className="p-2">{item.deliveryStatus || "PENDING"}</td>
                           <td className="p-2">
                             <div className="flex flex-wrap gap-2">
                               <AppButton className="px-2 py-1 text-xs" variant="success" onClick={() => approveRequest(item.id)}>Approve</AppButton>
-                              <AppButton className="px-2 py-1 text-xs" variant="danger" onClick={() => rejectRequest(item.id)}>Reject</AppButton>
+                              <AppButton className="px-2 py-1 text-xs" variant="secondary" onClick={() => openRequestChat(item)}>
+                                Message buyer{item.unreadClientMessages ? ` (${item.unreadClientMessages})` : ""}
+                              </AppButton>
                             </div>
                           </td>
                         </tr>
@@ -985,6 +1089,66 @@ export default function Dashboard() {
                 </div>
               </div>
             </section>
+          ) : null}
+
+          {chatContext ? (
+            <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-3 sm:items-center">
+              <section className="w-full max-w-xl rounded border bg-white p-3 shadow-xl">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold">Chat with {chatContext.name || "Buyer"}</p>
+                    <p className="text-xs text-slate-500">{chatContext.email || "No email"}{chatContext.phone ? ` | ${chatContext.phone}` : ""}</p>
+                  </div>
+                  <AppButton type="button" variant="secondary" className="px-2 py-1 text-xs" onClick={closeRequestChat}>
+                    Close
+                  </AppButton>
+                </div>
+
+                <div className="mt-3 h-72 overflow-y-auto rounded border bg-slate-50 p-2">
+                  {chatLoading ? (
+                    <p className="text-xs text-slate-500">Loading chat...</p>
+                  ) : chatMessages.length ? (
+                    <div className="space-y-2">
+                      {chatMessages.map((message) => {
+                        const isOrganizer = message.senderType === "ORGANIZER";
+                        return (
+                          <div key={message.id} className={`flex ${isOrganizer ? "justify-end" : "justify-start"}`}>
+                            <div className={`max-w-[85%] rounded px-2 py-1 text-xs ${isOrganizer ? "bg-indigo-600 text-white" : "bg-white text-slate-900 border"}`}>
+                              <p>{message.message}</p>
+                              <p className={`mt-1 text-[10px] ${isOrganizer ? "text-indigo-100" : "text-slate-500"}`}>
+                                {formatDate(message.createdAt)}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-500">No messages yet.</p>
+                  )}
+                </div>
+
+                <div className="mt-3 flex gap-2">
+                  <textarea
+                    className="w-full rounded border p-2 text-sm"
+                    rows={3}
+                    value={chatInput}
+                    onChange={(event) => setChatInput(event.target.value)}
+                    placeholder="Type a message to buyer..."
+                  />
+                  <AppButton
+                    type="button"
+                    className="self-end"
+                    variant="indigo"
+                    onClick={sendChatMessage}
+                    loading={chatSending}
+                    loadingText="Sending..."
+                  >
+                    Send
+                  </AppButton>
+                </div>
+              </section>
+            </div>
           ) : null}
         </>
       ) : null}

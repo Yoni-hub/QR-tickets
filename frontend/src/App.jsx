@@ -19,6 +19,7 @@ import AdminDeliveriesPage from "./pages/admin/AdminDeliveriesPage";
 import AdminScansPage from "./pages/admin/AdminScansPage";
 import AdminSettingsPage from "./pages/admin/AdminSettingsPage";
 import AdminAuditLogPage from "./pages/admin/AdminAuditLogPage";
+import AdminClientDashTokensPage from "./pages/admin/AdminClientDashTokensPage";
 
 export default function App() {
   const location = useLocation();
@@ -60,6 +61,7 @@ export default function App() {
           <Route path="tickets" element={<AdminTicketsPage />} />
           <Route path="deliveries" element={<AdminDeliveriesPage />} />
           <Route path="scans" element={<AdminScansPage />} />
+          <Route path="client-dash-tokens" element={<AdminClientDashTokensPage />} />
           <Route path="settings" element={<AdminSettingsPage />} />
           <Route path="audit-log" element={<AdminAuditLogPage />} />
         </Route>

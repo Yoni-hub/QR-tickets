@@ -8,6 +8,7 @@ const {
   listAdminScans,
   getAdminSettings,
   listAdminAuditLog,
+  listAdminClientDashTokens,
   disableAdminEvent,
   enableAdminEvent,
   archiveAdminEvent,
@@ -54,6 +55,7 @@ router.patch("/scans/:scanId/mark-suspicious", markScanSuspicious);
 
 router.get("/settings", getAdminSettings);
 router.get("/audit-log", listAdminAuditLog);
+router.get("/client-dash-tokens", listAdminClientDashTokens);
 
 // Requested aliases for club/manual ticketing flows.
 router.get("/ticket-requests", getOrganizerTicketRequests);

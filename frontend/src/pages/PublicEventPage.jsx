@@ -28,7 +28,7 @@ export default function PublicEventPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [eventData, setEventData] = useState(null);
-  const [form, setForm] = useState({ name: "", email: "", ticketType: "", quantity: 1 });
+  const [form, setForm] = useState({ name: "", ticketType: "", quantity: 0 });
   const [quantitiesByType, setQuantitiesByType] = useState({});
   const [evidenceImageDataUrl, setEvidenceImageDataUrl] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -60,16 +60,14 @@ export default function PublicEventPage() {
   useEffect(() => {
     const options = eventData?.event?.ticketTypes || [];
     if (!options.length) return;
-    const initialType = form.ticketType || options[0].ticketType;
     const nextQuantities = {};
     for (const option of options) {
-      nextQuantities[option.ticketType] = option.ticketType === initialType ? Math.max(1, Number(form.quantity || 1)) : 0;
+      nextQuantities[option.ticketType] = 0;
     }
     setQuantitiesByType(nextQuantities);
     setForm((prev) => ({
       ...prev,
-      ticketType: initialType,
-      quantity: Math.max(1, Number(prev.quantity || 1)),
+      quantity: 0,
     }));
   }, [eventData]);
 
@@ -129,12 +127,12 @@ export default function PublicEventPage() {
       setFeedback({ kind: "error", message: "Name is required." });
       return;
     }
-    if (!form.email.trim()) {
-      setFeedback({ kind: "error", message: "Email is required." });
-      return;
-    }
     if (totalQuantity < 1) {
       setFeedback({ kind: "error", message: "Please add quantity for at least one ticket type." });
+      return;
+    }
+    if (!isFreeSelection && !evidenceImageDataUrl) {
+      setFeedback({ kind: "error", message: "Payment evidence is required." });
       return;
     }
     for (const selection of selectedSelections) {
@@ -150,9 +148,8 @@ export default function PublicEventPage() {
       const response = await api.post("/public/ticket-request", {
         eventSlug,
         name: form.name,
-        email: form.email,
         ticketSelections: selectedSelections.map((item) => ({ ticketType: item.ticketType, quantity: item.quantity })),
-        evidenceImageDataUrl: isFreeSelection ? null : (evidenceImageDataUrl || null),
+        evidenceImageDataUrl: isFreeSelection ? null : evidenceImageDataUrl,
         promoterCode,
       });
 
@@ -256,14 +253,13 @@ export default function PublicEventPage() {
         <h2 className="text-lg font-semibold">Request Tickets</h2>
         <div className="mt-3 grid grid-cols-1 gap-2">
           <input className="rounded border p-2" placeholder="Name (required)" value={form.name} onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))} />
-          <input className="rounded border p-2" placeholder="Email (required)" value={form.email} onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))} />
         </div>
 
         {isFreeSelection ? (
           <div className="mt-3 rounded border bg-emerald-50 p-3 text-sm text-emerald-800">
             <p className="font-semibold">Total payment: FREE</p>
             <p className="mt-1">Selected tickets: {totalQuantity}</p>
-            <p className="mt-1">No payment proof is required for this request.</p>
+            <p className="mt-1">Payment proof is NOT required. Its a FREE event.</p>
           </div>
         ) : (
           <>
@@ -273,18 +269,20 @@ export default function PublicEventPage() {
               <p className="mt-1">Organizer Instructions: </p>
               <p className="mt-1">{eventData.event.paymentInstructions || "Please contact the organizer for payment instructions."}</p>
             </div>
-
-            <div className="mt-3 rounded border bg-slate-50 p-3 text-sm">
-              <p className="font-semibold">Upload Payment Evidence (image, max 2MB)</p>
-              <input className="mt-2 w-full rounded border p-2" type="file" accept="image/png,image/jpeg,image/webp" onChange={onEvidenceFileChange} />
-              {evidenceImageDataUrl ? (
-                <div className="mt-2">
-                  <img src={evidenceImageDataUrl} alt="Payment evidence preview" className="h-24 w-24 rounded border object-cover" />
-                </div>
-              ) : null}
-            </div>
           </>
         )}
+
+        {!isFreeSelection ? (
+          <div className="mt-3 rounded border bg-slate-50 p-3 text-sm">
+            <p className="font-semibold">Upload Payment Evidence (required, image, max 2MB)</p>
+            <input className="mt-2 w-full rounded border p-2" type="file" accept="image/png,image/jpeg,image/webp" onChange={onEvidenceFileChange} />
+            {evidenceImageDataUrl ? (
+              <div className="mt-2">
+                <img src={evidenceImageDataUrl} alt="Payment evidence preview" className="h-24 w-24 rounded border object-cover" />
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         <FeedbackBanner className="mt-3" kind={feedback.kind} message={feedback.message} />
 

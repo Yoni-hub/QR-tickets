@@ -3,8 +3,24 @@ const { getPublicBaseUrl } = require("../services/eventService");
 const { sendTicketLinksDigestEmail } = require("../utils/mailer");
 const { sendTicketSms } = require("../utils/sms");
 
+const MAX_CHAT_MESSAGE_LENGTH = 1200;
+
 function parseAccessCode(value) {
   return String(value || "").trim();
+}
+
+function normalizeChatMessage(value) {
+  return String(value || "").trim();
+}
+
+function mapChatMessage(message) {
+  return {
+    id: message.id,
+    senderType: message.senderType,
+    message: message.message,
+    createdAt: message.createdAt,
+    readAt: message.readAt || null,
+  };
 }
 
 async function findEventByAccessCode(accessCode) {
@@ -51,6 +67,7 @@ async function getOrganizerTicketRequests(req, res) {
       totalPrice: true,
       ticketSelections: true,
       evidenceImageDataUrl: true,
+      organizerMessage: true,
       quantity: true,
       status: true,
       createdAt: true,
@@ -65,6 +82,12 @@ async function getOrganizerTicketRequests(req, res) {
             take: 1,
             select: { status: true },
           },
+        },
+      },
+      messages: {
+        select: {
+          senderType: true,
+          readAt: true,
         },
       },
     },
@@ -91,10 +114,14 @@ async function getOrganizerTicketRequests(req, res) {
       deliveryStatus = "NOT_SENT";
     }
 
-    const { tickets: _tickets, ...requestWithoutTickets } = request;
+    const unreadClientMessages = (request.messages || []).filter(
+      (message) => message.senderType === "CLIENT" && !message.readAt,
+    ).length;
+    const { tickets: _tickets, messages: _messages, ...requestWithoutTickets } = request;
     return {
       ...requestWithoutTickets,
       deliveryStatus,
+      unreadClientMessages,
       ticketIds: tickets.map((ticket) => ticket.ticketPublicId).filter(Boolean),
     };
   });
@@ -272,7 +299,7 @@ async function approveTicketRequest(req, res) {
 
   const updatedRequest = await prisma.ticketRequest.update({
     where: { id: request.id },
-    data: { status: "APPROVED" },
+    data: { status: "APPROVED", organizerMessage: null },
     select: {
       id: true,
       status: true,
@@ -329,6 +356,154 @@ async function rejectTicketRequest(req, res) {
   });
 
   res.json({ request: updatedRequest });
+}
+
+async function messageTicketRequest(req, res) {
+  const requestId = String(req.params.id || "").trim();
+  const accessCode = parseAccessCode(req.body?.accessCode || req.query?.accessCode);
+  const organizerMessage = String(req.body?.message || "").trim();
+  if (!requestId || !accessCode) {
+    res.status(400).json({ error: "request id and accessCode are required." });
+    return;
+  }
+  if (!organizerMessage) {
+    res.status(400).json({ error: "Message is required." });
+    return;
+  }
+  if (organizerMessage.length > 1200) {
+    res.status(400).json({ error: "Message is too long." });
+    return;
+  }
+
+  const event = await findEventByAccessCode(accessCode);
+  if (!event) {
+    res.status(404).json({ error: "Event not found." });
+    return;
+  }
+
+  const request = await prisma.ticketRequest.findFirst({
+    where: { id: requestId, eventId: event.id },
+  });
+  if (!request) {
+    res.status(404).json({ error: "Ticket request not found." });
+    return;
+  }
+  if (request.status === "APPROVED") {
+    res.status(400).json({ error: "Approved request cannot receive a payment message." });
+    return;
+  }
+
+  const updatedRequest = await prisma.ticketRequest.update({
+    where: { id: request.id },
+    data: {
+      status: "PENDING_PAYMENT",
+      organizerMessage,
+    },
+    select: {
+      id: true,
+      status: true,
+      organizerMessage: true,
+      updatedAt: true,
+    },
+  });
+
+  res.json({ request: updatedRequest });
+}
+
+async function getTicketRequestMessages(req, res) {
+  const requestId = String(req.params.id || "").trim();
+  const accessCode = parseAccessCode(req.query?.accessCode || req.body?.accessCode);
+  if (!requestId || !accessCode) {
+    res.status(400).json({ error: "request id and accessCode are required." });
+    return;
+  }
+
+  const event = await findEventByAccessCode(accessCode);
+  if (!event) {
+    res.status(404).json({ error: "Event not found." });
+    return;
+  }
+
+  const request = await prisma.ticketRequest.findFirst({
+    where: { id: requestId, eventId: event.id },
+    select: { id: true },
+  });
+  if (!request) {
+    res.status(404).json({ error: "Ticket request not found." });
+    return;
+  }
+
+  await prisma.ticketRequestMessage.updateMany({
+    where: {
+      ticketRequestId: request.id,
+      senderType: "CLIENT",
+      readAt: null,
+    },
+    data: { readAt: new Date() },
+  });
+
+  const messages = await prisma.ticketRequestMessage.findMany({
+    where: { ticketRequestId: request.id },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, senderType: true, message: true, createdAt: true, readAt: true },
+  });
+
+  res.json({
+    requestId: request.id,
+    messages: messages.map(mapChatMessage),
+  });
+}
+
+async function sendTicketRequestMessage(req, res) {
+  const requestId = String(req.params.id || "").trim();
+  const accessCode = parseAccessCode(req.body?.accessCode || req.query?.accessCode);
+  const message = normalizeChatMessage(req.body?.message);
+  if (!requestId || !accessCode) {
+    res.status(400).json({ error: "request id and accessCode are required." });
+    return;
+  }
+  if (!message) {
+    res.status(400).json({ error: "Message is required." });
+    return;
+  }
+  if (message.length > MAX_CHAT_MESSAGE_LENGTH) {
+    res.status(400).json({ error: "Message is too long." });
+    return;
+  }
+
+  const event = await findEventByAccessCode(accessCode);
+  if (!event) {
+    res.status(404).json({ error: "Event not found." });
+    return;
+  }
+
+  const request = await prisma.ticketRequest.findFirst({
+    where: { id: requestId, eventId: event.id },
+    select: { id: true },
+  });
+  if (!request) {
+    res.status(404).json({ error: "Ticket request not found." });
+    return;
+  }
+
+  const created = await prisma.ticketRequestMessage.create({
+    data: {
+      ticketRequestId: request.id,
+      senderType: "ORGANIZER",
+      message,
+    },
+    select: { id: true, senderType: true, message: true, createdAt: true, readAt: true },
+  });
+
+  await prisma.ticketRequest.update({
+    where: { id: request.id },
+    data: {
+      status: "PENDING_PAYMENT",
+      organizerMessage: message,
+    },
+  });
+
+  res.status(201).json({ message: mapChatMessage(created) });
 }
 
 function normalizePromoterCode(value) {
@@ -595,6 +770,9 @@ module.exports = {
   getOrganizerTicketRequests,
   approveTicketRequest,
   rejectTicketRequest,
+  messageTicketRequest,
+  getTicketRequestMessages,
+  sendTicketRequestMessage,
   listPromoters,
   createPromoter,
   updatePromoter,

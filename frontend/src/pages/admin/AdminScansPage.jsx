@@ -8,6 +8,7 @@ import LoadingState from "../../components/admin/LoadingState";
 import ErrorState from "../../components/admin/ErrorState";
 import EmptyState from "../../components/admin/EmptyState";
 import ConfirmActionModal from "../../components/admin/ConfirmActionModal";
+import PaginationControls from "../../components/admin/PaginationControls";
 
 function formatDate(value) {
   if (!value) return "-";
@@ -15,6 +16,7 @@ function formatDate(value) {
 }
 
 export default function AdminScansPage() {
+  const PAGE_SIZE = 5;
   const [search, setSearch] = useState("");
   const [result, setResult] = useState("");
   const [dateFrom, setDateFrom] = useState("");
@@ -24,6 +26,7 @@ export default function AdminScansPage() {
   const [items, setItems] = useState([]);
   const [markTarget, setMarkTarget] = useState(null);
   const [markLoading, setMarkLoading] = useState(false);
+  const [page, setPage] = useState(1);
 
   const load = async () => {
     setLoading(true);
@@ -38,6 +41,7 @@ export default function AdminScansPage() {
         },
       });
       setItems(response.data.items || []);
+      setPage(1);
     } catch (requestError) {
       setError(requestError.response?.data?.error || "Could not load scans.");
     } finally {
@@ -86,7 +90,7 @@ export default function AdminScansPage() {
 
       {!loading && !error && items.length ? (
         <div className="space-y-2">
-          {items.map((scan) => (
+          {items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((scan) => (
             <article key={scan.scanId} className="rounded border bg-white p-3 text-sm">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="font-semibold">{scan.eventName}</p>
@@ -107,6 +111,14 @@ export default function AdminScansPage() {
               </div>
             </article>
           ))}
+          <PaginationControls
+            page={page}
+            totalPages={Math.max(1, Math.ceil(items.length / PAGE_SIZE))}
+            totalItems={items.length}
+            pageSize={PAGE_SIZE}
+            onPrev={() => setPage((prev) => Math.max(1, prev - 1))}
+            onNext={() => setPage((prev) => Math.min(Math.max(1, Math.ceil(items.length / PAGE_SIZE)), prev + 1))}
+          />
         </div>
       ) : null}
 

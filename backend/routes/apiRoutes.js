@@ -16,11 +16,16 @@ const {
   getPublicEventBySlug,
   createPublicTicketRequest,
   getClientDashboardByToken,
+  getClientRequestMessagesByToken,
+  createClientRequestMessageByToken,
 } = require("../controllers/publicController");
 const {
   getOrganizerTicketRequests,
   approveTicketRequest,
   rejectTicketRequest,
+  messageTicketRequest,
+  getTicketRequestMessages,
+  sendTicketRequestMessage,
   listPromoters,
   createPromoter,
   updatePromoter,
@@ -46,10 +51,15 @@ router.post("/scans", scanTicket);
 router.get("/public/events/:eventSlug", getPublicEventBySlug);
 router.post("/public/ticket-request", createPublicTicketRequest);
 router.get("/public/client-dashboard/:clientAccessToken", getClientDashboardByToken);
+router.get("/public/client-dashboard/:clientAccessToken/messages", getClientRequestMessagesByToken);
+router.post("/public/client-dashboard/:clientAccessToken/messages", createClientRequestMessageByToken);
 
 router.get("/events/by-code/:accessCode/ticket-requests", getOrganizerTicketRequests);
 router.post("/ticket-requests/:id/approve", approveTicketRequest);
 router.post("/ticket-requests/:id/reject", rejectTicketRequest);
+router.post("/ticket-requests/:id/message", messageTicketRequest);
+router.get("/ticket-requests/:id/messages", getTicketRequestMessages);
+router.post("/ticket-requests/:id/messages", sendTicketRequestMessage);
 router.post("/events/by-code/:accessCode/guests", createGuestAndApprove);
 router.post("/events/by-code/:accessCode/guests/bulk", bulkGuestImport);
 

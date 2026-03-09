@@ -5,25 +5,17 @@ import StatusBadge from "../../components/admin/StatusBadge";
 import LoadingState from "../../components/admin/LoadingState";
 import ErrorState from "../../components/admin/ErrorState";
 import EmptyState from "../../components/admin/EmptyState";
-import ConfirmActionModal from "../../components/admin/ConfirmActionModal";
 
 function formatDate(value) {
   if (!value) return "-";
   return new Date(value).toLocaleString();
 }
 
-const TICKET_ACTIONS = {
-  invalidate: { endpoint: "invalidate", label: "Invalidate Ticket", confirm: "Invalidate this ticket?" },
-  restore: { endpoint: "restore", label: "Restore Ticket", confirm: "Restore this ticket?" },
-};
-
 export default function AdminEventDetailPage() {
   const { eventId = "" } = useParams();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [data, setData] = useState(null);
-  const [ticketAction, setTicketAction] = useState(null);
-  const [ticketActionLoading, setTicketActionLoading] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -42,26 +34,11 @@ export default function AdminEventDetailPage() {
     if (eventId) load();
   }, [eventId]);
 
-  const executeTicketAction = async () => {
-    if (!ticketAction) return;
-    setTicketActionLoading(true);
-    try {
-      const descriptor = TICKET_ACTIONS[ticketAction.type];
-      await adminApi.patch(`/tickets/${encodeURIComponent(ticketAction.ticketPublicId)}/${descriptor.endpoint}`);
-      setTicketAction(null);
-      await load();
-    } catch (requestError) {
-      setError(requestError.response?.data?.error || "Ticket action failed.");
-    } finally {
-      setTicketActionLoading(false);
-    }
-  };
-
   if (loading) return <LoadingState label="Loading event detail..." />;
   if (error) return <ErrorState message={error} />;
   if (!data) return <EmptyState label="No event detail found." />;
 
-  const { event, configurationSnapshot, tickets, scanSummary, deliverySummary } = data;
+  const { event, configurationSnapshot, scanSummary, deliverySummary } = data;
 
   return (
     <section className="space-y-3">
@@ -86,7 +63,27 @@ export default function AdminEventDetailPage() {
 
       <article className="rounded border bg-white p-4">
         <h3 className="text-lg font-semibold">Event Configuration Snapshot</h3>
-        <pre className="mt-2 overflow-x-auto rounded bg-slate-100 p-3 text-xs">{JSON.stringify(configurationSnapshot, null, 2)}</pre>
+        <div className="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+          <p><span className="font-semibold">Title:</span> {configurationSnapshot?.title || "-"}</p>
+          <p><span className="font-semibold">Date:</span> {formatDate(configurationSnapshot?.date)}</p>
+          <p><span className="font-semibold">Location:</span> {configurationSnapshot?.location || "-"}</p>
+          <p><span className="font-semibold">Tickets Requested:</span> {configurationSnapshot?.ticketsRequested ?? "-"}</p>
+          <p><span className="font-semibold">Default Ticket Type:</span> {configurationSnapshot?.ticketType || "-"}</p>
+          <p><span className="font-semibold">Default Ticket Price:</span> {configurationSnapshot?.ticketPrice != null ? `$${Number(configurationSnapshot.ticketPrice).toFixed(2)}` : "Ask organizer"}</p>
+          <p><span className="font-semibold">Header Image:</span> {configurationSnapshot?.hasHeaderImage ? "Yes" : "No"}</p>
+        </div>
+        {Array.isArray(configurationSnapshot?.designJson?.ticketGroups) && configurationSnapshot.designJson.ticketGroups.length ? (
+          <div className="mt-3 space-y-2">
+            <p className="text-sm font-semibold">Ticket Groups</p>
+            {configurationSnapshot.designJson.ticketGroups.map((group, index) => (
+              <div key={`${group.ticketType || "group"}-${index}`} className="rounded border bg-slate-50 p-2 text-xs">
+                <p><span className="font-semibold">Type:</span> {group.ticketType || "-"}</p>
+                <p><span className="font-semibold">Price:</span> {group.ticketPrice != null ? `$${Number(group.ticketPrice).toFixed(2)}` : "-"}</p>
+                <p><span className="font-semibold">Header Text:</span> {group.headerText || "-"}</p>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </article>
 
       <article className="rounded border bg-white p-4">
@@ -106,45 +103,6 @@ export default function AdminEventDetailPage() {
           <p className="rounded border p-2">Unknown: <span className="font-semibold">{deliverySummary.unknown}</span></p>
         </div>
       </article>
-
-      <article className="rounded border bg-white p-4">
-        <h3 className="text-lg font-semibold">Event Tickets</h3>
-        {!tickets?.length ? (
-          <EmptyState label="No tickets in this event." />
-        ) : (
-          <div className="mt-3 space-y-2">
-            {tickets.map((ticket) => (
-              <div key={ticket.ticketPublicId} className="rounded border p-3 text-sm">
-                <p className="font-mono text-xs break-all">{ticket.ticketPublicId}</p>
-                <p className="mt-1">Delivery: <StatusBadge value={ticket.deliveryStatus} /></p>
-                <p className="mt-1">Opened: {ticket.openedCount}</p>
-                <p className="mt-1">Scan: <StatusBadge value={ticket.scanStatus} /></p>
-                <p className="mt-1">ScannedAt: {formatDate(ticket.scannedAt)}</p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <a className="rounded border px-2 py-1 text-xs" href={ticket.ticketUrl} target="_blank" rel="noreferrer">View Ticket</a>
-                  <button
-                    className="rounded border px-2 py-1 text-xs"
-                    onClick={() => navigator.clipboard.writeText(ticket.ticketUrl)}
-                  >
-                    Copy Ticket URL
-                  </button>
-                  <button className="rounded border px-2 py-1 text-xs" onClick={() => setTicketAction({ type: "invalidate", ...ticket })}>Invalidate</button>
-                  <button className="rounded border px-2 py-1 text-xs" onClick={() => setTicketAction({ type: "restore", ...ticket })}>Restore</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </article>
-
-      <ConfirmActionModal
-        open={Boolean(ticketAction)}
-        title={ticketAction ? TICKET_ACTIONS[ticketAction.type].label : "Confirm"}
-        message={ticketAction ? TICKET_ACTIONS[ticketAction.type].confirm : ""}
-        onConfirm={executeTicketAction}
-        onCancel={() => setTicketAction(null)}
-        loading={ticketActionLoading}
-      />
     </section>
   );
 }

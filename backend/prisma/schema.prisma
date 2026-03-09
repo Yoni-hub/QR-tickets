@@ -151,6 +151,7 @@ model TicketRequest {
   totalPrice Decimal? @db.Decimal(10, 2)
   ticketSelections Json?
   evidenceImageDataUrl String?
+  organizerMessage String?
   quantity   Int
   promoterId String?
   status     TicketRequestStatus @default(PENDING_PAYMENT)
@@ -159,16 +160,35 @@ model TicketRequest {
   event      UserEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
   promoter   Promoter? @relation(fields: [promoterId], references: [id], onDelete: SetNull)
   tickets    Ticket[]
+  messages   TicketRequestMessage[]
 
   @@index([eventId])
   @@index([promoterId])
   @@index([status])
 }
 
+model TicketRequestMessage {
+  id             String @id @default(cuid())
+  ticketRequestId String
+  senderType     TicketRequestMessageSender
+  message        String
+  readAt         DateTime?
+  createdAt      DateTime @default(now())
+  ticketRequest  TicketRequest @relation(fields: [ticketRequestId], references: [id], onDelete: Cascade)
+
+  @@index([ticketRequestId, createdAt])
+  @@index([ticketRequestId, readAt])
+}
+
 enum TicketRequestStatus {
   PENDING_PAYMENT
   APPROVED
   REJECTED
+}
+
+enum TicketRequestMessageSender {
+  ORGANIZER
+  CLIENT
 }
 
 model TicketViewLog {

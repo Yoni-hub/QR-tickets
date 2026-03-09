@@ -31,6 +31,11 @@ export default function DashboardTicketRequestsPage() {
   const [guestForm, setGuestForm] = useState({ name: "", phone: "", email: "", quantity: 1, promoterId: "" });
   const [promoters, setPromoters] = useState([]);
   const [csvText, setCsvText] = useState("");
+  const [chatContext, setChatContext] = useState(null);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatSending, setChatSending] = useState(false);
 
   const load = async () => {
     if (!accessCode) return;
@@ -64,15 +69,59 @@ export default function DashboardTicketRequestsPage() {
     }
   };
 
-  const reject = async (id) => {
+  const loadChatMessages = async (requestId, { silent = false } = {}) => {
+    if (!requestId || !accessCode) return;
+    if (!silent) setChatLoading(true);
     try {
-      await api.post(`/ticket-requests/${encodeURIComponent(id)}/reject`, { accessCode });
-      setFeedback({ kind: "info", message: "Request rejected." });
-      await load();
+      const response = await api.get(`/ticket-requests/${encodeURIComponent(requestId)}/messages`, {
+        params: { accessCode },
+      });
+      setChatMessages(response.data.messages || []);
+      setItems((prev) => prev.map((item) => (item.id === requestId ? { ...item, unreadClientMessages: 0 } : item)));
     } catch (requestError) {
-      setFeedback({ kind: "error", message: requestError.response?.data?.error || "Reject failed." });
+      if (!silent) {
+        setFeedback({ kind: "error", message: requestError.response?.data?.error || "Could not load chat." });
+      }
+    } finally {
+      if (!silent) setChatLoading(false);
     }
   };
+
+  const openChat = async (item) => {
+    setChatContext(item);
+    setChatInput("");
+    await loadChatMessages(item.id);
+  };
+
+  const closeChat = () => {
+    setChatContext(null);
+    setChatInput("");
+    setChatMessages([]);
+  };
+
+  const sendChatMessage = async () => {
+    const requestId = chatContext?.id;
+    const message = String(chatInput || "").trim();
+    if (!requestId || !message || chatSending) return;
+
+    setChatSending(true);
+    try {
+      await api.post(`/ticket-requests/${encodeURIComponent(requestId)}/messages`, { accessCode, message });
+      setChatInput("");
+      await loadChatMessages(requestId, { silent: true });
+      await load();
+    } catch (requestError) {
+      setFeedback({ kind: "error", message: requestError.response?.data?.error || "Could not send message." });
+    } finally {
+      setChatSending(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!chatContext?.id || !accessCode) return undefined;
+    const interval = setInterval(() => loadChatMessages(chatContext.id, { silent: true }), 8000);
+    return () => clearInterval(interval);
+  }, [chatContext?.id, accessCode]);
 
   const addGuest = async () => {
     if (!guestForm.name.trim()) {
@@ -112,6 +161,25 @@ export default function DashboardTicketRequestsPage() {
     }
   };
 
+  const openEvidenceImage = (dataUrl) => {
+    const value = String(dataUrl || "").trim();
+    if (!value) return;
+    const nextWindow = window.open("", "_blank", "noopener,noreferrer");
+    if (!nextWindow) {
+      setFeedback({ kind: "error", message: "Popup blocked. Please allow popups to view evidence." });
+      return;
+    }
+    nextWindow.document.write(`
+      <html>
+        <head><title>Payment Evidence</title></head>
+        <body style="margin:0;padding:12px;background:#0f172a;display:flex;align-items:center;justify-content:center;">
+          <img src="${value}" alt="Payment evidence" style="max-width:100%;max-height:95vh;border-radius:8px;background:#fff;" />
+        </body>
+      </html>
+    `);
+    nextWindow.document.close();
+  };
+
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-4 sm:px-6 sm:py-6">
       <h1 className="text-2xl font-bold sm:text-3xl">Ticket Requests</h1>
@@ -129,9 +197,20 @@ export default function DashboardTicketRequestsPage() {
               <p className="mt-1">Quantity: {item.quantity}</p>
               <p className="mt-1">Promoter: {item.promoter?.name || "-"}</p>
               <p className="mt-1">Status: {item.status}</p>
+              <p className="mt-1">
+                Evidence:{" "}
+                {item.evidenceImageDataUrl ? (
+                  <button className="text-blue-700 underline" onClick={() => openEvidenceImage(item.evidenceImageDataUrl)}>View</button>
+                ) : (
+                  "-"
+                )}
+              </p>
+              {item.organizerMessage ? <p className="mt-1 text-xs text-slate-600">Message: {item.organizerMessage}</p> : null}
               <div className="mt-2 flex flex-wrap gap-2">
                 <AppButton className="px-2 py-1 text-xs" variant="success" onClick={() => approve(item.id)}>Approve</AppButton>
-                <AppButton className="px-2 py-1 text-xs" variant="danger" onClick={() => reject(item.id)}>Reject</AppButton>
+                <AppButton className="px-2 py-1 text-xs" variant="secondary" onClick={() => openChat(item)}>
+                  Message buyer{item.unreadClientMessages ? ` (${item.unreadClientMessages})` : ""}
+                </AppButton>
               </div>
             </article>
           ))}
@@ -168,6 +247,57 @@ export default function DashboardTicketRequestsPage() {
           Import CSV
         </AppButton>
       </section>
+
+      {chatContext ? (
+        <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-3 sm:items-center">
+          <section className="w-full max-w-xl rounded border bg-white p-3 shadow-xl">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <p className="text-sm font-semibold">Chat with {chatContext.name || "Buyer"}</p>
+                <p className="text-xs text-slate-500">{chatContext.email || "No email"}{chatContext.phone ? ` | ${chatContext.phone}` : ""}</p>
+              </div>
+              <AppButton type="button" variant="secondary" className="px-2 py-1 text-xs" onClick={closeChat}>Close</AppButton>
+            </div>
+
+            <div className="mt-3 h-72 overflow-y-auto rounded border bg-slate-50 p-2">
+              {chatLoading ? (
+                <p className="text-xs text-slate-500">Loading chat...</p>
+              ) : chatMessages.length ? (
+                <div className="space-y-2">
+                  {chatMessages.map((message) => {
+                    const isOrganizer = message.senderType === "ORGANIZER";
+                    return (
+                      <div key={message.id} className={`flex ${isOrganizer ? "justify-end" : "justify-start"}`}>
+                        <div className={`max-w-[85%] rounded px-2 py-1 text-xs ${isOrganizer ? "bg-indigo-600 text-white" : "bg-white text-slate-900 border"}`}>
+                          <p>{message.message}</p>
+                          <p className={`mt-1 text-[10px] ${isOrganizer ? "text-indigo-100" : "text-slate-500"}`}>
+                            {new Date(message.createdAt).toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500">No messages yet.</p>
+              )}
+            </div>
+
+            <div className="mt-3 flex gap-2">
+              <textarea
+                className="w-full rounded border p-2 text-sm"
+                rows={3}
+                value={chatInput}
+                onChange={(event) => setChatInput(event.target.value)}
+                placeholder="Type a message to buyer..."
+              />
+              <AppButton type="button" className="self-end" onClick={sendChatMessage} loading={chatSending} loadingText="Sending...">
+                Send
+              </AppButton>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }

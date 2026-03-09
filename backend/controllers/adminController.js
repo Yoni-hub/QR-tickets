@@ -70,6 +70,7 @@ async function getAdminOverview(_req, res) {
     recentEventsRaw,
     recentScansRaw,
     recentDeliveryFailuresRaw,
+    recentTicketRequestsRaw,
   ] = await Promise.all([
     prisma.userEvent.count(),
     prisma.ticket.count(),
@@ -145,6 +146,25 @@ async function getAdminOverview(_req, res) {
         },
       },
     }),
+    prisma.ticketRequest.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 10,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        status: true,
+        clientAccessToken: true,
+        createdAt: true,
+        event: {
+          select: {
+            id: true,
+            eventName: true,
+            accessCode: true,
+          },
+        },
+      },
+    }),
   ]);
 
   const eventIds = recentEventsRaw.map((event) => event.id);
@@ -202,6 +222,20 @@ async function getAdminOverview(_req, res) {
     attemptedAt: delivery.sentAt,
   }));
 
+  const baseUrl = getPublicBaseUrl();
+  const recentTicketRequests = recentTicketRequestsRaw.map((request) => ({
+    requestId: request.id,
+    eventId: request.event?.id || null,
+    eventName: request.event?.eventName || "Unknown event",
+    accessCode: request.event?.accessCode || "-",
+    buyerName: request.name,
+    buyerEmail: request.email,
+    status: request.status,
+    clientAccessToken: request.clientAccessToken || null,
+    clientDashboardUrl: request.clientAccessToken ? `${baseUrl}/client/${request.clientAccessToken}` : null,
+    createdAt: request.createdAt,
+  }));
+
   res.json({
     metrics: {
       totalEvents,
@@ -217,6 +251,7 @@ async function getAdminOverview(_req, res) {
     recentEvents,
     recentScans,
     recentDeliveryFailures,
+    recentTicketRequests,
   });
 }
 
@@ -752,6 +787,63 @@ async function listAdminAuditLog(req, res) {
   res.json({ items });
 }
 
+async function listAdminClientDashTokens(req, res) {
+  const limit = normalizeLimit(req.query.limit, 200, 1, 500);
+  const search = String(req.query.search || "").trim();
+
+  const where = {
+    clientAccessToken: { not: null },
+    ...(search
+      ? {
+          OR: [
+            { clientAccessToken: { contains: search, mode: "insensitive" } },
+            { event: { accessCode: { contains: search, mode: "insensitive" } } },
+            { event: { eventName: { contains: search, mode: "insensitive" } } },
+            { email: { contains: search, mode: "insensitive" } },
+            { name: { contains: search, mode: "insensitive" } },
+          ],
+        }
+      : {}),
+  };
+
+  const rows = await prisma.ticketRequest.findMany({
+    where,
+    orderBy: { createdAt: "desc" },
+    take: limit,
+    select: {
+      id: true,
+      clientAccessToken: true,
+      status: true,
+      createdAt: true,
+      name: true,
+      email: true,
+      event: {
+        select: {
+          id: true,
+          eventName: true,
+          accessCode: true,
+        },
+      },
+    },
+  });
+
+  const baseUrl = getPublicBaseUrl();
+  const items = rows.map((row) => ({
+    requestId: row.id,
+    eventId: row.event?.id || null,
+    eventName: row.event?.eventName || "Unknown event",
+    eventCode: row.event?.accessCode || "-",
+    buyerName: row.name || "-",
+    buyerEmail: row.email || "-",
+    status: row.status,
+    clientAccessToken: row.clientAccessToken,
+    clientDashboardUrl: `${baseUrl}/client/${row.clientAccessToken}`,
+    createdAt: row.createdAt,
+  }));
+
+  res.json({ items });
+}
+
 async function patchEventStatus(req, res, nextStatus, actionName) {
   const eventId = String(req.params.eventId || "").trim();
   if (!eventId) {
@@ -1143,6 +1235,7 @@ module.exports = {
   listAdminScans,
   getAdminSettings,
   listAdminAuditLog,
+  listAdminClientDashTokens,
   disableAdminEvent,
   enableAdminEvent,
   archiveAdminEvent,

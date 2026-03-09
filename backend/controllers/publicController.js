@@ -2,9 +2,9 @@ const prisma = require("../utils/prisma");
 const crypto = require("crypto");
 const { getPublicBaseUrl } = require("../services/eventService");
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_EVIDENCE_BYTES = 2 * 1024 * 1024;
 const SUPPORTED_EVIDENCE_MIME = new Set(["image/png", "image/jpeg", "image/webp"]);
+const MAX_CHAT_MESSAGE_LENGTH = 1200;
 
 function normalizeTicketType(value) {
   return String(value || "").trim();
@@ -49,6 +49,16 @@ function generateClientAccessToken() {
   return crypto.randomBytes(24).toString("hex");
 }
 
+function mapChatMessage(message) {
+  return {
+    id: message.id,
+    senderType: message.senderType,
+    message: message.message,
+    createdAt: message.createdAt,
+    readAt: message.readAt || null,
+  };
+}
+
 async function createUniqueClientAccessToken() {
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const token = generateClientAccessToken();
@@ -65,10 +75,10 @@ async function createUniqueClientAccessToken() {
 }
 
 async function buildTicketTypeStats(event) {
-  const [ticketsByType, soldByType, pendingRequests] = await Promise.all([
+  const [availableByType, soldByType, pendingRequests] = await Promise.all([
     prisma.ticket.groupBy({
       by: ["ticketType"],
-      where: { eventId: event.id },
+      where: { eventId: event.id, ticketRequestId: null, status: "UNUSED" },
       _count: { _all: true },
       _max: { ticketPrice: true },
     }),
@@ -110,7 +120,7 @@ async function buildTicketTypeStats(event) {
     });
   }
 
-  for (const row of ticketsByType) {
+  for (const row of availableByType) {
     const ticketType = normalizeTicketType(row.ticketType) || "General";
     const current = typeMap.get(ticketType) || {
       ticketType,
@@ -147,7 +157,7 @@ async function buildTicketTypeStats(event) {
   const items = Array.from(typeMap.values()).map((item) => {
     const sold = soldMap.get(item.ticketType) || 0;
     const pending = pendingMap.get(item.ticketType) || 0;
-    const ticketsRemaining = Math.max(0, Number(item.totalGenerated || 0) - sold - pending);
+    const ticketsRemaining = Math.max(0, Number(item.totalGenerated || 0) - pending);
     return {
       ticketType: item.ticketType,
       price: item.price,
@@ -218,17 +228,12 @@ async function getPublicEventBySlug(req, res) {
 async function createPublicTicketRequest(req, res) {
   const eventSlug = String(req.body?.eventSlug || "").trim();
   const name = String(req.body?.name || "").trim();
-  const email = String(req.body?.email || "").trim().toLowerCase();
   const promoterCode = String(req.body?.promoterCode || "").trim().toLowerCase();
   const ticketSelections = parseTicketSelections(req.body?.ticketSelections || []);
   const evidenceValidation = validateEvidenceDataUrl(req.body?.evidenceImageDataUrl);
 
-  if (!eventSlug || !name || !email) {
-    res.status(400).json({ error: "eventSlug, name, and email are required." });
-    return;
-  }
-  if (!EMAIL_PATTERN.test(email)) {
-    res.status(400).json({ error: "A valid email is required." });
+  if (!eventSlug || !name) {
+    res.status(400).json({ error: "eventSlug and name are required." });
     return;
   }
   if (!ticketSelections.length) {
@@ -237,6 +242,10 @@ async function createPublicTicketRequest(req, res) {
   }
   if (!evidenceValidation.ok) {
     res.status(400).json({ error: evidenceValidation.error });
+    return;
+  }
+  if (!evidenceValidation.value) {
+    res.status(400).json({ error: "Payment evidence is required." });
     return;
   }
 
@@ -307,7 +316,7 @@ async function createPublicTicketRequest(req, res) {
       clientAccessToken,
       eventId: event.id,
       name,
-      email,
+      email: null,
       ticketType: normalizedSelections.length === 1 ? normalizedSelections[0].ticketType : "MIXED",
       ticketPrice: normalizedSelections.length === 1 ? normalizedSelections[0].unitPrice : null,
       totalPrice,
@@ -365,6 +374,7 @@ async function getClientDashboardByToken(req, res) {
       ticketType: true,
       totalPrice: true,
       ticketSelections: true,
+      organizerMessage: true,
       createdAt: true,
       updatedAt: true,
       event: {
@@ -411,6 +421,7 @@ async function getClientDashboardByToken(req, res) {
       quantity: request.quantity,
       ticketType: request.ticketType,
       ticketSelections: request.ticketSelections,
+      organizerMessage: request.organizerMessage,
       totalPrice: request.totalPrice,
       createdAt: request.createdAt,
       updatedAt: request.updatedAt,
@@ -425,8 +436,84 @@ async function getClientDashboardByToken(req, res) {
   });
 }
 
+async function getClientRequestMessagesByToken(req, res) {
+  const clientAccessToken = String(req.params.clientAccessToken || "").trim();
+  if (!clientAccessToken) {
+    res.status(400).json({ error: "clientAccessToken is required." });
+    return;
+  }
+
+  const request = await prisma.ticketRequest.findFirst({
+    where: { clientAccessToken },
+    select: { id: true },
+  });
+  if (!request) {
+    res.status(404).json({ error: "Client dashboard not found." });
+    return;
+  }
+
+  await prisma.ticketRequestMessage.updateMany({
+    where: {
+      ticketRequestId: request.id,
+      senderType: "ORGANIZER",
+      readAt: null,
+    },
+    data: { readAt: new Date() },
+  });
+
+  const messages = await prisma.ticketRequestMessage.findMany({
+    where: { ticketRequestId: request.id },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, senderType: true, message: true, createdAt: true, readAt: true },
+  });
+
+  res.json({
+    requestId: request.id,
+    messages: messages.map(mapChatMessage),
+  });
+}
+
+async function createClientRequestMessageByToken(req, res) {
+  const clientAccessToken = String(req.params.clientAccessToken || "").trim();
+  const message = String(req.body?.message || "").trim();
+  if (!clientAccessToken) {
+    res.status(400).json({ error: "clientAccessToken is required." });
+    return;
+  }
+  if (!message) {
+    res.status(400).json({ error: "Message is required." });
+    return;
+  }
+  if (message.length > MAX_CHAT_MESSAGE_LENGTH) {
+    res.status(400).json({ error: "Message is too long." });
+    return;
+  }
+
+  const request = await prisma.ticketRequest.findFirst({
+    where: { clientAccessToken },
+    select: { id: true },
+  });
+  if (!request) {
+    res.status(404).json({ error: "Client dashboard not found." });
+    return;
+  }
+
+  const created = await prisma.ticketRequestMessage.create({
+    data: {
+      ticketRequestId: request.id,
+      senderType: "CLIENT",
+      message,
+    },
+    select: { id: true, senderType: true, message: true, createdAt: true, readAt: true },
+  });
+
+  res.status(201).json({ message: mapChatMessage(created) });
+}
+
 module.exports = {
   getPublicEventBySlug,
   createPublicTicketRequest,
   getClientDashboardByToken,
+  getClientRequestMessagesByToken,
+  createClientRequestMessageByToken,
 };
