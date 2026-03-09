@@ -55,3 +55,7 @@
 ## AdminAuditLog
 - internal audit log for admin actions
 - fields: `action`, `targetType`, `targetId`, `eventId`, `metadata`, `createdAt`
+
+## Checkpoint Updates
+
+- 2026-03-09: Added TicketRequest.organizerMessage and new TicketRequestMessage model with sender/read tracking for chat.
