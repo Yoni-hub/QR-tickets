@@ -141,6 +141,7 @@ model Promoter {
 
 model TicketRequest {
   id         String   @id @default(cuid())
+  clientAccessToken String? @unique
   eventId    String
   name       String
   phone      String?

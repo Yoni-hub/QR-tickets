@@ -6,6 +6,7 @@ import Demo from "./pages/Demo";
 import TicketVerify from "./pages/TicketVerify";
 import PublicEventPage from "./pages/PublicEventPage";
 import PublicEventConfirmPage from "./pages/PublicEventConfirmPage";
+import ClientDashboardPage from "./pages/ClientDashboardPage";
 import DashboardTicketRequestsPage from "./pages/DashboardTicketRequests";
 import DashboardPromotersPage from "./pages/DashboardPromoters";
 import DashboardPromoterDetailPage from "./pages/DashboardPromoterDetail";
@@ -47,6 +48,8 @@ export default function App() {
         <Route path="/demo" element={<Demo />} />
         <Route path="/e/:eventSlug" element={<PublicEventPage />} />
         <Route path="/e/:eventSlug/confirm" element={<PublicEventConfirmPage />} />
+        <Route path="/client" element={<ClientDashboardPage />} />
+        <Route path="/client/:clientAccessToken" element={<ClientDashboardPage />} />
         <Route path="/t/:ticketPublicId" element={<TicketVerify />} />
 
         <Route path="/admin" element={<AdminLayout />}>

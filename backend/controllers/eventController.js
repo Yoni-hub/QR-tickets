@@ -80,6 +80,7 @@ async function getEventByCode(req, res) {
 
   const totalTickets = await prisma.ticket.count({ where: { eventId: event.id } });
   const scannedTickets = await prisma.ticket.count({ where: { eventId: event.id, status: "USED" } });
+  const soldTickets = await prisma.ticket.count({ where: { eventId: event.id, ticketRequestId: { not: null } } });
 
   const scans = await prisma.scanRecord.findMany({
     where: { eventId: event.id },
@@ -92,7 +93,7 @@ async function getEventByCode(req, res) {
     event,
     totalTickets,
     scannedTickets,
-    remainingTickets: totalTickets - scannedTickets,
+    remainingTickets: Math.max(0, totalTickets - soldTickets),
     scans,
   });
 }
@@ -114,6 +115,7 @@ async function getEventTickets(req, res) {
       qrPayload: true,
       ticketType: true,
       ticketPrice: true,
+      ticketRequestId: true,
     },
   });
 

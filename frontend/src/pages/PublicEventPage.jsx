@@ -96,6 +96,10 @@ export default function PublicEventPage() {
   }, [eventData, quantitiesByType]);
   const totalQuantity = selectedSelections.reduce((sum, item) => sum + item.quantity, 0);
   const finalPrice = selectedSelections.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+  const allTicketTypesFree = (eventData?.event?.ticketTypes || []).length
+    ? (eventData?.event?.ticketTypes || []).every((item) => Number(item.price || 0) <= 0)
+    : false;
+  const isFreeSelection = totalQuantity > 0 ? finalPrice <= 0 : allTicketTypesFree;
 
   const onEvidenceFileChange = async (event) => {
     const file = event.target.files?.[0];
@@ -148,7 +152,7 @@ export default function PublicEventPage() {
         name: form.name,
         email: form.email,
         ticketSelections: selectedSelections.map((item) => ({ ticketType: item.ticketType, quantity: item.quantity })),
-        evidenceImageDataUrl: evidenceImageDataUrl || null,
+        evidenceImageDataUrl: isFreeSelection ? null : (evidenceImageDataUrl || null),
         promoterCode,
       });
 
@@ -255,24 +259,32 @@ export default function PublicEventPage() {
           <input className="rounded border p-2" placeholder="Email (required)" value={form.email} onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))} />
         </div>
 
-        <div className="mt-3 rounded border bg-amber-50 p-3 text-sm text-amber-900">
-          <p className="font-semibold">Total payment: ${finalPrice.toFixed(2)}</p>
-          <p className="mt-1">Selected tickets: {totalQuantity}</p>
-          <p className="mt-1">
-            Make payment based on your selected ticket type and quantity using organizer instructions:
-          </p>
-          <p className="mt-1">{eventData.event.paymentInstructions || "Please contact the organizer for payment instructions."}</p>
-        </div>
-
-        <div className="mt-3 rounded border bg-slate-50 p-3 text-sm">
-          <p className="font-semibold">Upload Payment Evidence (image, max 2MB)</p>
-          <input className="mt-2 w-full rounded border p-2" type="file" accept="image/png,image/jpeg,image/webp" onChange={onEvidenceFileChange} />
-          {evidenceImageDataUrl ? (
-            <div className="mt-2">
-              <img src={evidenceImageDataUrl} alt="Payment evidence preview" className="h-24 w-24 rounded border object-cover" />
+        {isFreeSelection ? (
+          <div className="mt-3 rounded border bg-emerald-50 p-3 text-sm text-emerald-800">
+            <p className="font-semibold">Total payment: FREE</p>
+            <p className="mt-1">Selected tickets: {totalQuantity}</p>
+            <p className="mt-1">No payment proof is required for this request.</p>
+          </div>
+        ) : (
+          <>
+            <div className="mt-3 rounded border bg-amber-50 p-3 text-sm text-amber-900">
+              <p className="font-semibold">Total payment: ${finalPrice.toFixed(2)}</p>
+              <p className="mt-1">Selected tickets: {totalQuantity}</p>
+              <p className="mt-1">Organizer Instructions: </p>
+              <p className="mt-1">{eventData.event.paymentInstructions || "Please contact the organizer for payment instructions."}</p>
             </div>
-          ) : null}
-        </div>
+
+            <div className="mt-3 rounded border bg-slate-50 p-3 text-sm">
+              <p className="font-semibold">Upload Payment Evidence (image, max 2MB)</p>
+              <input className="mt-2 w-full rounded border p-2" type="file" accept="image/png,image/jpeg,image/webp" onChange={onEvidenceFileChange} />
+              {evidenceImageDataUrl ? (
+                <div className="mt-2">
+                  <img src={evidenceImageDataUrl} alt="Payment evidence preview" className="h-24 w-24 rounded border object-cover" />
+                </div>
+              ) : null}
+            </div>
+          </>
+        )}
 
         <FeedbackBanner className="mt-3" kind={feedback.kind} message={feedback.message} />
 

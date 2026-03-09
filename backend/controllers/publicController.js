@@ -1,4 +1,6 @@
 const prisma = require("../utils/prisma");
+const crypto = require("crypto");
+const { getPublicBaseUrl } = require("../services/eventService");
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_EVIDENCE_BYTES = 2 * 1024 * 1024;
@@ -43,8 +45,27 @@ function validateEvidenceDataUrl(dataUrl) {
   return { ok: true, value: String(dataUrl) };
 }
 
+function generateClientAccessToken() {
+  return crypto.randomBytes(24).toString("hex");
+}
+
+async function createUniqueClientAccessToken() {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const token = generateClientAccessToken();
+    const existing = await prisma.ticketRequest.findFirst({
+      where: { clientAccessToken: token },
+      select: { id: true },
+    });
+    if (!existing) return token;
+  }
+
+  const error = new Error("Could not generate a unique client access token.");
+  error.statusCode = 500;
+  throw error;
+}
+
 async function buildTicketTypeStats(event) {
-  const [ticketsByType, usedByType, pendingRequests] = await Promise.all([
+  const [ticketsByType, soldByType, pendingRequests] = await Promise.all([
     prisma.ticket.groupBy({
       by: ["ticketType"],
       where: { eventId: event.id },
@@ -53,7 +74,7 @@ async function buildTicketTypeStats(event) {
     }),
     prisma.ticket.groupBy({
       by: ["ticketType"],
-      where: { eventId: event.id, status: "USED" },
+      where: { eventId: event.id, ticketRequestId: { not: null } },
       _count: { _all: true },
     }),
     prisma.ticketRequest.findMany({
@@ -72,7 +93,7 @@ async function buildTicketTypeStats(event) {
       ticketType,
       price,
       totalGenerated: 0,
-      used: 0,
+      sold: 0,
       pending: 0,
       ticketsRemaining: 0,
     });
@@ -83,7 +104,7 @@ async function buildTicketTypeStats(event) {
       ticketType: event.ticketType,
       price: event.ticketPrice != null ? Number(event.ticketPrice) : null,
       totalGenerated: 0,
-      used: 0,
+      sold: 0,
       pending: 0,
       ticketsRemaining: 0,
     });
@@ -95,7 +116,7 @@ async function buildTicketTypeStats(event) {
       ticketType,
       price: null,
       totalGenerated: 0,
-      used: 0,
+      sold: 0,
       pending: 0,
       ticketsRemaining: 0,
     };
@@ -106,8 +127,8 @@ async function buildTicketTypeStats(event) {
     typeMap.set(ticketType, current);
   }
 
-  const usedMap = new Map(
-    usedByType.map((row) => [normalizeTicketType(row.ticketType) || "General", Number(row._count?._all || 0)]),
+  const soldMap = new Map(
+    soldByType.map((row) => [normalizeTicketType(row.ticketType) || "General", Number(row._count?._all || 0)]),
   );
 
   const pendingMap = new Map();
@@ -124,14 +145,14 @@ async function buildTicketTypeStats(event) {
   }
 
   const items = Array.from(typeMap.values()).map((item) => {
-    const used = usedMap.get(item.ticketType) || 0;
+    const sold = soldMap.get(item.ticketType) || 0;
     const pending = pendingMap.get(item.ticketType) || 0;
-    const ticketsRemaining = Math.max(0, Number(item.totalGenerated || 0) - used - pending);
+    const ticketsRemaining = Math.max(0, Number(item.totalGenerated || 0) - sold - pending);
     return {
       ticketType: item.ticketType,
       price: item.price,
       totalGenerated: Number(item.totalGenerated || 0),
-      used,
+      sold,
       pending,
       ticketsRemaining,
     };
@@ -273,8 +294,17 @@ async function createPublicTicketRequest(req, res) {
     promoter = await prisma.promoter.findFirst({ where: { eventId: event.id, code: promoterCode } });
   }
 
+  let clientAccessToken;
+  try {
+    clientAccessToken = await createUniqueClientAccessToken();
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message || "Could not create request token." });
+    return;
+  }
+
   const request = await prisma.ticketRequest.create({
     data: {
+      clientAccessToken,
       eventId: event.id,
       name,
       email,
@@ -289,6 +319,7 @@ async function createPublicTicketRequest(req, res) {
     },
     select: {
       id: true,
+      clientAccessToken: true,
       status: true,
       quantity: true,
       ticketType: true,
@@ -309,12 +340,93 @@ async function createPublicTicketRequest(req, res) {
       totalPrice,
     },
     instructions:
-      request.event.paymentInstructions ||
-      "Send payment using the organizer instructions and wait for approval.",
+      totalPrice <= 0
+        ? "Thanks for the request. The organizer will send your tickets in a few minutes."
+        : request.event.paymentInstructions ||
+          "Send payment using the organizer instructions and wait for approval.",
+  });
+}
+
+async function getClientDashboardByToken(req, res) {
+  const clientAccessToken = String(req.params.clientAccessToken || "").trim();
+  if (!clientAccessToken) {
+    res.status(400).json({ error: "clientAccessToken is required." });
+    return;
+  }
+
+  const request = await prisma.ticketRequest.findFirst({
+    where: { clientAccessToken },
+    select: {
+      id: true,
+      clientAccessToken: true,
+      status: true,
+      name: true,
+      quantity: true,
+      ticketType: true,
+      totalPrice: true,
+      ticketSelections: true,
+      createdAt: true,
+      updatedAt: true,
+      event: {
+        select: {
+          eventName: true,
+          eventDate: true,
+          eventAddress: true,
+          slug: true,
+        },
+      },
+      tickets: {
+        orderBy: { createdAt: "asc" },
+        select: {
+          ticketPublicId: true,
+          ticketType: true,
+          status: true,
+          isInvalidated: true,
+          qrPayload: true,
+        },
+      },
+    },
+  });
+
+  if (!request) {
+    res.status(404).json({ error: "Client dashboard not found." });
+    return;
+  }
+
+  const baseUrl = getPublicBaseUrl();
+  const tickets = (request.tickets || []).map((ticket) => ({
+    ticketPublicId: ticket.ticketPublicId,
+    ticketType: ticket.ticketType || "General",
+    status: ticket.status,
+    isInvalidated: ticket.isInvalidated,
+    ticketUrl: ticket.qrPayload || `${baseUrl}/t/${ticket.ticketPublicId}`,
+  }));
+
+  res.json({
+    request: {
+      id: request.id,
+      clientAccessToken: request.clientAccessToken,
+      status: request.status,
+      name: request.name,
+      quantity: request.quantity,
+      ticketType: request.ticketType,
+      ticketSelections: request.ticketSelections,
+      totalPrice: request.totalPrice,
+      createdAt: request.createdAt,
+      updatedAt: request.updatedAt,
+    },
+    event: {
+      eventName: request.event?.eventName || "",
+      eventDate: request.event?.eventDate || null,
+      eventAddress: request.event?.eventAddress || "",
+      slug: request.event?.slug || null,
+    },
+    tickets,
   });
 }
 
 module.exports = {
   getPublicEventBySlug,
   createPublicTicketRequest,
+  getClientDashboardByToken,
 };
