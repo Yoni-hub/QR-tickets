@@ -12,7 +12,11 @@ const { scanTicket } = require("../controllers/scanController");
 const { getTicketByPublicId, getPublicTicketByPublicId } = require("../controllers/ticketController");
 const { sendOrderTicketLinks } = require("../controllers/orderController");
 const adminRoutes = require("./adminRoutes");
-const { getPublicEventBySlug, createPublicTicketRequest } = require("../controllers/publicController");
+const {
+  getPublicEventBySlug,
+  createPublicTicketRequest,
+  getClientDashboardByToken,
+} = require("../controllers/publicController");
 const {
   getOrganizerTicketRequests,
   approveTicketRequest,
@@ -41,6 +45,7 @@ router.post("/scans", scanTicket);
 
 router.get("/public/events/:eventSlug", getPublicEventBySlug);
 router.post("/public/ticket-request", createPublicTicketRequest);
+router.get("/public/client-dashboard/:clientAccessToken", getClientDashboardByToken);
 
 router.get("/events/by-code/:accessCode/ticket-requests", getOrganizerTicketRequests);
 router.post("/ticket-requests/:id/approve", approveTicketRequest);

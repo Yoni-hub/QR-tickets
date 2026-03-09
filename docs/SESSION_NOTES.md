@@ -61,3 +61,9 @@
 - Added compact tickets list mobile layout and pagination (`5` tickets per page).
 - Home page now focuses on access-code start flow (`Get Started`) without ticket generation.
 - Restored full ticket editor in Dashboard Tickets section, configured to generate tickets for the currently loaded access code/event only.
+
+## 2026-03-09 (Prisma Migration Reconciliation)
+- Fixed migration-chain inconsistency where later `TicketRequest` migrations existed without an earlier base migration creating `TicketRequest`/related relations in shadow DB flows.
+- Added reconciliation migration `20260308160000_ticket_request_base_and_relations` with idempotent SQL (`IF NOT EXISTS` / guarded constraints) to establish missing base objects safely.
+- Used `npx prisma migrate resolve --applied` for already-reflected historical migrations so migration history matched the actual schema without destructive reset.
+- Then applied `20260309110000_ticket_request_client_access_token` via `npx prisma migrate dev`; `npx prisma migrate status` now reports schema up to date.

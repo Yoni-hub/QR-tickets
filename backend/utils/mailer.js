@@ -206,8 +206,68 @@ async function sendTicketLinkEmail({
   });
 }
 
+async function sendTicketLinksDigestEmail({
+  to,
+  eventName,
+  eventDate,
+  eventAddress,
+  ticketLinks,
+}) {
+  const transporter = getTransporter();
+  const from = process.env.MAIL_FROM || "no-reply@localhost";
+  const safeLinks = Array.isArray(ticketLinks) ? ticketLinks : [];
+  const formattedDate = new Date(eventDate).toLocaleString();
+  const lines = safeLinks.map((item) => `${String(item.ticketType || "General")}: ${String(item.ticketUrl || "")}`);
+  const subject = `Your tickets for ${String(eventName || "your event")} are ready`;
+  const text = [
+    "Hello,",
+    "",
+    `Your tickets for ${String(eventName || "")} are ready.`,
+    "",
+    `Event: ${String(eventName || "")}`,
+    `Date: ${formattedDate}`,
+    `Location: ${String(eventAddress || "")}`,
+    "",
+    "Use the links below to view your tickets:",
+    ...lines,
+    "",
+    `The tickets were sent to ${String(to || "")}.`,
+    "Please present the QR codes at the entrance.",
+  ].join("\n");
+  const htmlLines = lines
+    .map((line) => {
+      const [type, ...rest] = line.split(": ");
+      const url = rest.join(": ");
+      const safeType = escapeHtml(type);
+      const safeUrl = escapeHtml(url);
+      return `<li style="margin:6px 0;"><strong>${safeType}</strong>: <a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${safeUrl}</a></li>`;
+    })
+    .join("");
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.45;color:#0f172a;">
+      <p>Hello,</p>
+      <p>Your tickets for <strong>${escapeHtml(eventName)}</strong> are ready.</p>
+      <p><strong>Event:</strong> ${escapeHtml(eventName)}<br />
+      <strong>Date:</strong> ${escapeHtml(formattedDate)}<br />
+      <strong>Location:</strong> ${escapeHtml(eventAddress)}</p>
+      <p>Use the links below to view your tickets:</p>
+      <ul style="padding-left:18px;margin:8px 0 16px 0;">${htmlLines}</ul>
+      <p>The tickets were sent to <strong>${escapeHtml(to)}</strong>.<br />Please present the QR codes at the entrance.</p>
+    </div>
+  `;
+
+  return transporter.sendMail({
+    from,
+    to,
+    subject,
+    text,
+    html,
+  });
+}
+
 module.exports = {
   sendTicketLinkEmail,
+  sendTicketLinksDigestEmail,
   DEFAULT_SUBJECT_TEMPLATE,
   DEFAULT_BODY_TEMPLATE,
   renderEmailTemplate,

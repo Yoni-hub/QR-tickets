@@ -13,23 +13,38 @@ export default function PublicEventConfirmPage() {
     : Array.isArray(request?.ticketSelections)
       ? request.ticketSelections
       : [];
+  const totalPrice = Number(payment?.totalPrice || request?.totalPrice || 0);
+  const isFreeRequest = totalPrice <= 0;
+  const clientAccessToken = String(request?.clientAccessToken || "").trim();
 
   return (
     <main className="mx-auto w-full max-w-2xl px-4 py-6 sm:px-6">
       <h1 className="text-2xl font-bold">Request Received</h1>
-      <p className="mt-2 text-slate-700">Thank you for your payment. The organizer will process your payment and send the tickets to your email in a few minutes.</p>
+      <p className="mt-2 text-slate-700">
+        {isFreeRequest
+          ? "Thanks for the request. The organizer will send your tickets in a few minutes."
+          : "Thank you for your payment. The organizer will process your payment and send the tickets to your email in a few minutes."}
+      </p>
 
       <div className="mt-4 rounded border bg-white p-4 text-sm">
         <p><span className="font-semibold">Status:</span> {request?.status || "PENDING_PAYMENT"}</p>
         <p><span className="font-semibold">Ticket types:</span> {selections.length ? selections.map((item) => `${item.ticketType} x${item.quantity}`).join(", ") : request?.ticketType || "-"}</p>
         <p><span className="font-semibold">Quantity:</span> {payment?.totalQuantity || request?.quantity || "-"}</p>
-        <p><span className="font-semibold">Total payment:</span> ${Number(payment?.totalPrice || request?.totalPrice || 0).toFixed(2)}</p>
+        <p><span className="font-semibold">Total payment:</span> {isFreeRequest ? "FREE" : `$${totalPrice.toFixed(2)}`}</p>
         <p><span className="font-semibold">Request ID:</span> <span className="font-mono">{request?.id || "-"}</span></p>
+        <p><span className="font-semibold">Client Access Token:</span> <span className="font-mono break-all">{clientAccessToken || "-"}</span></p>
       </div>
 
-      <AppButton className="mt-4" variant="secondary" onClick={() => navigate(`/e/${eventSlug}`)}>
-        Back to Event Page
-      </AppButton>
+      <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+        <AppButton variant="secondary" onClick={() => navigate(`/e/${eventSlug}`)}>
+          Back to Event Page
+        </AppButton>
+        {clientAccessToken ? (
+          <AppButton variant="indigo" onClick={() => navigate(`/client/${encodeURIComponent(clientAccessToken)}`)}>
+            Open Client Dashboard
+          </AppButton>
+        ) : null}
+      </div>
     </main>
   );
 }

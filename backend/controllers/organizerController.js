@@ -1,7 +1,6 @@
 const prisma = require("../utils/prisma");
-const { generateTicketPublicId } = require("../utils/ticketPublicId");
-const { buildQrPayload, getPublicBaseUrl } = require("../services/eventService");
-const { sendTicketLinkEmail } = require("../utils/mailer");
+const { getPublicBaseUrl } = require("../services/eventService");
+const { sendTicketLinksDigestEmail } = require("../utils/mailer");
 const { sendTicketSms } = require("../utils/sms");
 
 function parseAccessCode(value) {
@@ -58,7 +57,46 @@ async function getOrganizerTicketRequests(req, res) {
       updatedAt: true,
       promoter: { select: { id: true, name: true, code: true } },
       _count: { select: { tickets: true } },
+      tickets: {
+        select: {
+          ticketPublicId: true,
+          deliveries: {
+            orderBy: { sentAt: "desc" },
+            take: 1,
+            select: { status: true },
+          },
+        },
+      },
     },
+  });
+
+  const items = requests.map((request) => {
+    const tickets = Array.isArray(request.tickets) ? request.tickets : [];
+    const latestStatuses = tickets
+      .map((ticket) => ticket.deliveries?.[0]?.status || null)
+      .filter(Boolean);
+
+    let deliveryStatus = "PENDING";
+    if (request.status === "APPROVED") {
+      if (!latestStatuses.length) {
+        deliveryStatus = "PENDING";
+      } else {
+        const sentCount = latestStatuses.filter((status) => status === "SENT").length;
+        const failedCount = latestStatuses.filter((status) => status === "FAILED").length;
+        if (sentCount === tickets.length && tickets.length > 0) deliveryStatus = "SENT";
+        else if (failedCount === tickets.length && tickets.length > 0) deliveryStatus = "FAILED";
+        else deliveryStatus = "PARTIAL";
+      }
+    } else if (request.status === "REJECTED") {
+      deliveryStatus = "NOT_SENT";
+    }
+
+    const { tickets: _tickets, ...requestWithoutTickets } = request;
+    return {
+      ...requestWithoutTickets,
+      deliveryStatus,
+      ticketIds: tickets.map((ticket) => ticket.ticketPublicId).filter(Boolean),
+    };
   });
 
   res.json({
@@ -68,103 +106,92 @@ async function getOrganizerTicketRequests(req, res) {
       slug: event.slug,
       accessCode: event.accessCode,
     },
-    items: requests,
+    items,
   });
 }
 
-function resolveTicketDesignByType(event, ticketType, ticketPrice) {
-  const eventDesign = event.designJson && typeof event.designJson === "object" ? event.designJson : null;
-  const groups = Array.isArray(eventDesign?.ticketGroups) ? eventDesign.ticketGroups : [];
-  const group = groups.find((item) => String(item?.ticketType || "").trim() === String(ticketType || "").trim());
-  const parsedPrice = Number(ticketPrice);
-  const priceText =
-    Number.isFinite(parsedPrice) && parsedPrice > 0 ? `$${parsedPrice.toFixed(2)}` : Number.isFinite(parsedPrice) ? "Free" : "Free";
-
-  return {
-    ...(eventDesign || {}),
-    ...(group ? {
-      headerImageDataUrl: group.headerImageDataUrl || null,
-      headerOverlay: Number(group.headerOverlay ?? 0.25),
-      headerTextColorMode: String(group.headerTextColorMode || "AUTO"),
-    } : {}),
-    ticketTypeLabel: String(ticketType || event.ticketType || "General").toUpperCase(),
-    priceText,
-  };
-}
-
 async function createTicketsForRequest({ event, request }) {
-  const ids = new Set();
-  const rows = [];
   const rawSelections = Array.isArray(request.ticketSelections) ? request.ticketSelections : [];
   const normalizedSelections = rawSelections.length
     ? rawSelections
       .map((item) => ({
         ticketType: String(item?.ticketType || "").trim(),
         quantity: Math.max(0, Number.parseInt(String(item?.quantity || "0"), 10) || 0),
-        unitPrice:
-          item?.unitPrice != null
-            ? Number(item.unitPrice)
-            : request.ticketPrice != null
-              ? Number(request.ticketPrice)
-              : event.ticketPrice != null
-                ? Number(event.ticketPrice)
-                : null,
       }))
       .filter((item) => item.ticketType && item.quantity > 0)
     : [{
       ticketType: request.ticketType || event.ticketType || "General",
       quantity: request.quantity,
-      unitPrice: request.ticketPrice != null ? Number(request.ticketPrice) : event.ticketPrice != null ? Number(event.ticketPrice) : null,
     }];
 
+  const unsoldTickets = await prisma.ticket.findMany({
+    where: {
+      eventId: event.id,
+      ticketRequestId: null,
+      isInvalidated: false,
+      status: "UNUSED",
+    },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, ticketPublicId: true, qrPayload: true, ticketType: true },
+  });
+
+  const usedIds = new Set();
+  const assigned = [];
   for (const selection of normalizedSelections) {
-    const resolvedDesign = resolveTicketDesignByType(event, selection.ticketType, selection.unitPrice);
+    const matching = unsoldTickets.filter(
+      (ticket) =>
+        !usedIds.has(ticket.id) &&
+        String(ticket.ticketType || event.ticketType || "General").trim() === String(selection.ticketType).trim(),
+    );
+    if (matching.length < selection.quantity) {
+      const error = new Error(
+        `Not enough ${selection.ticketType} tickets available. Requested ${selection.quantity}, available ${matching.length}. Generate more tickets.`,
+      );
+      error.statusCode = 400;
+      throw error;
+    }
+
     for (let index = 0; index < selection.quantity; index += 1) {
-      let ticketPublicId = generateTicketPublicId();
-      while (ids.has(ticketPublicId)) {
-        ticketPublicId = generateTicketPublicId();
-      }
-      ids.add(ticketPublicId);
-      rows.push({
-        eventId: event.id,
-        ticketPublicId,
-        qrPayload: buildQrPayload(ticketPublicId),
-        status: "UNUSED",
-        ticketType: selection.ticketType,
-        ticketPrice: selection.unitPrice,
-        designJson: resolvedDesign,
-        attendeeName: request.name,
-        attendeePhone: request.phone,
-        attendeeEmail: request.email,
-        promoterId: request.promoterId,
-        ticketRequestId: request.id,
-      });
+      const ticket = matching[index];
+      usedIds.add(ticket.id);
+      assigned.push({ ...ticket, ticketType: selection.ticketType });
     }
   }
 
-  await prisma.ticket.createMany({ data: rows });
+  await prisma.$transaction(
+    assigned.map((ticket) =>
+      prisma.ticket.update({
+        where: { id: ticket.id },
+        data: {
+          ticketType: ticket.ticketType,
+          attendeeName: request.name,
+          attendeePhone: request.phone,
+          attendeeEmail: request.email,
+          promoterId: request.promoterId,
+          ticketRequestId: request.id,
+        },
+      }),
+    ),
+  );
 
-  const tickets = await prisma.ticket.findMany({
-    where: { ticketRequestId: request.id },
-    orderBy: { createdAt: "asc" },
-    select: { id: true, ticketPublicId: true, qrPayload: true },
-  });
-
-  return tickets;
+  return assigned;
 }
 
 async function deliverApprovedTickets({ event, request, tickets }) {
-  const firstTicketUrl = tickets[0]?.qrPayload || `${getPublicBaseUrl()}/t/${tickets[0]?.ticketPublicId || ""}`;
+  const ticketLinks = tickets.map((ticket) => ({
+    ticketType: ticket.ticketType || event.ticketType || "General",
+    ticketUrl: ticket.qrPayload || `${getPublicBaseUrl()}/t/${ticket.ticketPublicId || ""}`,
+  }));
+  const firstTicketUrl = ticketLinks[0]?.ticketUrl || `${getPublicBaseUrl()}/t/${tickets[0]?.ticketPublicId || ""}`;
 
   if (request.email) {
     try {
-      await sendTicketLinkEmail({
+      await sendTicketLinksDigestEmail({
         to: request.email,
         eventName: event.eventName,
         eventDate: event.eventDate,
         eventAddress: event.eventAddress,
-        ticketType: request.ticketType || event.ticketType || "General",
-        ticketUrl: firstTicketUrl,
+        ticketLinks,
       });
 
       for (const ticket of tickets) {
@@ -235,7 +262,13 @@ async function approveTicketRequest(req, res) {
     return;
   }
 
-  const tickets = await createTicketsForRequest({ event, request });
+  let tickets;
+  try {
+    tickets = await createTicketsForRequest({ event, request });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message || "Could not allocate tickets." });
+    return;
+  }
 
   const updatedRequest = await prisma.ticketRequest.update({
     where: { id: request.id },

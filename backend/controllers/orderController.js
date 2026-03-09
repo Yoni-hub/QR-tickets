@@ -6,6 +6,7 @@ const {
 } = require("../utils/mailer");
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const DEFAULT_TICKET_TYPE = "General";
 
 function normalizeEmailList(rawEmails) {
   if (!Array.isArray(rawEmails)) return [];
@@ -25,6 +26,10 @@ function normalizeEmailList(rawEmails) {
 function getBaseUrl(rawBaseUrl) {
   const fallback = process.env.PUBLIC_BASE_URL || "http://localhost:5174";
   return String(rawBaseUrl || fallback).trim().replace(/\/$/, "");
+}
+
+function normalizeTicketType(value) {
+  return String(value || "").trim();
 }
 
 function parseTemplateField(rawValue, fallbackValue, maxLength, fieldName) {
@@ -53,6 +58,11 @@ async function sendOrderTicketLinks(req, res) {
   const emails = normalizeEmailList(req.body?.emails);
   if (!emails.length) {
     res.status(400).json({ error: "Provide at least one valid recipient email." });
+    return;
+  }
+  const selectedTicketType = normalizeTicketType(req.body?.ticketType);
+  if (!selectedTicketType) {
+    res.status(400).json({ error: "ticketType is required." });
     return;
   }
 
@@ -92,11 +102,26 @@ async function sendOrderTicketLinks(req, res) {
       ticketPublicId: true,
       status: true,
       ticketType: true,
+      deliveries: {
+        orderBy: { sentAt: "desc" },
+        take: 1,
+        select: { status: true },
+      },
     },
   });
 
-  if (emails.length > tickets.length) {
-    res.status(400).json({ error: "Cannot send to more emails than available tickets." });
+  const matchingTickets = tickets.filter(
+    (ticket) => normalizeTicketType(ticket.ticketType || event.ticketType || DEFAULT_TICKET_TYPE) === selectedTicketType,
+  );
+  const availableTickets = matchingTickets.filter((ticket) => ticket.deliveries[0]?.status !== "SENT");
+
+  if (emails.length > availableTickets.length) {
+    res.status(400).json({
+      error: `Not enough ${selectedTicketType} tickets. You have ${availableTickets.length} available, but tried to send ${emails.length} emails. Generate more tickets.`,
+      ticketType: selectedTicketType,
+      availableTickets: availableTickets.length,
+      requestedEmails: emails.length,
+    });
     return;
   }
 
@@ -105,7 +130,7 @@ async function sendOrderTicketLinks(req, res) {
 
   for (let index = 0; index < emails.length; index += 1) {
     const email = emails[index];
-    const ticket = tickets[index];
+    const ticket = availableTickets[index];
     const ticketUrl = `${baseUrl}/t/${ticket.ticketPublicId}`;
     try {
       await sendTicketLinkEmail({
@@ -113,7 +138,7 @@ async function sendOrderTicketLinks(req, res) {
         eventName: event.eventName,
         eventDate: event.eventDate,
         eventAddress: event.eventAddress,
-        ticketType: ticket.ticketType || event.ticketType || "General",
+        ticketType: ticket.ticketType || event.ticketType || DEFAULT_TICKET_TYPE,
         ticketUrl,
         subjectTemplate,
         bodyTemplate,
@@ -142,7 +167,13 @@ async function sendOrderTicketLinks(req, res) {
     }
   }
 
-  res.json({ sent, failed });
+  res.json({
+    sent,
+    failed,
+    ticketType: selectedTicketType,
+    availableTicketsBeforeSend: availableTickets.length,
+    requestedEmails: emails.length,
+  });
 }
 
 module.exports = {

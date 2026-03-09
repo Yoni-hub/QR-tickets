@@ -69,6 +69,7 @@ const EMAIL_TEMPLATE_HELP = [
 ];
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const DEFAULT_TICKET_TYPE = "General";
 
 function parseRecipientEmails(rawValue) {
   return String(rawValue || "")
@@ -131,6 +132,21 @@ function normalizeTicketPrice(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function resolveDefaultTicketType(value) {
+  return String(value || "").trim() || DEFAULT_TICKET_TYPE;
+}
+
+function buildDefaultEmailSubject(ticketType) {
+  return `Your ${resolveDefaultTicketType(ticketType)} ticket for {{eventName}}`;
+}
+
+function buildDefaultEmailBody(ticketType) {
+  return DEFAULT_EMAIL_BODY.replace(
+    "Your {{ticketType}} ticket for {{eventName}} is ready.",
+    `Your ${resolveDefaultTicketType(ticketType)} ticket for {{eventName}} is ready.`,
+  );
+}
+
 export default function Dashboard() {
   const [params, setParams] = useSearchParams();
   const [activeMenu, setActiveMenu] = useState("tickets");
@@ -152,7 +168,9 @@ export default function Dashboard() {
   const [sending, setSending] = useState(false);
   const [deliveryMethod, setDeliveryMethod] = useState(DELIVERY_METHODS.PDF);
   const [pdfTicketsPerPage, setPdfTicketsPerPage] = useState(2);
+  const [deliveryTicketType, setDeliveryTicketType] = useState("");
   const [recipientEmails, setRecipientEmails] = useState("");
+  const [emailTemplatesByType, setEmailTemplatesByType] = useState({});
   const [emailSubject, setEmailSubject] = useState(DEFAULT_EMAIL_SUBJECT);
   const [emailBody, setEmailBody] = useState(DEFAULT_EMAIL_BODY);
   const [showEmailPreview, setShowEmailPreview] = useState(true);
@@ -162,12 +180,15 @@ export default function Dashboard() {
 
   const recipientList = parseRecipientEmails(recipientEmails);
   const sampleRecipient = recipientList[0] || "customer@example.com";
-  const sampleTicketPublicId = tickets[0]?.ticketPublicId || "TICKET-PUBLIC-ID";
+  const sampleTicketPublicId =
+    tickets.find((ticket) => resolveDefaultTicketType(ticket.ticketType || summary?.event?.ticketType) === deliveryTicketType)?.ticketPublicId
+    || tickets[0]?.ticketPublicId
+    || "TICKET-PUBLIC-ID";
   const sampleData = {
     eventName: summary?.event?.eventName || "Your Event",
     eventDate: summary?.event?.eventDate ? new Date(summary.event.eventDate).toLocaleString() : "Event date",
     eventAddress: summary?.event?.eventAddress || "Event address",
-    ticketType: tickets[0]?.ticketType || summary?.event?.ticketType || "General",
+    ticketType: deliveryTicketType || tickets[0]?.ticketType || summary?.event?.ticketType || DEFAULT_TICKET_TYPE,
     ticketUrl: `${window.location.origin}/t/${sampleTicketPublicId}`,
     recipientEmail: sampleRecipient,
   };
@@ -190,6 +211,44 @@ export default function Dashboard() {
       ),
     [tickets, summary?.event?.ticketType],
   );
+  const deliveryTicketTypeOptions = useMemo(() => {
+    if (ticketTypeOptions.length) return ticketTypeOptions;
+    return [resolveDefaultTicketType(summary?.event?.ticketType)];
+  }, [ticketTypeOptions, summary?.event?.ticketType]);
+
+  useEffect(() => {
+    if (!deliveryTicketTypeOptions.length) return;
+    setDeliveryTicketType((prev) =>
+      prev && deliveryTicketTypeOptions.includes(prev) ? prev : deliveryTicketTypeOptions[0],
+    );
+  }, [deliveryTicketTypeOptions]);
+
+  useEffect(() => {
+    if (!deliveryTicketTypeOptions.length) return;
+    setEmailTemplatesByType((prev) => {
+      const next = { ...prev };
+      for (const ticketType of deliveryTicketTypeOptions) {
+        if (!next[ticketType]) {
+          next[ticketType] = {
+            subject: buildDefaultEmailSubject(ticketType),
+            body: buildDefaultEmailBody(ticketType),
+          };
+        }
+      }
+      return next;
+    });
+  }, [deliveryTicketTypeOptions]);
+
+  useEffect(() => {
+    const ticketType = deliveryTicketType || deliveryTicketTypeOptions[0];
+    if (!ticketType) return;
+    const template = emailTemplatesByType[ticketType] || {
+      subject: buildDefaultEmailSubject(ticketType),
+      body: buildDefaultEmailBody(ticketType),
+    };
+    setEmailSubject(template.subject);
+    setEmailBody(template.body);
+  }, [deliveryTicketType, deliveryTicketTypeOptions, emailTemplatesByType]);
   const filteredTickets = useMemo(() => {
     if (ticketTypeFilter === "ALL") return tickets;
     return tickets.filter(
@@ -343,6 +402,10 @@ export default function Dashboard() {
 
   const sendTicketLinks = async () => {
     if (!accessCode || sending) return;
+    if (!deliveryTicketType) {
+      setFeedback({ kind: "error", message: "Select a ticket type first." });
+      return;
+    }
     if (!recipientList.length) {
       setFeedback({ kind: "error", message: "Add at least one valid recipient email." });
       return;
@@ -359,13 +422,15 @@ export default function Dashboard() {
       const response = await withMinDelay(
         api.post(`/orders/${encodeURIComponent(accessCode)}/send-links`, {
           emails: recipientList,
+          ticketType: deliveryTicketType,
           baseUrl: window.location.origin,
           emailSubject,
           emailBody,
         }),
       );
       setSendSummary(response.data);
-      setFeedback({ kind: "success", message: "Email sent." });
+      setRecipientEmails("");
+      setFeedback({ kind: "success", message: `Email sent for ${deliveryTicketType}.` });
     } catch (requestError) {
       setFeedback({ kind: "error", message: requestError.response?.data?.error || "Could not send ticket links." });
     } finally {
@@ -627,15 +692,17 @@ export default function Dashboard() {
               <div className="mt-3 space-y-3 lg:hidden">
                 {pagedTickets.map((ticket) => (
                   <article key={ticket.ticketPublicId} className="rounded border bg-white p-3 text-sm">
-                    <div className="grid grid-cols-[2.3fr_1fr_1fr_1fr] gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr] gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                       <p>ticket id</p>
                       <p>ticket type</p>
+                      <p>sold</p>
                       <p>status</p>
                       <p>scanned at</p>
                     </div>
-                    <div className="mt-1 grid grid-cols-[2.3fr_1fr_1fr_1fr] gap-2 text-xs text-slate-900">
+                    <div className="mt-1 grid grid-cols-[2fr_1fr_1fr_1fr_1fr] gap-2 text-xs text-slate-900">
                       <p className="break-all font-mono">{ticket.ticketPublicId}</p>
                       <p>{ticket.ticketType || summary.event.ticketType || "General"}</p>
+                      <p>{ticket.ticketRequestId ? "YES" : "NO"}</p>
                       <p>{ticket.status}</p>
                       <p>{formatDate(ticket.scannedAt)}</p>
                     </div>
@@ -645,13 +712,14 @@ export default function Dashboard() {
                 {!pagedTickets.length ? <p className="text-sm text-slate-500">No tickets for selected type.</p> : null}
               </div>
               <div className="mt-3 hidden overflow-x-auto rounded border lg:block">
-                <table className="w-full min-w-[760px] text-left text-sm">
-                  <thead className="bg-slate-100"><tr><th className="p-2">Ticket ID</th><th className="p-2">Ticket Type</th><th className="p-2">Status</th><th className="p-2">Scanned At</th><th className="p-2">Copy</th></tr></thead>
+                <table className="w-full min-w-[860px] text-left text-sm">
+                  <thead className="bg-slate-100"><tr><th className="p-2">Ticket ID</th><th className="p-2">Ticket Type</th><th className="p-2">Sold</th><th className="p-2">Status</th><th className="p-2">Scanned At</th><th className="p-2">Copy</th></tr></thead>
                   <tbody>
                     {pagedTickets.map((ticket) => (
                       <tr key={ticket.ticketPublicId} className="border-t">
                         <td className="break-all p-2 font-mono">{ticket.ticketPublicId}</td>
                         <td className="p-2">{ticket.ticketType || summary.event.ticketType || "General"}</td>
+                        <td className="p-2">{ticket.ticketRequestId ? "YES" : "NO"}</td>
                         <td className="p-2">{ticket.status}</td>
                         <td className="p-2">{formatDate(ticket.scannedAt)}</td>
                         <td className="p-2"><button className="rounded border px-2 py-1 text-xs" onClick={() => copyTicketUrl(ticket.ticketPublicId)}>Copy</button></td>
@@ -659,7 +727,7 @@ export default function Dashboard() {
                     ))}
                     {!pagedTickets.length ? (
                       <tr className="border-t">
-                        <td className="p-3 text-slate-500" colSpan={5}>No tickets for selected type.</td>
+                        <td className="p-3 text-slate-500" colSpan={6}>No tickets for selected type.</td>
                       </tr>
                     ) : null}
                   </tbody>
@@ -713,25 +781,84 @@ export default function Dashboard() {
 
               {deliveryMethod === DELIVERY_METHODS.EMAIL_LINK ? (
                 <div className="mt-3">
-                  <label className="mb-1 block text-sm font-medium">Recipient emails</label>
+                  <label className="mb-1 block text-sm font-medium">Ticket type</label>
+                  <select
+                    className="w-full rounded border p-2 text-sm sm:w-72"
+                    value={deliveryTicketType}
+                    onChange={(event) => setDeliveryTicketType(event.target.value)}
+                  >
+                    {deliveryTicketTypeOptions.map((type) => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
+                  </select>
+
+                  <label className="mb-1 mt-3 block text-sm font-medium">Recipient emails ({deliveryTicketType || DEFAULT_TICKET_TYPE})</label>
                   <textarea className="w-full rounded border p-2" rows={4} value={recipientEmails} onChange={(event) => setRecipientEmails(event.target.value)} placeholder="alice@email.com, bob@email.com" />
-                  <p className="mt-1 text-xs text-slate-600">We&apos;ll send one ticket link per email.</p>
+                  <p className="mt-1 text-xs text-slate-600">Send one ticket type at a time. Group similar buyers together, then switch type for the next batch.</p>
 
                   <div className="mt-4 rounded border bg-slate-50 p-3">
                     <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
                       <p className="text-sm font-semibold">Email content preview editor</p>
                       <div className="grid grid-cols-1 gap-2 sm:flex">
                         <AppButton type="button" variant="secondary" className="px-2 py-1 text-xs" onClick={() => setShowEmailPreview((prev) => !prev)}>{showEmailPreview ? "Hide preview" : "Show preview"}</AppButton>
-                        <AppButton type="button" variant="secondary" className="px-2 py-1 text-xs" onClick={() => { setEmailSubject(DEFAULT_EMAIL_SUBJECT); setEmailBody(DEFAULT_EMAIL_BODY); }}>Reset template</AppButton>
+                        <AppButton
+                          type="button"
+                          variant="secondary"
+                          className="px-2 py-1 text-xs"
+                          onClick={() => {
+                            const nextTemplate = {
+                              subject: buildDefaultEmailSubject(deliveryTicketType || DEFAULT_TICKET_TYPE),
+                              body: buildDefaultEmailBody(deliveryTicketType || DEFAULT_TICKET_TYPE),
+                            };
+                            setEmailTemplatesByType((prev) => ({
+                              ...prev,
+                              [deliveryTicketType || DEFAULT_TICKET_TYPE]: nextTemplate,
+                            }));
+                            setEmailSubject(nextTemplate.subject);
+                            setEmailBody(nextTemplate.body);
+                          }}
+                        >
+                          Reset template
+                        </AppButton>
                       </div>
                     </div>
 
                     <p className="mt-2 text-xs text-slate-600">Available placeholders: {EMAIL_TEMPLATE_HELP.join(", ")}</p>
                     <label className="mt-3 block text-xs font-medium text-slate-700">Email subject</label>
-                    <input className="mt-1 w-full rounded border p-2 text-sm" value={emailSubject} onChange={(event) => setEmailSubject(event.target.value)} placeholder="Your ticket for {{eventName}}" />
+                    <input
+                      className="mt-1 w-full rounded border p-2 text-sm"
+                      value={emailSubject}
+                      onChange={(event) => {
+                        const nextValue = event.target.value;
+                        setEmailSubject(nextValue);
+                        setEmailTemplatesByType((prev) => ({
+                          ...prev,
+                          [deliveryTicketType || DEFAULT_TICKET_TYPE]: {
+                            subject: nextValue,
+                            body: emailBody,
+                          },
+                        }));
+                      }}
+                      placeholder="Your ticket for {{eventName}}"
+                    />
 
                     <label className="mt-3 block text-xs font-medium text-slate-700">Email body</label>
-                    <textarea className="mt-1 w-full rounded border p-2 text-sm font-mono" rows={8} value={emailBody} onChange={(event) => setEmailBody(event.target.value)} />
+                    <textarea
+                      className="mt-1 w-full rounded border p-2 text-sm font-mono"
+                      rows={8}
+                      value={emailBody}
+                      onChange={(event) => {
+                        const nextValue = event.target.value;
+                        setEmailBody(nextValue);
+                        setEmailTemplatesByType((prev) => ({
+                          ...prev,
+                          [deliveryTicketType || DEFAULT_TICKET_TYPE]: {
+                            subject: emailSubject,
+                            body: nextValue,
+                          },
+                        }));
+                      }}
+                    />
 
                     {showEmailPreview ? (
                       <div className="mt-3 rounded border bg-white p-3 text-sm">
@@ -767,7 +894,9 @@ export default function Dashboard() {
                       <th className="p-2">Ticket Types</th>
                       <th className="p-2">Quantity</th>
                       <th className="p-2">Evidence</th>
+                      <th className="p-2">Ticket ID</th>
                       <th className="p-2">Status</th>
+                      <th className="p-2">Delivery</th>
                       <th className="p-2">Actions</th>
                     </tr>
                   </thead>
@@ -793,7 +922,9 @@ export default function Dashboard() {
                               "-"
                             )}
                           </td>
+                          <td className="p-2 font-mono text-xs break-all">{Array.isArray(item.ticketIds) && item.ticketIds.length ? item.ticketIds.join(", ") : "-"}</td>
                           <td className="p-2">{item.status}</td>
+                          <td className="p-2">{item.deliveryStatus || "PENDING"}</td>
                           <td className="p-2">
                             <div className="flex flex-wrap gap-2">
                               <AppButton className="px-2 py-1 text-xs" variant="success" onClick={() => approveRequest(item.id)}>Approve</AppButton>
@@ -805,7 +936,7 @@ export default function Dashboard() {
                     })}
                     {!ticketRequests.length ? (
                       <tr>
-                        <td className="p-3 text-slate-500" colSpan={7}>No ticket requests yet.</td>
+                        <td className="p-3 text-slate-500" colSpan={9}>No ticket requests yet.</td>
                       </tr>
                     ) : null}
                   </tbody>
