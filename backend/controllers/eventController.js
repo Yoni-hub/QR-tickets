@@ -2,6 +2,7 @@ const puppeteer = require("puppeteer");
 const QRCode = require("qrcode");
 const { PDFDocument, StandardFonts, rgb } = require("pdf-lib");
 const prisma = require("../utils/prisma");
+const { generateAccessCode } = require("../utils/accessCode");
 const { createEvent, buildQrPayload } = require("../services/eventService");
 const { generateTicketPublicId } = require("../utils/ticketPublicId");
 const {
@@ -34,6 +35,111 @@ async function generateEventSlug(eventName, currentEventId = "") {
   }
 }
 
+function toEventListItem(event) {
+  return {
+    id: event.id,
+    slug: event.slug,
+    eventName: event.eventName,
+    eventDate: event.eventDate,
+    eventAddress: event.eventAddress,
+    accessCode: event.accessCode,
+    createdAt: event.createdAt,
+  };
+}
+
+async function resolveEventGroupByAccessCode(accessCode) {
+  if (!accessCode) return null;
+  const direct = await prisma.userEvent.findUnique({
+    where: { accessCode },
+    select: { id: true, accessCode: true, organizerAccessCode: true },
+  });
+  const organizerAccessCode = direct?.organizerAccessCode || direct?.accessCode || accessCode;
+
+  const groupEvents = await prisma.userEvent.findMany({
+    where: {
+      OR: [
+        { organizerAccessCode },
+        { accessCode: organizerAccessCode },
+      ],
+    },
+    orderBy: { createdAt: "asc" },
+    select: {
+      id: true,
+      slug: true,
+      eventName: true,
+      eventDate: true,
+      eventAddress: true,
+      accessCode: true,
+      organizerAccessCode: true,
+      ticketType: true,
+      ticketPrice: true,
+      paymentInstructions: true,
+      isDemo: true,
+      quantity: true,
+      createdAt: true,
+      designJson: true,
+    },
+  });
+
+  if (!groupEvents.length) return null;
+
+  const normalized = groupEvents.map((event) => ({
+    ...event,
+    organizerAccessCode: event.organizerAccessCode || organizerAccessCode,
+  }));
+  return {
+    organizerAccessCode,
+    events: normalized,
+  };
+}
+
+function resolveSelectedEvent(group, requestedEventId) {
+  if (!group?.events?.length) return null;
+  const requested = String(requestedEventId || "").trim();
+  if (requested) {
+    const match = group.events.find((event) => event.id === requested);
+    if (match) return match;
+  }
+  return group.events[0];
+}
+
+function formatLockedDeliveryMethods(methods) {
+  return methods.map((method) => {
+    if (method === "PDF_DOWNLOAD") return "PDF download";
+    if (method === "EMAIL_LINK") return "email";
+    if (method === "PUBLIC_EVENT_PAGE") return "public event page";
+    return String(method || "").toLowerCase();
+  });
+}
+
+async function getEventTicketMutationLock(eventId) {
+  const [deliveryMethodsRaw, soldCount] = await Promise.all([
+    prisma.ticketDelivery.findMany({
+      where: {
+        status: "SENT",
+        ticket: { eventId },
+      },
+      distinct: ["method"],
+      select: { method: true },
+    }),
+    prisma.ticket.count({
+      where: { eventId, ticketRequestId: { not: null } },
+    }),
+  ]);
+
+  const methods = deliveryMethodsRaw.map((item) => item.method).filter(Boolean);
+  if (soldCount > 0) methods.push("PUBLIC_EVENT_PAGE");
+  const uniqueMethods = Array.from(new Set(methods));
+  if (!uniqueMethods.length) return null;
+
+  const friendlyMethods = formatLockedDeliveryMethods(uniqueMethods);
+  return {
+    code: "EVENT_TICKETS_LOCKED",
+    deliveryMethods: friendlyMethods,
+    error: `You cant make changes on the tickets you already deliverd the tickets in ${friendlyMethods.join(", ")}. Create a new event from the Events menu.`,
+  };
+}
+
 async function createLiveEvent(req, res) {
   try {
     const data = await createEvent(req.body || {}, false);
@@ -59,24 +165,12 @@ async function getEventByCode(req, res) {
     return;
   }
 
-  const event = await prisma.userEvent.findUnique({
-    where: { accessCode },
-    select: {
-      id: true,
-      slug: true,
-      eventName: true,
-      eventDate: true,
-      eventAddress: true,
-      accessCode: true,
-      ticketType: true,
-      ticketPrice: true,
-      paymentInstructions: true,
-      isDemo: true,
-      createdAt: true,
-      designJson: true,
-    },
-  });
-
+  const group = await resolveEventGroupByAccessCode(accessCode);
+  if (!group) {
+    res.status(404).json({ error: "Event not found." });
+    return;
+  }
+  const event = resolveSelectedEvent(group, req.query?.eventId);
   if (!event) {
     res.status(404).json({ error: "Event not found." });
     return;
@@ -94,6 +188,9 @@ async function getEventByCode(req, res) {
   });
 
   res.json({
+    organizerAccessCode: group.organizerAccessCode,
+    events: group.events.map(toEventListItem),
+    selectedEventId: event.id,
     event,
     totalTickets,
     scannedTickets,
@@ -191,12 +288,19 @@ async function generateTicketsByAccessCode(req, res) {
     return;
   }
 
-  const event = await prisma.userEvent.findUnique({
-    where: { accessCode },
-    select: { id: true, accessCode: true, quantity: true },
-  });
+  const group = await resolveEventGroupByAccessCode(accessCode);
+  if (!group) {
+    res.status(404).json({ error: "Event not found." });
+    return;
+  }
+  const event = resolveSelectedEvent(group, req.body?.eventId || req.query?.eventId);
   if (!event) {
     res.status(404).json({ error: "Event not found." });
+    return;
+  }
+  const eventLock = await getEventTicketMutationLock(event.id);
+  if (eventLock) {
+    res.status(409).json(eventLock);
     return;
   }
 
@@ -280,6 +384,7 @@ async function generateTicketsByAccessCode(req, res) {
       ...(primaryGroup?.ticketType ? { ticketType: primaryGroup.ticketType } : {}),
       ...(primaryGroup && primaryGroup.ticketPrice != null ? { ticketPrice: primaryGroup.ticketPrice } : {}),
       ...(designJson ? { designJson } : {}),
+      organizerAccessCode: event.organizerAccessCode || group.organizerAccessCode,
     },
   });
 
@@ -300,14 +405,20 @@ async function updateEventInline(req, res) {
 
   const existing = await prisma.userEvent.findUnique({
     where: { id: eventId },
-    select: { id: true, accessCode: true, eventName: true },
+    select: { id: true, accessCode: true, organizerAccessCode: true, eventName: true },
   });
   if (!existing) {
     res.status(404).json({ error: "Event not found." });
     return;
   }
-  if (existing.accessCode !== accessCode) {
+  const authorizedCodes = new Set([existing.accessCode, existing.organizerAccessCode].filter(Boolean));
+  if (!authorizedCodes.has(accessCode)) {
     res.status(403).json({ error: "Invalid access code for this event." });
+    return;
+  }
+  const eventLock = await getEventTicketMutationLock(existing.id);
+  if (eventLock) {
+    res.status(409).json(eventLock);
     return;
   }
 
@@ -366,6 +477,70 @@ async function updateEventInline(req, res) {
   });
 
   res.json({ event: updated });
+}
+
+async function createEventForAccessCode(req, res) {
+  const accessCode = (req.params.accessCode || "").trim();
+  if (!accessCode) {
+    res.status(400).json({ error: "accessCode is required." });
+    return;
+  }
+
+  const group = await resolveEventGroupByAccessCode(accessCode);
+  if (!group) {
+    res.status(404).json({ error: "Event not found." });
+    return;
+  }
+
+  const eventName = String(req.body?.eventName || "").trim();
+  const eventAddress = String(req.body?.eventAddress || "").trim();
+  const paymentInstructions = String(req.body?.paymentInstructions || "").trim();
+  const eventDateRaw = String(req.body?.eventDate || "").trim();
+  const parsedEventDate = eventDateRaw ? new Date(eventDateRaw) : null;
+
+  if (!eventName || !eventAddress || !eventDateRaw) {
+    res.status(400).json({ error: "eventName, eventAddress, and eventDate are required." });
+    return;
+  }
+  if (Number.isNaN(parsedEventDate?.getTime())) {
+    res.status(400).json({ error: "Invalid eventDate." });
+    return;
+  }
+
+  const nextAccessCode = await generateAccessCode(async (candidate) => {
+    const existing = await prisma.userEvent.findUnique({ where: { accessCode: candidate } });
+    return !existing;
+  });
+  const slug = await generateEventSlug(eventName);
+  const created = await prisma.userEvent.create({
+    data: {
+      eventName,
+      eventAddress,
+      eventDate: parsedEventDate,
+      paymentInstructions: paymentInstructions || null,
+      quantity: 0,
+      accessCode: nextAccessCode,
+      organizerAccessCode: group.organizerAccessCode,
+      slug,
+      isDemo: false,
+    },
+    select: {
+      id: true,
+      slug: true,
+      eventName: true,
+      eventDate: true,
+      eventAddress: true,
+      accessCode: true,
+      organizerAccessCode: true,
+      createdAt: true,
+      paymentInstructions: true,
+    },
+  });
+
+  res.status(201).json({
+    event: created,
+    organizerAccessCode: group.organizerAccessCode,
+  });
 }
 
 function normalizeTicketsPerPage(rawValue) {
@@ -641,6 +816,7 @@ async function getTicketsPdf(req, res) {
 module.exports = {
   createLiveEvent,
   createDemoEvent,
+  createEventForAccessCode,
   getEventByCode,
   getEventTickets,
   generateTicketsByAccessCode,

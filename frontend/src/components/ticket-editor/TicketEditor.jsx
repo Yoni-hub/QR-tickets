@@ -65,45 +65,66 @@ export default function TicketEditor({
   initialDateTimeText = "",
   initialTicketType = "",
   initialTicketPrice = "",
+  initialDesignJson = null,
   onGenerated = null,
   onDraftChange = null,
   onSave = null,
   saveLoading = false,
 }) {
   const navigate = useNavigate();
+  const resolveInitialDesign = () => {
+    const design = initialDesignJson && typeof initialDesignJson === "object" ? initialDesignJson : {};
+    return {
+      eventName: String(design.eventName || initialEventName || "QR Tickets Demo Event"),
+      location: String(design.location || initialEventAddress || "Sample Venue"),
+      dateTimeText: String(design.dateTimeText || initialDateTimeText || "May 15, 2024 | 7:00 PM"),
+      codeText: "CODE123",
+    };
+  };
+
+  const resolveInitialSettings = () => {
+    const design = initialDesignJson && typeof initialDesignJson === "object" ? initialDesignJson : {};
+    const ticketGroups = Array.isArray(design.ticketGroups) && design.ticketGroups.length
+      ? design.ticketGroups.map((group) => ({
+          ticketType: String(group?.ticketType || "General"),
+          ticketPrice: String(group?.ticketPrice ?? "0"),
+          quantity: String(Math.max(1, Number.parseInt(String(group?.quantity || "1"), 10) || 1)),
+          headerImageDataUrl: group?.headerImageDataUrl || null,
+          headerOverlay: Number(group?.headerOverlay ?? DEFAULT_OVERLAY),
+          headerTextColorMode: String(group?.headerTextColorMode || DEFAULT_TEXT_COLOR_MODE),
+        }))
+      : [
+          {
+            ticketType: initialTicketType || "General",
+            ticketPrice: String(initialTicketPrice || "0"),
+            quantity: "10",
+            headerImageDataUrl: design?.headerImageDataUrl || null,
+            headerOverlay: Number(design?.headerOverlay ?? DEFAULT_OVERLAY),
+            headerTextColorMode: String(design?.headerTextColorMode || DEFAULT_TEXT_COLOR_MODE),
+          },
+        ];
+    const quantity = Math.max(
+      1,
+      ticketGroups.reduce((sum, group) => sum + (Number.parseInt(group.quantity, 10) || 0), 0),
+    );
+    return { quantity, ticketGroups };
+  };
+
   const [loading, setLoading] = useState(false);
   const [imageLoading, setImageLoading] = useState(false);
   const [feedback, setFeedback] = useState({ kind: "", message: "" });
   const [result, setResult] = useState(null);
   const [previewQrPayload, setPreviewQrPayload] = useState("");
-  const [ticketDesign, setTicketDesign] = useState({
-    eventName: initialEventName || "QR Tickets Demo Event",
-    location: initialEventAddress || "Sample Venue",
-    dateTimeText: initialDateTimeText || "May 15, 2024 | 7:00 PM",
-    codeText: "CODE123",
-  });
-  const [settings, setSettings] = useState({
-    quantity: 10,
-    ticketGroups: [
-      {
-        ticketType: initialTicketType || "General",
-        ticketPrice: String(initialTicketPrice || "0"),
-        quantity: "10",
-        headerImageDataUrl: null,
-        headerOverlay: DEFAULT_OVERLAY,
-        headerTextColorMode: DEFAULT_TEXT_COLOR_MODE,
-      },
-    ],
-  });
+  const [ticketDesign, setTicketDesign] = useState(() => resolveInitialDesign());
+  const [settings, setSettings] = useState(() => resolveInitialSettings());
 
   useEffect(() => {
-    setTicketDesign((prev) => ({
-      ...prev,
-      ...(initialEventName ? { eventName: initialEventName } : {}),
-      ...(initialEventAddress ? { location: initialEventAddress } : {}),
-      ...(initialDateTimeText ? { dateTimeText: initialDateTimeText } : {}),
-    }));
-  }, [initialEventName, initialEventAddress, initialDateTimeText]);
+    setTicketDesign(resolveInitialDesign());
+    setSettings(resolveInitialSettings());
+    setPreviewQrPayload("");
+    setResult(null);
+    setFeedback({ kind: "", message: "" });
+  }, [eventId, initialEventName, initialEventAddress, initialDateTimeText, initialTicketType, initialTicketPrice, initialDesignJson]);
 
   const totalQuantity = useMemo(
     () =>
@@ -205,6 +226,7 @@ export default function TicketEditor({
 
       if (mode === "append_to_event") {
         if (!accessCode) throw new Error("Access code is required.");
+        if (eventId) payload.eventId = eventId;
         await withMinDelay(api.post(`/events/by-code/${encodeURIComponent(accessCode)}/generate-tickets`, payload));
 
         const effectiveEventId = eventId
@@ -246,9 +268,14 @@ export default function TicketEditor({
         }
       }
     } catch (requestError) {
+      const responseData = requestError.response?.data || {};
+      if (responseData.code === "EVENT_TICKETS_LOCKED") {
+        const lockMessage = responseData.error || "You cant make changes on delivered tickets. Create a new event from the Events menu.";
+        window.alert(lockMessage);
+      }
       setFeedback({
         kind: "error",
-        message: requestError.response?.data?.error || requestError.message || "Failed to generate ticket.",
+        message: responseData.error || requestError.message || "Failed to generate ticket.",
       });
     } finally {
       setLoading(false);
@@ -348,17 +375,17 @@ export default function TicketEditor({
 
       <FeedbackBanner className="mt-3" kind={feedback.kind} message={feedback.message} />
 
-      {mode !== "append_to_event" && result?.accessCode ? (
+      {mode !== "append_to_event" && (result?.organizerAccessCode || result?.accessCode) ? (
         <section className="mt-6 rounded border bg-white p-4">
-          <p className="text-sm text-slate-600">Event access code</p>
-          <p className="break-all text-3xl font-bold tracking-wider">{result.accessCode}</p>
+          <p className="text-sm text-slate-600">Organizer access code</p>
+          <p className="break-all text-3xl font-bold tracking-wider">{result.organizerAccessCode || result.accessCode}</p>
           <p className="mt-2 text-sm text-blue-700">Tickets generated. Go to Dashboard to start managing tickets and choose delivery methods.</p>
           <p className="mt-2 text-sm text-amber-700">Save this code now. It is very important. Do not share it with anyone. You will use it to access the event dashboard and open the scanner.</p>
           <div className="mt-3 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
-            <AppButton variant="indigo" onClick={() => navigate(`/dashboard?code=${result.accessCode}`)}>
+            <AppButton variant="indigo" onClick={() => navigate(`/dashboard?code=${encodeURIComponent(result.organizerAccessCode || result.accessCode)}`)}>
               Go to Dashboard
             </AppButton>
-            <AppButton variant="success" onClick={() => navigate(`/scanner?code=${result.accessCode}`)}>
+            <AppButton variant="success" onClick={() => navigate(`/scanner?code=${encodeURIComponent(result.organizerAccessCode || result.accessCode)}`)}>
               Open Scanner
             </AppButton>
           </div>

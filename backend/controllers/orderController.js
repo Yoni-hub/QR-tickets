@@ -48,6 +48,42 @@ function parseTemplateField(rawValue, fallbackValue, maxLength, fieldName) {
   return value;
 }
 
+async function resolveEventForAccessCode(accessCode, eventIdRaw) {
+  const eventId = String(eventIdRaw || "").trim();
+  const directEvent = await prisma.userEvent.findUnique({
+    where: { accessCode },
+    select: { id: true, organizerAccessCode: true, accessCode: true },
+  });
+  const organizerAccessCode = directEvent?.organizerAccessCode || directEvent?.accessCode || accessCode;
+
+  const events = await prisma.userEvent.findMany({
+    where: {
+      OR: [
+        { organizerAccessCode },
+        { accessCode: organizerAccessCode },
+      ],
+    },
+    orderBy: { createdAt: "asc" },
+    select: {
+      id: true,
+      accessCode: true,
+      eventName: true,
+      eventDate: true,
+      eventAddress: true,
+      ticketType: true,
+    },
+  });
+  if (!events.length) return null;
+
+  if (eventId) {
+    const selected = events.find((item) => item.id === eventId);
+    if (selected) return selected;
+  }
+
+  const exactAccessEvent = events.find((item) => item.accessCode === accessCode);
+  return exactAccessEvent || events[0];
+}
+
 async function sendOrderTicketLinks(req, res) {
   const accessCode = String(req.params.accessCode || "").trim();
   if (!accessCode) {
@@ -79,17 +115,7 @@ async function sendOrderTicketLinks(req, res) {
   }
 
   const baseUrl = getBaseUrl(req.body?.baseUrl);
-  const event = await prisma.userEvent.findUnique({
-    where: { accessCode },
-    select: {
-      id: true,
-      accessCode: true,
-      eventName: true,
-      eventDate: true,
-      eventAddress: true,
-      ticketType: true,
-    },
-  });
+  const event = await resolveEventForAccessCode(accessCode, req.body?.eventId || req.query?.eventId);
 
   if (!event) {
     res.status(404).json({ error: "Event not found." });

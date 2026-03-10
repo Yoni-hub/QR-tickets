@@ -30,11 +30,11 @@ export default function HomePage() {
         }),
       );
       setResult(response.data);
-      setFeedback({ kind: "success", message: "Access code generated." });
+      setFeedback({ kind: "success", message: "Organizer access code generated." });
     } catch (requestError) {
       setFeedback({
         kind: "error",
-        message: requestError.response?.data?.error || "Could not generate access code.",
+        message: requestError.response?.data?.error || "Could not generate organizer access code.",
       });
     } finally {
       setLoading(false);
@@ -55,18 +55,18 @@ export default function HomePage() {
 
       <FeedbackBanner className="mt-3" kind={feedback.kind} message={feedback.message} />
 
-      {result?.accessCode ? (
+      {result?.organizerAccessCode ? (
         <section className="mt-6 rounded border bg-white p-4">
-          <p className="text-sm text-slate-600">Event access code</p>
-          <p className="break-all text-3xl font-bold tracking-wider">{result.accessCode}</p>
+          <p className="text-sm text-slate-600">Organizer access code</p>
+          <p className="break-all text-3xl font-bold tracking-wider">{result.organizerAccessCode}</p>
           <p className="mt-2 text-sm text-blue-700">
-            Access code generated. Go to Dashboard to manage tickets and choose delivery methods.
+            Organizer access code generated. Go to Dashboard to manage your Events.
           </p>
           <p className="mt-2 text-sm text-amber-700">
-            Save this code now. It is important. Do not share it with anyone. You will use it to access the event dashboard and scanner.
+            Save this code now. It is very important. If you loose it you can never recover you events. Do not share it with anyone. You will use it to access the event dashboard and scanner.
           </p>
           <div className="mt-3 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
-            <AppButton variant="indigo" onClick={() => navigate(`/dashboard?code=${result.accessCode}`)}>
+            <AppButton variant="indigo" onClick={() => navigate(`/dashboard?code=${encodeURIComponent(result.organizerAccessCode)}`)}>
               Go to Dashboard
             </AppButton>
           </div>
