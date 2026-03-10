@@ -9,6 +9,10 @@ const {
   renderTicketDocumentHtml,
   resolveTicketDesign,
 } = require("../services/ticketTemplate");
+const {
+  DEFAULT_TICKET_TYPE,
+  reservePendingTicketIds,
+} = require("../services/pendingTicketReservations");
 
 function slugify(value) {
   return String(value || "")
@@ -105,21 +109,79 @@ async function getEventTickets(req, res) {
     return;
   }
 
-  const tickets = await prisma.ticket.findMany({
-    where: { eventId },
-    orderBy: { createdAt: "asc" },
-    select: {
-      ticketPublicId: true,
-      status: true,
-      scannedAt: true,
-      qrPayload: true,
-      ticketType: true,
-      ticketPrice: true,
-      ticketRequestId: true,
-    },
+  const [event, rawTickets, pendingRequests] = await Promise.all([
+    prisma.userEvent.findUnique({
+      where: { id: eventId },
+      select: { id: true, ticketType: true },
+    }),
+    prisma.ticket.findMany({
+      where: { eventId },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        ticketPublicId: true,
+        status: true,
+        scannedAt: true,
+        qrPayload: true,
+        ticketType: true,
+        ticketPrice: true,
+        attendeeName: true,
+        attendeeEmail: true,
+        ticketRequestId: true,
+        isInvalidated: true,
+        deliveries: {
+          where: { status: "SENT" },
+          orderBy: { sentAt: "desc" },
+          take: 1,
+          select: { method: true, sentAt: true, email: true },
+        },
+      },
+    }),
+    prisma.ticketRequest.findMany({
+      where: { eventId, status: "PENDING_PAYMENT" },
+      orderBy: { createdAt: "asc" },
+      select: { ticketType: true, quantity: true, ticketSelections: true },
+    }),
+  ]);
+  if (!event) {
+    res.status(404).json({ error: "Event not found." });
+    return;
+  }
+
+  const tickets = rawTickets.map((ticket) => ({
+    ...ticket,
+    deliveryMethod: ticket.deliveries?.[0]?.method || "NOT_DELIVERED",
+    deliveredAt: ticket.deliveries?.[0]?.sentAt || null,
+    deliveredTo: ticket.deliveries?.[0]?.email || null,
+    buyer:
+      String(ticket.attendeeName || "").trim() ||
+      String(ticket.attendeeEmail || "").trim() ||
+      String(ticket.deliveries?.[0]?.email || "").trim() ||
+      "",
+  }));
+
+  const undeliveredPool = tickets.filter(
+    (ticket) =>
+      !ticket.ticketRequestId &&
+      ticket.status === "UNUSED" &&
+      !ticket.isInvalidated &&
+      ticket.deliveryMethod === "NOT_DELIVERED",
+  );
+  const reservedPendingTicketIds = reservePendingTicketIds({
+    availableTickets: undeliveredPool,
+    pendingRequests,
+    fallbackTicketType: event.ticketType || DEFAULT_TICKET_TYPE,
   });
 
-  res.json({ eventId, tickets });
+  res.json({
+    eventId,
+    tickets,
+    summary: {
+      undeliveredTickets: undeliveredPool.length,
+      pendingRequestedTickets: reservedPendingTicketIds.size,
+      downloadableTickets: Math.max(0, undeliveredPool.length - reservedPendingTicketIds.size),
+    },
+  });
 }
 
 async function generateTicketsByAccessCode(req, res) {
@@ -472,17 +534,69 @@ async function getTicketsPdf(req, res) {
       return;
     }
 
-    const tickets = await prisma.ticket.findMany({
-      where: { eventId },
-      orderBy: { createdAt: "asc" },
-      select: {
-        ticketPublicId: true,
-        qrPayload: true,
-        ticketType: true,
-        ticketPrice: true,
-        designJson: true,
-      },
+    const requestedCount = Math.max(1, Number.parseInt(String(req.query?.count || "1"), 10) || 1);
+
+    const [availableTickets, pendingRequests] = await Promise.all([
+      prisma.ticket.findMany({
+        where: {
+          eventId,
+          ticketRequestId: null,
+          isInvalidated: false,
+          status: "UNUSED",
+          deliveries: { none: { status: "SENT" } },
+        },
+        orderBy: { createdAt: "asc" },
+        select: {
+          id: true,
+          ticketPublicId: true,
+          qrPayload: true,
+          ticketType: true,
+          ticketPrice: true,
+          designJson: true,
+        },
+      }),
+      prisma.ticketRequest.findMany({
+        where: { eventId, status: "PENDING_PAYMENT" },
+        orderBy: { createdAt: "asc" },
+        select: { ticketType: true, quantity: true, ticketSelections: true },
+      }),
+    ]);
+
+    if (!availableTickets.length) {
+      res.status(400).json({ error: "No undelivered tickets are available for PDF download. Generate more tickets." });
+      return;
+    }
+
+    const reservedPendingTicketIds = reservePendingTicketIds({
+      availableTickets,
+      pendingRequests,
+      fallbackTicketType: event.ticketType || DEFAULT_TICKET_TYPE,
     });
+    const downloadableTickets = availableTickets.filter((ticket) => !reservedPendingTicketIds.has(ticket.id));
+
+    if (!downloadableTickets.length) {
+      res.status(400).json({
+        error: `You have ${reservedPendingTicketIds.size} tickets requested. You can only download 0 tickets right now.`,
+        availableTickets: 0,
+        requestedTickets: requestedCount,
+        pendingRequestedTickets: reservedPendingTicketIds.size,
+      });
+      return;
+    }
+    if (requestedCount > downloadableTickets.length) {
+      const message = reservedPendingTicketIds.size
+        ? `You have ${reservedPendingTicketIds.size} tickets requested. You can only download ${downloadableTickets.length} tickets.`
+        : `You have only ${downloadableTickets.length} tickets left to deliver.`;
+      res.status(400).json({
+        error: message,
+        availableTickets: downloadableTickets.length,
+        requestedTickets: requestedCount,
+        pendingRequestedTickets: reservedPendingTicketIds.size,
+      });
+      return;
+    }
+
+    const tickets = downloadableTickets.slice(0, requestedCount);
 
     const ticketsPerPage = normalizeTicketsPerPage(req.query?.perPage);
 
@@ -499,10 +613,24 @@ async function getTicketsPdf(req, res) {
       throw new Error("PDF generation returned empty data.");
     }
 
+    await prisma.ticketDelivery.createMany({
+      data: tickets.map((ticket) => ({
+        ticketId: ticket.id,
+        email: "pdf-download@local.delivery",
+        method: "PDF_DOWNLOAD",
+        status: "SENT",
+      })),
+    });
+
+    const remainingDeliverable = Math.max(0, downloadableTickets.length - tickets.length);
+
     const safeName = (event.eventName || "tickets").replace(/[^a-zA-Z0-9-_]+/g, "-").toLowerCase();
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${safeName}-tickets.pdf"`);
     res.setHeader("Content-Length", String(output.length));
+    res.setHeader("X-Tickets-Downloaded", String(tickets.length));
+    res.setHeader("X-Tickets-Remaining-Deliverable", String(remainingDeliverable));
+    res.setHeader("X-Tickets-Pending-Requested", String(reservedPendingTicketIds.size));
     res.send(output);
   } catch (error) {
     console.error("getTicketsPdf error", error);

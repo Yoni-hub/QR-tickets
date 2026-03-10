@@ -117,6 +117,7 @@ enum ScanResult {
 
 enum DeliveryMethod {
   EMAIL_LINK
+  PDF_DOWNLOAD
 }
 
 enum DeliveryStatus {

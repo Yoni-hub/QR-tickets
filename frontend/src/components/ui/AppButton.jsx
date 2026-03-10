@@ -1,3 +1,5 @@
+import { useEffect, useRef, useState } from "react";
+
 const BASE_CLASS =
   "inline-flex w-full items-center justify-center gap-2 rounded px-4 py-2 text-center font-medium leading-tight transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto";
 
@@ -26,16 +28,43 @@ export default function AppButton({
   type = "button",
   variant = "primary",
   className = "",
+  onClick,
   ...props
 }) {
+  const [wasClicked, setWasClicked] = useState(false);
+  const clickResetRef = useRef(null);
   const isDisabled = disabled || loading;
   const label = loading ? loadingText : children;
+
+  useEffect(() => {
+    return () => {
+      if (clickResetRef.current) {
+        clearTimeout(clickResetRef.current);
+      }
+    };
+  }, []);
+
+  const handleClick = (event) => {
+    if (isDisabled) return;
+    setWasClicked(true);
+    if (clickResetRef.current) {
+      clearTimeout(clickResetRef.current);
+    }
+    clickResetRef.current = setTimeout(() => {
+      setWasClicked(false);
+    }, 700);
+    if (typeof onClick === "function") {
+      onClick(event);
+    }
+  };
+
   return (
     <button
       type={type}
       disabled={isDisabled}
       aria-busy={loading}
-      className={`${BASE_CLASS} ${VARIANT_CLASS[variant] || VARIANT_CLASS.primary} ${className}`}
+      onClick={handleClick}
+      className={`${BASE_CLASS} ${VARIANT_CLASS[variant] || VARIANT_CLASS.primary} ${wasClicked ? "opacity-90 shadow-inner" : ""} ${className}`}
       {...props}
     >
       {loading ? <Spinner /> : null}

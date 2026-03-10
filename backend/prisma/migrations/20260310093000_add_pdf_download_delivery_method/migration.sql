@@ -1,0 +1,1 @@
+ALTER TYPE "public"."DeliveryMethod" ADD VALUE IF NOT EXISTS 'PDF_DOWNLOAD';

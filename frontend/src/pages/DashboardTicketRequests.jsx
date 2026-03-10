@@ -36,6 +36,8 @@ export default function DashboardTicketRequestsPage() {
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [chatSending, setChatSending] = useState(false);
+  const [evidencePreview, setEvidencePreview] = useState("");
+  const [approvingRequestIds, setApprovingRequestIds] = useState(() => new Set());
 
   const load = async () => {
     if (!accessCode) return;
@@ -60,12 +62,31 @@ export default function DashboardTicketRequestsPage() {
   }, [accessCode]);
 
   const approve = async (id) => {
+    const requestItem = items.find((item) => item.id === id);
+    if (requestItem?.status === "APPROVED") {
+      setFeedback({ kind: "info", message: "request already approved" });
+      return;
+    }
+    if (approvingRequestIds.has(id)) return;
+
+    setApprovingRequestIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+
     try {
       await api.post(`/ticket-requests/${encodeURIComponent(id)}/approve`, { accessCode });
-      setFeedback({ kind: "success", message: "Request approved and tickets generated." });
+      setFeedback({ kind: "success", message: "Request approved and ticket Assigned to client." });
       await load();
     } catch (requestError) {
       setFeedback({ kind: "error", message: requestError.response?.data?.error || "Approve failed." });
+    } finally {
+      setApprovingRequestIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     }
   };
 
@@ -164,20 +185,7 @@ export default function DashboardTicketRequestsPage() {
   const openEvidenceImage = (dataUrl) => {
     const value = String(dataUrl || "").trim();
     if (!value) return;
-    const nextWindow = window.open("", "_blank", "noopener,noreferrer");
-    if (!nextWindow) {
-      setFeedback({ kind: "error", message: "Popup blocked. Please allow popups to view evidence." });
-      return;
-    }
-    nextWindow.document.write(`
-      <html>
-        <head><title>Payment Evidence</title></head>
-        <body style="margin:0;padding:12px;background:#0f172a;display:flex;align-items:center;justify-content:center;">
-          <img src="${value}" alt="Payment evidence" style="max-width:100%;max-height:95vh;border-radius:8px;background:#fff;" />
-        </body>
-      </html>
-    `);
-    nextWindow.document.close();
+    setEvidencePreview(value);
   };
 
   return (
@@ -191,29 +199,41 @@ export default function DashboardTicketRequestsPage() {
       <section className="mt-4 rounded border bg-white p-4">
         <h2 className="text-lg font-semibold">Requests</h2>
         <div className="mt-3 space-y-2">
-          {items.map((item) => (
-            <article key={item.id} className="rounded border p-3 text-sm">
-              <p className="font-semibold">{item.name}</p>
-              <p className="mt-1">Quantity: {item.quantity}</p>
-              <p className="mt-1">Promoter: {item.promoter?.name || "-"}</p>
-              <p className="mt-1">Status: {item.status}</p>
-              <p className="mt-1">
-                Evidence:{" "}
-                {item.evidenceImageDataUrl ? (
-                  <button className="text-blue-700 underline" onClick={() => openEvidenceImage(item.evidenceImageDataUrl)}>View</button>
-                ) : (
-                  "-"
-                )}
-              </p>
-              {item.organizerMessage ? <p className="mt-1 text-xs text-slate-600">Message: {item.organizerMessage}</p> : null}
-              <div className="mt-2 flex flex-wrap gap-2">
-                <AppButton className="px-2 py-1 text-xs" variant="success" onClick={() => approve(item.id)}>Approve</AppButton>
-                <AppButton className="px-2 py-1 text-xs" variant="secondary" onClick={() => openChat(item)}>
-                  Message buyer{item.unreadClientMessages ? ` (${item.unreadClientMessages})` : ""}
-                </AppButton>
-              </div>
-            </article>
-          ))}
+          {items.map((item) => {
+            const isApproved = item.status === "APPROVED";
+            const isApproving = approvingRequestIds.has(item.id);
+            return (
+              <article key={item.id} className="rounded border p-3 text-sm">
+                <p className="font-semibold">{item.name}</p>
+                <p className="mt-1">Quantity: {item.quantity}</p>
+                <p className="mt-1">Promoter: {item.promoter?.name || "-"}</p>
+                <p className="mt-1">Status: {item.status}</p>
+                <p className="mt-1">
+                  Evidence:{" "}
+                  {item.evidenceImageDataUrl ? (
+                    <button className="text-blue-700 underline" onClick={() => openEvidenceImage(item.evidenceImageDataUrl)}>View</button>
+                  ) : (
+                    "-"
+                  )}
+                </p>
+                {item.organizerMessage ? <p className="mt-1 text-xs text-slate-600">Message: {item.organizerMessage}</p> : null}
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <AppButton
+                    className={`px-2 py-1 text-xs ${isApproved ? "opacity-70" : ""}`}
+                    variant={isApproved ? "secondary" : "success"}
+                    onClick={() => approve(item.id)}
+                    loading={isApproving}
+                    loadingText="Approving..."
+                  >
+                    {isApproved ? "Approved" : "Approve"}
+                  </AppButton>
+                  <AppButton className="px-2 py-1 text-xs" variant="secondary" onClick={() => openChat(item)}>
+                    Message buyer{item.unreadClientMessages ? ` (${item.unreadClientMessages})` : ""}
+                  </AppButton>
+                </div>
+              </article>
+            );
+          })}
           {!items.length ? <p className="text-sm text-slate-500">No ticket requests yet.</p> : null}
         </div>
       </section>
@@ -294,6 +314,22 @@ export default function DashboardTicketRequestsPage() {
               <AppButton type="button" className="self-end" onClick={sendChatMessage} loading={chatSending} loadingText="Sending...">
                 Send
               </AppButton>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {evidencePreview ? (
+        <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/70 p-3 sm:items-center">
+          <section className="w-full max-w-4xl rounded border bg-slate-900 p-3 shadow-xl">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="text-sm font-semibold text-white">Payment Evidence</p>
+              <AppButton type="button" variant="secondary" className="px-2 py-1 text-xs" onClick={() => setEvidencePreview("")}>
+                Close
+              </AppButton>
+            </div>
+            <div className="flex max-h-[78vh] items-center justify-center overflow-auto rounded bg-black p-2">
+              <img src={evidencePreview} alt="Payment evidence" className="max-h-[74vh] w-auto rounded bg-white" />
             </div>
           </section>
         </div>

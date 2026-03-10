@@ -144,6 +144,13 @@ function buildDefaultEmailBody(ticketType) {
   );
 }
 
+function resolveDeliveryMethodLabel(ticket) {
+  const method = String(ticket?.deliveryMethod || "NOT_DELIVERED").trim();
+  if (method === "PDF_DOWNLOAD") return "PDF";
+  if (method === "EMAIL_LINK") return "EMAIL";
+  return "NOT_DELIVERED";
+}
+
 export default function Dashboard() {
   const [params, setParams] = useSearchParams();
   const [activeMenu, setActiveMenu] = useState("tickets");
@@ -151,12 +158,18 @@ export default function Dashboard() {
   const [showPublicPreview, setShowPublicPreview] = useState(false);
   const [ticketPage, setTicketPage] = useState(1);
   const [ticketTypeFilter, setTicketTypeFilter] = useState("ALL");
+  const [buyerSearch, setBuyerSearch] = useState("");
   const [ticketStatusFilter, setTicketStatusFilter] = useState(TICKET_STATUS_FILTERS.TOTAL);
   const [summary, setSummary] = useState(null);
   const [eventDraft, setEventDraft] = useState({ eventName: "", eventDate: "", eventAddress: "", paymentInstructions: "" });
   const [savingEvent, setSavingEvent] = useState(false);
   const [savingTicketDraft, setSavingTicketDraft] = useState(false);
   const [tickets, setTickets] = useState([]);
+  const [ticketDeliverySummary, setTicketDeliverySummary] = useState({
+    undeliveredTickets: 0,
+    pendingRequestedTickets: 0,
+    downloadableTickets: 0,
+  });
   const [ticketRequests, setTicketRequests] = useState([]);
   const [promoters, setPromoters] = useState([]);
   const [leaderboard, setLeaderboard] = useState([]);
@@ -165,6 +178,7 @@ export default function Dashboard() {
   const [downloading, setDownloading] = useState(false);
   const [sending, setSending] = useState(false);
   const [deliveryMethod, setDeliveryMethod] = useState(DELIVERY_METHODS.PDF);
+  const [pdfTicketCount, setPdfTicketCount] = useState(1);
   const [pdfTicketsPerPage, setPdfTicketsPerPage] = useState(2);
   const [deliveryTicketType, setDeliveryTicketType] = useState("");
   const [recipientEmails, setRecipientEmails] = useState("");
@@ -180,6 +194,8 @@ export default function Dashboard() {
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [chatSending, setChatSending] = useState(false);
+  const [evidencePreview, setEvidencePreview] = useState("");
+  const [approvingRequestIds, setApprovingRequestIds] = useState(() => new Set());
 
   const recipientList = parseRecipientEmails(recipientEmails);
   const sampleRecipient = recipientList[0] || "customer@example.com";
@@ -258,6 +274,10 @@ export default function Dashboard() {
         ticketTypeFilter === "ALL"
           || String(ticket.ticketType || summary?.event?.ticketType || "General").trim() === ticketTypeFilter;
       if (!ticketTypeMatches) return false;
+      if (buyerSearch.trim()) {
+        const buyerValue = String(ticket.buyer || "").toLowerCase();
+        if (!buyerValue.includes(buyerSearch.trim().toLowerCase())) return false;
+      }
 
       if (ticketStatusFilter === TICKET_STATUS_FILTERS.SOLD) return Boolean(ticket.ticketRequestId);
       if (ticketStatusFilter === TICKET_STATUS_FILTERS.SCANNED) return ticket.status === "USED";
@@ -266,7 +286,7 @@ export default function Dashboard() {
       }
       return true;
     });
-  }, [tickets, ticketTypeFilter, ticketStatusFilter, summary?.event?.ticketType]);
+  }, [tickets, ticketTypeFilter, buyerSearch, ticketStatusFilter, summary?.event?.ticketType]);
   const totalTicketPages = Math.max(1, Math.ceil(filteredTickets.length / 5));
   const pagedTickets = filteredTickets.slice((ticketPage - 1) * 5, ticketPage * 5);
   const soldTicketsCount = useMemo(() => tickets.filter((ticket) => Boolean(ticket.ticketRequestId)).length, [tickets]);
@@ -275,12 +295,34 @@ export default function Dashboard() {
     () => tickets.filter((ticket) => !ticket.ticketRequestId && ticket.status !== "USED").length,
     [tickets],
   );
+  const deliverableTickets = useMemo(
+    () =>
+      tickets.filter(
+        (ticket) =>
+          !ticket.ticketRequestId &&
+          ticket.status === "UNUSED" &&
+          !ticket.isInvalidated &&
+          resolveDeliveryMethodLabel(ticket) === "NOT_DELIVERED",
+      ),
+    [tickets],
+  );
+  const deliverableCount = Number.isFinite(ticketDeliverySummary?.downloadableTickets)
+    ? Number(ticketDeliverySummary.downloadableTickets)
+    : deliverableTickets.length;
+  const pendingRequestedCount = Number.isFinite(ticketDeliverySummary?.pendingRequestedTickets)
+    ? Number(ticketDeliverySummary.pendingRequestedTickets)
+    : 0;
+  const pdfDeliveredCount = useMemo(
+    () => tickets.filter((ticket) => resolveDeliveryMethodLabel(ticket) === "PDF").length,
+    [tickets],
+  );
+  const noDeliverableTickets = tickets.length > 0 && deliverableCount < 1;
   useEffect(() => {
     if (ticketPage > totalTicketPages) setTicketPage(totalTicketPages);
   }, [ticketPage, totalTicketPages]);
   useEffect(() => {
     setTicketPage(1);
-  }, [ticketTypeFilter, ticketStatusFilter]);
+  }, [ticketTypeFilter, buyerSearch, ticketStatusFilter]);
   useEffect(() => {
     if (!chatContext?.id || !accessCode) return undefined;
     const interval = setInterval(() => {
@@ -288,6 +330,12 @@ export default function Dashboard() {
     }, 8000);
     return () => clearInterval(interval);
   }, [chatContext?.id, accessCode]);
+  useEffect(() => {
+    setPdfTicketCount((prev) => {
+      if (deliverableCount < 1) return 1;
+      return Math.min(Math.max(1, Number(prev) || 1), deliverableCount);
+    });
+  }, [deliverableCount]);
 
   const loadRequestsAndPromoters = async (targetCode) => {
     if (!targetCode) return;
@@ -298,6 +346,18 @@ export default function Dashboard() {
     setTicketRequests(requestRes.data.items || []);
     setPromoters(promoterRes.data.items || []);
     setLeaderboard(promoterRes.data.leaderboard || []);
+  };
+
+  const loadTicketsForEvent = async (eventId) => {
+    const ticketsRes = await api.get(`/events/${eventId}/tickets`);
+    setTickets(ticketsRes.data.tickets || []);
+    setTicketDeliverySummary(
+      ticketsRes.data.summary || {
+        undeliveredTickets: 0,
+        pendingRequestedTickets: 0,
+        downloadableTickets: 0,
+      },
+    );
   };
 
   const load = async () => {
@@ -320,14 +380,14 @@ export default function Dashboard() {
       setActiveMenu("tickets");
       setShowPublicPreview(false);
       setTicketPage(1);
-      const ticketsRes = await api.get(`/events/${summaryRes.data.event.id}/tickets`);
-      setTickets(ticketsRes.data.tickets || []);
+      await loadTicketsForEvent(summaryRes.data.event.id);
       await loadRequestsAndPromoters(summaryRes.data.event.accessCode);
       setFeedback({ kind: "success", message: "Dashboard loaded." });
     } catch (requestError) {
       setFeedback({ kind: "error", message: requestError.response?.data?.error || "Unable to load dashboard." });
       setSummary(null);
       setTickets([]);
+      setTicketDeliverySummary({ undeliveredTickets: 0, pendingRequestedTickets: 0, downloadableTickets: 0 });
       setTicketRequests([]);
       setPromoters([]);
       setLeaderboard([]);
@@ -338,7 +398,14 @@ export default function Dashboard() {
     }
   };
 
-  const copyTicketUrl = async (ticketPublicId) => {
+  const copyTicketUrl = async (ticket) => {
+    const method = resolveDeliveryMethodLabel(ticket);
+    if (method === "PDF" || method === "EMAIL") {
+      setFeedback({ kind: "error", message: "Cant copy, already downloaded or sent via email." });
+      return;
+    }
+    const ticketPublicId = ticket?.ticketPublicId;
+    if (!ticketPublicId) return;
     const url = `${window.location.origin}/t/${ticketPublicId}`;
     await navigator.clipboard.writeText(url);
     setFeedback({ kind: "success", message: "Ticket URL copied." });
@@ -347,31 +414,36 @@ export default function Dashboard() {
   const openEvidenceImage = (dataUrl) => {
     const value = String(dataUrl || "").trim();
     if (!value) return;
-    const nextWindow = window.open("", "_blank", "noopener,noreferrer");
-    if (!nextWindow) {
-      setFeedback({ kind: "error", message: "Popup blocked. Please allow popups to view evidence." });
-      return;
-    }
-    nextWindow.document.write(`
-      <html>
-        <head><title>Payment Evidence</title></head>
-        <body style="margin:0;padding:12px;background:#0f172a;display:flex;align-items:center;justify-content:center;">
-          <img src="${value}" alt="Payment evidence" style="max-width:100%;max-height:95vh;border-radius:8px;background:#fff;" />
-        </body>
-      </html>
-    `);
-    nextWindow.document.close();
+    setEvidencePreview(value);
   };
 
   const approveRequest = async (requestId) => {
+    const requestItem = ticketRequests.find((item) => item.id === requestId);
+    if (requestItem?.status === "APPROVED") {
+      setFeedback({ kind: "info", message: "request already approved" });
+      return;
+    }
+    if (approvingRequestIds.has(requestId)) return;
+
+    setApprovingRequestIds((prev) => {
+      const next = new Set(prev);
+      next.add(requestId);
+      return next;
+    });
+
     try {
       await api.post(`/ticket-requests/${encodeURIComponent(requestId)}/approve`, { accessCode });
       await loadRequestsAndPromoters(accessCode);
-      const ticketsRes = await api.get(`/events/${summary.event.id}/tickets`);
-      setTickets(ticketsRes.data.tickets || []);
-      setFeedback({ kind: "success", message: "Request approved and ticket generated." });
+      await loadTicketsForEvent(summary.event.id);
+      setFeedback({ kind: "success", message: "Request approved and ticket Assigned to client." });
     } catch (requestError) {
       setFeedback({ kind: "error", message: requestError.response?.data?.error || "Approve failed." });
+    } finally {
+      setApprovingRequestIds((prev) => {
+        const next = new Set(prev);
+        next.delete(requestId);
+        return next;
+      });
     }
   };
 
@@ -456,13 +528,18 @@ export default function Dashboard() {
 
   const downloadPdf = async () => {
     if (!summary?.event?.id || downloading) return;
+    if (deliverableCount < 1) {
+      setFeedback({ kind: "error", message: "You downloaded all your tickets. Please generate more tickets." });
+      return;
+    }
+    const safeCount = Math.min(Math.max(1, Number.parseInt(String(pdfTicketCount || 1), 10) || 1), deliverableCount);
     setDownloading(true);
     setFeedback({ kind: "", message: "" });
     try {
       const response = await withMinDelay(
         api.get(`/events/${summary.event.id}/tickets.pdf`, {
           responseType: "blob",
-          params: { perPage: pdfTicketsPerPage },
+          params: { perPage: pdfTicketsPerPage, count: safeCount },
         }),
       );
       const contentType = String(response.headers?.["content-type"] || "");
@@ -478,7 +555,18 @@ export default function Dashboard() {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
-      setFeedback({ kind: "success", message: "Tickets PDF downloaded." });
+
+      const downloadedCount = Number.parseInt(String(response.headers?.["x-tickets-downloaded"] || safeCount), 10) || safeCount;
+      const remainingAfterDownload = Number.parseInt(String(response.headers?.["x-tickets-remaining-deliverable"] || 0), 10) || 0;
+      await loadTicketsForEvent(summary.event.id);
+      if (remainingAfterDownload < 1) {
+        setFeedback({ kind: "info", message: "All tickets downloaded." });
+      } else {
+        setFeedback({
+          kind: "success",
+          message: `Downloaded ${downloadedCount} ticket(s). You have ${remainingAfterDownload} tickets left to deliver.`,
+        });
+      }
     } catch (requestError) {
       setFeedback({
         kind: "error",
@@ -504,37 +592,66 @@ export default function Dashboard() {
       return;
     }
 
-    setSending(true);
-    setFeedback({ kind: "", message: "" });
-    setSendSummary(null);
-    try {
-      const response = await withMinDelay(
-        api.post(`/orders/${encodeURIComponent(accessCode)}/send-links`, {
-          emails: recipientList,
-          ticketType: deliveryTicketType,
-          baseUrl: window.location.origin,
-          emailSubject,
-          emailBody,
-        }),
-      );
-      setSendSummary(response.data);
-      setRecipientEmails("");
-      setFeedback({ kind: "success", message: `Email sent for ${deliveryTicketType}.` });
-    } catch (requestError) {
-      setFeedback({ kind: "error", message: requestError.response?.data?.error || "Could not send ticket links." });
-    } finally {
-      setSending(false);
-    }
+    const executeSend = async (allowPartial = false) => {
+      setSending(true);
+      setFeedback({ kind: "", message: "" });
+      setSendSummary(null);
+      try {
+        const response = await withMinDelay(
+          api.post(`/orders/${encodeURIComponent(accessCode)}/send-links`, {
+            emails: recipientList,
+            ticketType: deliveryTicketType,
+            baseUrl: window.location.origin,
+            emailSubject,
+            emailBody,
+            allowPartial,
+          }),
+        );
+        setSendSummary(response.data);
+        setRecipientEmails("");
+        await loadTicketsForEvent(summary.event.id);
+        if (response.data.partialApplied) {
+          setFeedback({
+            kind: "info",
+            message: `Only ${response.data.attemptedEmails} ticket(s) were sent because only ${response.data.availableTicketsBeforeSend} were available.`,
+          });
+        } else {
+          setFeedback({ kind: "success", message: `Email sent for ${deliveryTicketType}.` });
+        }
+      } catch (requestError) {
+        const responseData = requestError.response?.data || {};
+        if (
+          responseData.code === "INSUFFICIENT_TICKETS" &&
+          Number(responseData.availableTickets || 0) > 0 &&
+          Number(responseData.availableTickets || 0) < recipientList.length &&
+          !allowPartial
+        ) {
+          const proceed = window.confirm(
+            `You have only ${responseData.availableTickets} tickets left. Proceed sending the ${responseData.availableTickets} available ticket(s)?`,
+          );
+          if (proceed) {
+            await executeSend(true);
+            return;
+          }
+          setFeedback({ kind: "info", message: "Email send cancelled." });
+          return;
+        }
+        setFeedback({ kind: "error", message: responseData.error || "Could not send ticket links." });
+      } finally {
+        setSending(false);
+      }
+    };
+
+    await executeSend(false);
   };
 
   const handleTicketsGenerated = async () => {
     if (!summary?.event?.id || !accessCode) return;
-    const [summaryRes, ticketsRes] = await Promise.all([
+    const [summaryRes] = await Promise.all([
       api.get(`/events/by-code/${encodeURIComponent(accessCode)}`),
-      api.get(`/events/${summary.event.id}/tickets`),
     ]);
     setSummary(summaryRes.data);
-    setTickets(ticketsRes.data.tickets || []);
+    await loadTicketsForEvent(summary.event.id);
     setTicketPage(1);
   };
 
@@ -691,8 +808,19 @@ export default function Dashboard() {
                 {summary.event.slug ? (
                   <button
                     type="button"
-                    className="rounded border px-2 py-1 text-xs"
+                    className="rounded border px-2 py-1 text-xs disabled:opacity-60"
+                    disabled={noDeliverableTickets}
                     onClick={() => {
+                      if (noDeliverableTickets) {
+                        setFeedback({
+                          kind: "error",
+                          message:
+                            pendingRequestedCount > 0
+                              ? "You have no free tickets to deliver right now because pending public requests reserved them."
+                              : "You have no more tickets to deliver and downloaded all tickets. Generate more before sharing public link.",
+                        });
+                        return;
+                      }
                       navigator.clipboard.writeText(`${window.location.origin}/e/${summary.event.slug}`);
                       setFeedback({ kind: "success", message: "Public event link copied." });
                     }}
@@ -701,6 +829,13 @@ export default function Dashboard() {
                   </button>
                 ) : null}
               </div>
+              {noDeliverableTickets ? (
+                <p className="mt-2 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+                  {pendingRequestedCount > 0
+                    ? "You have no free tickets to deliver right now because pending public requests reserved them."
+                    : "You have no more tickets to deliver and downloaded all tickets. Please generate more before sharing this link."}
+                </p>
+              ) : null}
               {summary.event.slug ? (
                 <div className="mt-3 space-y-2">
                   <button
@@ -805,47 +940,72 @@ export default function Dashboard() {
                       </option>
                     ))}
                   </select>
+                  <label className="text-xs font-medium text-slate-600">Buyer</label>
+                  <input
+                    className="rounded border p-1.5 text-xs"
+                    value={buyerSearch}
+                    onChange={(event) => setBuyerSearch(event.target.value)}
+                    placeholder="Search buyer name/email"
+                  />
                 </div>
               </div>
               <div className="mt-3 space-y-3 lg:hidden">
                 {pagedTickets.map((ticket) => (
                   <article key={ticket.ticketPublicId} className="rounded border bg-white p-3 text-sm">
-                    <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr] gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_1fr] gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                       <p>ticket id</p>
                       <p>ticket type</p>
+                      <p>buyer</p>
                       <p>sold</p>
                       <p>status</p>
+                      <p>delivery</p>
                       <p>scanned at</p>
                     </div>
-                    <div className="mt-1 grid grid-cols-[2fr_1fr_1fr_1fr_1fr] gap-2 text-xs text-slate-900">
+                    <div className="mt-1 grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_1fr] gap-2 text-xs text-slate-900">
                       <p className="break-all font-mono">{ticket.ticketPublicId}</p>
                       <p>{ticket.ticketType || summary.event.ticketType || "General"}</p>
+                      <p>{ticket.buyer || "-"}</p>
                       <p>{ticket.ticketRequestId ? "YES" : "NO"}</p>
                       <p>{ticket.status}</p>
+                      <p>{resolveDeliveryMethodLabel(ticket)}</p>
                       <p>{formatDate(ticket.scannedAt)}</p>
                     </div>
-                    <button className="mt-2 rounded border px-2 py-1 text-xs" onClick={() => copyTicketUrl(ticket.ticketPublicId)}>Copy</button>
+                    <button
+                      className={`mt-2 rounded border px-2 py-1 text-xs ${resolveDeliveryMethodLabel(ticket) === "PDF" || resolveDeliveryMethodLabel(ticket) === "EMAIL" ? "opacity-60" : ""}`}
+                      onClick={() => copyTicketUrl(ticket)}
+                    >
+                      Copy
+                    </button>
                   </article>
                 ))}
                 {!pagedTickets.length ? <p className="text-sm text-slate-500">No tickets for selected filters.</p> : null}
               </div>
               <div className="mt-3 hidden overflow-x-auto rounded border lg:block">
                 <table className="w-full min-w-[860px] text-left text-sm">
-                  <thead className="bg-slate-100"><tr><th className="p-2">Ticket ID</th><th className="p-2">Ticket Type</th><th className="p-2">Sold</th><th className="p-2">Status</th><th className="p-2">Scanned At</th><th className="p-2">Copy</th></tr></thead>
+                  <thead className="bg-slate-100"><tr><th className="p-2">Ticket ID</th><th className="p-2">Ticket Type</th><th className="p-2">Buyer</th><th className="p-2">Sold</th><th className="p-2">Status</th><th className="p-2">Delivery Method</th><th className="p-2">Scanned At</th><th className="p-2">Copy</th></tr></thead>
                   <tbody>
                     {pagedTickets.map((ticket) => (
                       <tr key={ticket.ticketPublicId} className="border-t">
                         <td className="break-all p-2 font-mono">{ticket.ticketPublicId}</td>
                         <td className="p-2">{ticket.ticketType || summary.event.ticketType || "General"}</td>
+                        <td className="p-2">{ticket.buyer || "-"}</td>
                         <td className="p-2">{ticket.ticketRequestId ? "YES" : "NO"}</td>
                         <td className="p-2">{ticket.status}</td>
+                        <td className="p-2">{resolveDeliveryMethodLabel(ticket)}</td>
                         <td className="p-2">{formatDate(ticket.scannedAt)}</td>
-                        <td className="p-2"><button className="rounded border px-2 py-1 text-xs" onClick={() => copyTicketUrl(ticket.ticketPublicId)}>Copy</button></td>
+                        <td className="p-2">
+                          <button
+                            className={`rounded border px-2 py-1 text-xs ${resolveDeliveryMethodLabel(ticket) === "PDF" || resolveDeliveryMethodLabel(ticket) === "EMAIL" ? "opacity-60" : ""}`}
+                            onClick={() => copyTicketUrl(ticket)}
+                          >
+                            Copy
+                          </button>
+                        </td>
                       </tr>
                     ))}
                     {!pagedTickets.length ? (
                       <tr className="border-t">
-                        <td className="p-3 text-slate-500" colSpan={6}>No tickets for selected filters.</td>
+                        <td className="p-3 text-slate-500" colSpan={8}>No tickets for selected filters.</td>
                       </tr>
                     ) : null}
                   </tbody>
@@ -889,6 +1049,24 @@ export default function Dashboard() {
 
               {deliveryMethod === DELIVERY_METHODS.PDF ? (
                 <div className="mt-3">
+                  <label className="mb-1 block text-sm font-medium">Number of tickets to download</label>
+                  <input
+                    className="w-full rounded border p-2 text-sm sm:w-44"
+                    type="number"
+                    min={1}
+                    max={Math.max(1, deliverableCount)}
+                    value={pdfTicketCount}
+                    onChange={(event) => setPdfTicketCount(Math.max(1, Number.parseInt(event.target.value, 10) || 1))}
+                    disabled={downloading || deliverableCount < 1}
+                  />
+                  <p className="mt-1 text-xs text-slate-600">
+                    Deliverable tickets left: {deliverableCount}. Already downloaded via PDF: {pdfDeliveredCount}.
+                  </p>
+                  {pendingRequestedCount > 0 ? (
+                    <p className="mt-1 text-xs text-amber-700">
+                      You have {pendingRequestedCount} ticket(s) requested via public page. You can only download {deliverableCount} ticket(s).
+                    </p>
+                  ) : null}
                   <label className="mb-1 block text-sm font-medium">Tickets per page</label>
                   <select className="w-full rounded border p-2 text-sm sm:w-44" value={pdfTicketsPerPage} onChange={(event) => setPdfTicketsPerPage(Number.parseInt(event.target.value, 10) || 2)} disabled={downloading}>
                     {PDF_TICKETS_PER_PAGE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
@@ -913,6 +1091,7 @@ export default function Dashboard() {
                   <label className="mb-1 mt-3 block text-sm font-medium">Recipient emails ({deliveryTicketType || DEFAULT_TICKET_TYPE})</label>
                   <textarea className="w-full rounded border p-2" rows={4} value={recipientEmails} onChange={(event) => setRecipientEmails(event.target.value)} placeholder="alice@email.com, bob@email.com" />
                   <p className="mt-1 text-xs text-slate-600">Send one ticket type at a time. Group similar buyers together, then switch type for the next batch.</p>
+                  <p className="mt-1 text-xs text-slate-600">Undelivered tickets currently available: {deliverableCount}</p>
 
                   <div className="mt-4 rounded border bg-slate-50 p-3">
                     <div className="flex items-center justify-between gap-2">
@@ -949,6 +1128,8 @@ export default function Dashboard() {
               <div className="mt-3 space-y-3 lg:hidden">
                 {ticketRequests.map((item) => {
                   const selections = Array.isArray(item.ticketSelections) ? item.ticketSelections : [];
+                  const isApproved = item.status === "APPROVED";
+                  const isApproving = approvingRequestIds.has(item.id);
                   return (
                     <article key={item.id} className="rounded border bg-white p-3 text-sm">
                       <div className="grid grid-cols-2 gap-2 text-xs">
@@ -974,7 +1155,15 @@ export default function Dashboard() {
                         {item.organizerMessage ? <p className="col-span-2 text-slate-600"><span className="font-semibold">Message:</span> {item.organizerMessage}</p> : null}
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2">
-                        <AppButton className="px-2 py-1 text-xs" variant="success" onClick={() => approveRequest(item.id)}>Approve</AppButton>
+                        <AppButton
+                          className={`px-2 py-1 text-xs ${isApproved ? "opacity-70" : ""}`}
+                          variant={isApproved ? "secondary" : "success"}
+                          onClick={() => approveRequest(item.id)}
+                          loading={isApproving}
+                          loadingText="Approving..."
+                        >
+                          {isApproved ? "Approved" : "Approve"}
+                        </AppButton>
                         <AppButton className="px-2 py-1 text-xs" variant="secondary" onClick={() => openRequestChat(item)}>
                           Message buyer{item.unreadClientMessages ? ` (${item.unreadClientMessages})` : ""}
                         </AppButton>
@@ -1002,6 +1191,8 @@ export default function Dashboard() {
                   <tbody>
                     {ticketRequests.map((item) => {
                       const selections = Array.isArray(item.ticketSelections) ? item.ticketSelections : [];
+                      const isApproved = item.status === "APPROVED";
+                      const isApproving = approvingRequestIds.has(item.id);
                       return (
                         <tr key={item.id} className="border-t align-top">
                           <td className="p-2 font-semibold">{item.name}</td>
@@ -1029,7 +1220,15 @@ export default function Dashboard() {
                           <td className="p-2">{item.deliveryStatus || "PENDING"}</td>
                           <td className="p-2">
                             <div className="flex flex-wrap gap-2">
-                              <AppButton className="px-2 py-1 text-xs" variant="success" onClick={() => approveRequest(item.id)}>Approve</AppButton>
+                              <AppButton
+                                className={`px-2 py-1 text-xs ${isApproved ? "opacity-70" : ""}`}
+                                variant={isApproved ? "secondary" : "success"}
+                                onClick={() => approveRequest(item.id)}
+                                loading={isApproving}
+                                loadingText="Approving..."
+                              >
+                                {isApproved ? "Approved" : "Approve"}
+                              </AppButton>
                               <AppButton className="px-2 py-1 text-xs" variant="secondary" onClick={() => openRequestChat(item)}>
                                 Message buyer{item.unreadClientMessages ? ` (${item.unreadClientMessages})` : ""}
                               </AppButton>
@@ -1146,6 +1345,22 @@ export default function Dashboard() {
                   >
                     Send
                   </AppButton>
+                </div>
+              </section>
+            </div>
+          ) : null}
+
+          {evidencePreview ? (
+            <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/70 p-3 sm:items-center">
+              <section className="w-full max-w-4xl rounded border bg-slate-900 p-3 shadow-xl">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-white">Payment Evidence</p>
+                  <AppButton type="button" variant="secondary" className="px-2 py-1 text-xs" onClick={() => setEvidencePreview("")}>
+                    Close
+                  </AppButton>
+                </div>
+                <div className="flex max-h-[78vh] items-center justify-center overflow-auto rounded bg-black p-2">
+                  <img src={evidencePreview} alt="Payment evidence" className="max-h-[74vh] w-auto rounded bg-white" />
                 </div>
               </section>
             </div>
