@@ -2,6 +2,7 @@
 const {
   createLiveEvent,
   createDemoEvent,
+  createEventForAccessCode,
   getEventByCode,
   getEventTickets,
   generateTicketsByAccessCode,
@@ -39,6 +40,7 @@ const router = express.Router();
 router.post("/events", createLiveEvent);
 router.post("/demo/events", createDemoEvent);
 router.get("/events/by-code/:accessCode", getEventByCode);
+router.post("/events/by-code/:accessCode/create-new", createEventForAccessCode);
 router.post("/events/by-code/:accessCode/generate-tickets", generateTicketsByAccessCode);
 router.patch("/events/:eventId", updateEventInline);
 router.get("/events/:eventId/tickets", getEventTickets);

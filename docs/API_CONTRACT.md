@@ -109,3 +109,5 @@ Admin action APIs:
 ## Checkpoint Updates
 
 - 2026-03-09: Added chat endpoints for organizer/client request messaging, added admin client token listing endpoint, and updated public ticket request validation expectations.
+
+- 2026-03-10: Updated scan contract and organizer access-code based scanner/event selection behavior

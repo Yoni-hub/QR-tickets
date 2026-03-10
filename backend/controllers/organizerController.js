@@ -9,6 +9,10 @@ function parseAccessCode(value) {
   return String(value || "").trim();
 }
 
+function parseEventId(value) {
+  return String(value || "").trim();
+}
+
 function normalizeChatMessage(value) {
   return String(value || "").trim();
 }
@@ -23,20 +27,39 @@ function mapChatMessage(message) {
   };
 }
 
-async function findEventByAccessCode(accessCode) {
+async function findEventByAccessCode(accessCode, eventId = "") {
   if (!accessCode) return null;
-  const event = await prisma.userEvent.findUnique({ where: { accessCode } });
-  if (!event) return null;
-  if (event.slug) return event;
+  const directEvent = await prisma.userEvent.findUnique({
+    where: { accessCode },
+    select: { id: true, accessCode: true, organizerAccessCode: true },
+  });
+  const organizerAccessCode = directEvent?.organizerAccessCode || directEvent?.accessCode || accessCode;
 
-  const fallbackSlug = `${String(event.eventName || "event")
+  const events = await prisma.userEvent.findMany({
+    where: {
+      OR: [
+        { organizerAccessCode },
+        { accessCode: organizerAccessCode },
+      ],
+    },
+    orderBy: { createdAt: "asc" },
+  });
+  if (!events.length) return null;
+
+  const selectedEvent = eventId
+    ? events.find((item) => item.id === eventId)
+    : (events.find((item) => item.accessCode === accessCode) || events[0]);
+  if (!selectedEvent) return null;
+  if (selectedEvent.slug) return selectedEvent;
+
+  const fallbackSlug = `${String(selectedEvent.eventName || "event")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "")
-    .slice(0, 50) || "event"}-${String(event.id).slice(-6)}`;
+    .slice(0, 50) || "event"}-${String(selectedEvent.id).slice(-6)}`;
 
   return prisma.userEvent.update({
-    where: { id: event.id },
+    where: { id: selectedEvent.id },
     data: { slug: fallbackSlug },
   });
 }
@@ -48,7 +71,7 @@ async function getOrganizerTicketRequests(req, res) {
     return;
   }
 
-  const event = await findEventByAccessCode(accessCode);
+  const event = await findEventByAccessCode(accessCode, parseEventId(req.body?.eventId || req.query?.eventId));
   if (!event) {
     res.status(404).json({ error: "Event not found." });
     return;
@@ -265,7 +288,7 @@ async function approveTicketRequest(req, res) {
     return;
   }
 
-  const event = await findEventByAccessCode(accessCode);
+  const event = await findEventByAccessCode(accessCode, parseEventId(req.body?.eventId || req.query?.eventId));
   if (!event) {
     res.status(404).json({ error: "Event not found." });
     return;
@@ -335,7 +358,7 @@ async function rejectTicketRequest(req, res) {
     return;
   }
 
-  const event = await findEventByAccessCode(accessCode);
+  const event = await findEventByAccessCode(accessCode, parseEventId(req.body?.eventId || req.query?.eventId));
   if (!event) {
     res.status(404).json({ error: "Event not found." });
     return;
@@ -376,7 +399,7 @@ async function messageTicketRequest(req, res) {
     return;
   }
 
-  const event = await findEventByAccessCode(accessCode);
+  const event = await findEventByAccessCode(accessCode, parseEventId(req.body?.eventId || req.query?.eventId));
   if (!event) {
     res.status(404).json({ error: "Event not found." });
     return;
@@ -419,7 +442,7 @@ async function getTicketRequestMessages(req, res) {
     return;
   }
 
-  const event = await findEventByAccessCode(accessCode);
+  const event = await findEventByAccessCode(accessCode, parseEventId(req.body?.eventId || req.query?.eventId));
   if (!event) {
     res.status(404).json({ error: "Event not found." });
     return;
@@ -472,7 +495,7 @@ async function sendTicketRequestMessage(req, res) {
     return;
   }
 
-  const event = await findEventByAccessCode(accessCode);
+  const event = await findEventByAccessCode(accessCode, parseEventId(req.body?.eventId || req.query?.eventId));
   if (!event) {
     res.status(404).json({ error: "Event not found." });
     return;
@@ -523,7 +546,7 @@ async function listPromoters(req, res) {
     return;
   }
 
-  const event = await findEventByAccessCode(accessCode);
+  const event = await findEventByAccessCode(accessCode, parseEventId(req.body?.eventId || req.query?.eventId));
   if (!event) {
     res.status(404).json({ error: "Event not found." });
     return;
@@ -589,7 +612,7 @@ async function createPromoter(req, res) {
     return;
   }
 
-  const event = await findEventByAccessCode(accessCode);
+  const event = await findEventByAccessCode(accessCode, parseEventId(req.body?.eventId || req.query?.eventId));
   if (!event) {
     res.status(404).json({ error: "Event not found." });
     return;
@@ -623,7 +646,7 @@ async function updatePromoter(req, res) {
     return;
   }
 
-  const event = await findEventByAccessCode(accessCode);
+  const event = await findEventByAccessCode(accessCode, parseEventId(req.body?.eventId || req.query?.eventId));
   if (!event) {
     res.status(404).json({ error: "Event not found." });
     return;
@@ -661,7 +684,7 @@ async function deletePromoter(req, res) {
     return;
   }
 
-  const event = await findEventByAccessCode(accessCode);
+  const event = await findEventByAccessCode(accessCode, parseEventId(req.body?.eventId || req.query?.eventId));
   if (!event) {
     res.status(404).json({ error: "Event not found." });
     return;
@@ -690,7 +713,7 @@ async function createGuestAndApprove(req, res) {
     return;
   }
 
-  const event = await findEventByAccessCode(accessCode);
+  const event = await findEventByAccessCode(accessCode, parseEventId(req.body?.eventId || req.query?.eventId));
   if (!event) {
     res.status(404).json({ error: "Event not found." });
     return;
@@ -722,7 +745,7 @@ async function bulkGuestImport(req, res) {
     return;
   }
 
-  const event = await findEventByAccessCode(accessCode);
+  const event = await findEventByAccessCode(accessCode, parseEventId(req.body?.eventId || req.query?.eventId));
   if (!event) {
     res.status(404).json({ error: "Event not found." });
     return;
@@ -781,3 +804,4 @@ module.exports = {
   createGuestAndApprove,
   bulkGuestImport,
 };
+

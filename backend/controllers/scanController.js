@@ -1,40 +1,149 @@
-﻿const prisma = require("../utils/prisma");
+const prisma = require("../utils/prisma");
+
+function resolveScanOutcomeLabel(outcome) {
+  if (outcome === "VALID") return "VALID";
+  if (outcome === "ALREADY_USED") return "ALREADY USED";
+  if (outcome === "WRONG_EVENT") return "WRONG EVENT";
+  if (outcome === "WRONG_DATE_SESSION") return "WRONG DATE / SESSION";
+  if (outcome === "CANCELED") return "CANCELED";
+  if (outcome === "BLOCKED") return "BLOCKED";
+  if (outcome === "DUPLICATE_SCAN") return "DUPLICATE SCAN";
+  return "INVALID TICKET";
+}
+
+function resolveSupportingText(outcome) {
+  if (outcome === "VALID") return "Entry granted";
+  if (outcome === "ALREADY_USED") return "Ticket already scanned";
+  if (outcome === "WRONG_EVENT") return "Ticket belongs to another event";
+  if (outcome === "WRONG_DATE_SESSION") return "Ticket is not valid for this session";
+  if (outcome === "CANCELED") return "Ticket has been voided";
+  if (outcome === "BLOCKED") return "Ticket is not allowed for entry";
+  if (outcome === "DUPLICATE_SCAN") return "Same code scanned again too quickly";
+  return "Ticket not found or not valid for this organizer";
+}
+
+function normalizeDateKey(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+async function resolveEventContext(organizerAccessCode, selectedEventId) {
+  const directEvent = await prisma.userEvent.findUnique({
+    where: { accessCode: organizerAccessCode },
+    select: { accessCode: true, organizerAccessCode: true },
+  });
+  const normalizedOrganizerAccessCode =
+    directEvent?.organizerAccessCode || directEvent?.accessCode || organizerAccessCode;
+
+  const events = await prisma.userEvent.findMany({
+    where: {
+      OR: [
+        { organizerAccessCode: normalizedOrganizerAccessCode },
+        { accessCode: normalizedOrganizerAccessCode },
+      ],
+    },
+    orderBy: { createdAt: "asc" },
+    select: {
+      id: true,
+      eventName: true,
+      eventDate: true,
+      accessCode: true,
+      organizerAccessCode: true,
+      adminStatus: true,
+    },
+  });
+
+  if (!events.length) return null;
+
+  const selected = String(selectedEventId || "").trim()
+    ? events.find((item) => item.id === String(selectedEventId || "").trim())
+    : (events.find((item) => item.accessCode === organizerAccessCode) || events[0]);
+
+  if (!selected) return null;
+
+  return {
+    organizerAccessCode: normalizedOrganizerAccessCode,
+    selectedEvent: selected,
+  };
+}
+
+function mapTicketSummary(ticket, event) {
+  return {
+    ticketPublicId: ticket.ticketPublicId,
+    ticketType: ticket.ticketType || event.ticketType || null,
+    ticketPrice: ticket.ticketPrice != null ? Number(ticket.ticketPrice) : null,
+    attendeeName: ticket.attendeeName || null,
+    attendeeEmail: ticket.attendeeEmail || null,
+    attendeePhone: ticket.attendeePhone || null,
+    quantity: ticket.ticketRequest?.quantity || 1,
+    promoterName: ticket.promoter?.name || null,
+    eventId: event.id,
+    eventName: event.eventName,
+    eventDate: event.eventDate,
+    scannedAt: ticket.scannedAt || null,
+  };
+}
+
+async function logScan({ selectedEventId, ticket, ticketPublicId, rawScannedValue, scannerSource, outcome, note = null }) {
+  const scanResult = outcome === "VALID" ? "VALID" : outcome === "ALREADY_USED" ? "USED" : "INVALID";
+  await prisma.scanRecord.create({
+    data: {
+      eventId: selectedEventId,
+      ...(ticket?.id ? { ticketId: ticket.id } : {}),
+      ticketPublicId,
+      rawScannedValue,
+      normalizedTicketPublicId: ticketPublicId,
+      scannerSource,
+      result: scanResult,
+      ...(note ? { note } : {}),
+    },
+  });
+}
 
 async function scanTicket(req, res) {
-  const accessCode = (req.body?.accessCode || "").trim();
+  const organizerAccessCode = (req.body?.organizerAccessCode || req.body?.accessCode || "").trim();
+  const selectedEventId = String(req.body?.eventId || "").trim();
   const ticketPublicId = (req.body?.ticketPublicId || "").trim();
   const rawScannedValue = String(req.body?.rawScannedValue || ticketPublicId || "").trim();
   const scannerSource = String(req.body?.scannerSource || "manual").trim() || "manual";
+  const enforceEventDate = Boolean(req.body?.enforceEventDate);
 
-  if (!accessCode || !ticketPublicId) {
-    res.status(400).json({ error: "accessCode and ticketPublicId are required." });
+  if (!organizerAccessCode || !ticketPublicId) {
+    res.status(400).json({ error: "organizerAccessCode and ticketPublicId are required." });
     return;
   }
 
-  const event = await prisma.userEvent.findUnique({ where: { accessCode } });
-  if (!event) {
-    res.json({ result: "INVALID" });
-    return;
-  }
-
-  if (event.adminStatus && event.adminStatus !== "ACTIVE") {
-    await prisma.scanRecord.create({
-      data: {
-        eventId: event.id,
-        ticketPublicId,
-        rawScannedValue,
-        normalizedTicketPublicId: ticketPublicId,
-        scannerSource,
-        result: "INVALID",
-      },
+  const context = await resolveEventContext(organizerAccessCode, selectedEventId);
+  if (!context) {
+    res.json({
+      result: "INVALID_TICKET",
+      statusText: resolveScanOutcomeLabel("INVALID_TICKET"),
+      supportingText: resolveSupportingText("INVALID_TICKET"),
+      scannedAt: new Date(),
     });
-    res.json({ result: "INVALID" });
     return;
   }
 
-  const ticket = await prisma.ticket.findFirst({
-    where: { eventId: event.id, ticketPublicId },
+  const { selectedEvent, organizerAccessCode: normalizedOrganizerAccessCode } = context;
+
+  const ticket = await prisma.ticket.findUnique({
+    where: { ticketPublicId },
     include: {
+      event: {
+        select: {
+          id: true,
+          eventName: true,
+          eventDate: true,
+          ticketType: true,
+          organizerAccessCode: true,
+          accessCode: true,
+          adminStatus: true,
+        },
+      },
       promoter: {
         select: {
           id: true,
@@ -46,102 +155,96 @@ async function scanTicket(req, res) {
         select: {
           id: true,
           quantity: true,
+          status: true,
         },
       },
     },
   });
-  if (!ticket) {
-    await prisma.scanRecord.create({
-      data: {
-        eventId: event.id,
-        ticketPublicId,
-        rawScannedValue,
-        normalizedTicketPublicId: ticketPublicId,
-        scannerSource,
-        result: "INVALID",
-      },
-    });
-    res.json({ result: "INVALID" });
-    return;
-  }
 
-  if (ticket.isInvalidated) {
-    await prisma.scanRecord.create({
-      data: {
-        eventId: event.id,
-        ticketId: ticket.id,
-        ticketPublicId,
-        rawScannedValue,
-        normalizedTicketPublicId: ticketPublicId,
-        scannerSource,
-        result: "INVALID",
-      },
-    });
-    res.json({ result: "INVALID" });
-    return;
-  }
-
-  if (ticket.status === "USED") {
-    await prisma.scanRecord.create({
-      data: {
-        eventId: event.id,
-        ticketId: ticket.id,
-        ticketPublicId,
-        rawScannedValue,
-        normalizedTicketPublicId: ticketPublicId,
-        scannerSource,
-        result: "USED",
-      },
-    });
-    res.json({
-      result: "USED",
-      scannedAt: ticket.scannedAt,
-      ticket: {
-        ticketPublicId: ticket.ticketPublicId,
-        ticketType: ticket.ticketType || event.ticketType || null,
-        ticketPrice: ticket.ticketPrice != null ? Number(ticket.ticketPrice) : null,
-        attendeeName: ticket.attendeeName || null,
-        attendeeEmail: ticket.attendeeEmail || null,
-        attendeePhone: ticket.attendeePhone || null,
-        quantity: ticket.ticketRequest?.quantity || 1,
-        promoterName: ticket.promoter?.name || null,
-      },
-    });
-    return;
-  }
-
+  let outcome = "INVALID_TICKET";
+  let outcomeNote = null;
   const scannedAt = new Date();
-  await prisma.ticket.update({
-    where: { id: ticket.id },
-    data: { status: "USED", scannedAt },
-  });
 
-  await prisma.scanRecord.create({
-    data: {
-      eventId: event.id,
-      ticketId: ticket.id,
+  if (!ticket) {
+    await logScan({
+      selectedEventId: selectedEvent.id,
+      ticket: null,
       ticketPublicId,
       rawScannedValue,
-      normalizedTicketPublicId: ticketPublicId,
       scannerSource,
-      result: "VALID",
+      outcome,
+      note: "OUTCOME:INVALID_TICKET",
+    });
+
+    res.json({
+      result: outcome,
+      statusText: resolveScanOutcomeLabel(outcome),
+      supportingText: resolveSupportingText(outcome),
       scannedAt,
-    },
+    });
+    return;
+  }
+
+  const ticketOrganizerAccessCode = ticket.event.organizerAccessCode || ticket.event.accessCode;
+  if (String(ticketOrganizerAccessCode || "") !== String(normalizedOrganizerAccessCode || "")) {
+    outcome = "INVALID_TICKET";
+  } else if (ticket.event.id !== selectedEvent.id) {
+    outcome = "WRONG_EVENT";
+    outcomeNote = `Ticket event: ${ticket.event.eventName}`;
+  } else if (enforceEventDate) {
+    const eventDateKey = normalizeDateKey(ticket.event.eventDate);
+    const currentDateKey = normalizeDateKey(scannedAt);
+    if (eventDateKey && currentDateKey && eventDateKey !== currentDateKey) {
+      outcome = "WRONG_DATE_SESSION";
+      outcomeNote = `Ticket date: ${eventDateKey}; Scan date: ${currentDateKey}`;
+    }
+  }
+
+  if (selectedEvent.adminStatus && selectedEvent.adminStatus !== "ACTIVE" && outcome === "INVALID_TICKET") {
+    outcome = "BLOCKED";
+    outcomeNote = "Event is not active";
+  }
+
+  if (outcome === "INVALID_TICKET" && ticket.isInvalidated) {
+    if (ticket.ticketRequest?.status === "REJECTED") {
+      outcome = "CANCELED";
+    } else {
+      outcome = "BLOCKED";
+    }
+  }
+
+  if (outcome === "INVALID_TICKET" && ticket.status === "USED") {
+    outcome = "ALREADY_USED";
+  }
+
+  if (outcome === "INVALID_TICKET") {
+    // If it reached here and ticket exists in selected event context, it's valid.
+    outcome = "VALID";
+  }
+
+  if (outcome === "VALID") {
+    await prisma.ticket.update({
+      where: { id: ticket.id },
+      data: { status: "USED", scannedAt },
+    });
+  }
+
+  await logScan({
+    selectedEventId: selectedEvent.id,
+    ticket,
+    ticketPublicId,
+    rawScannedValue,
+    scannerSource,
+    outcome,
+    note: `OUTCOME:${outcome}${outcomeNote ? ` | ${outcomeNote}` : ""}`,
   });
 
   res.json({
-    result: "VALID",
+    result: outcome,
+    statusText: resolveScanOutcomeLabel(outcome),
+    supportingText: resolveSupportingText(outcome),
     scannedAt,
-    ticket: {
-      ticketPublicId: ticket.ticketPublicId,
-      ticketType: ticket.ticketType || event.ticketType || null,
-      ticketPrice: ticket.ticketPrice != null ? Number(ticket.ticketPrice) : null,
-      attendeeName: ticket.attendeeName || null,
-      attendeeEmail: ticket.attendeeEmail || null,
-      attendeePhone: ticket.attendeePhone || null,
-      quantity: ticket.ticketRequest?.quantity || 1,
-      promoterName: ticket.promoter?.name || null,
-    },
+    ticket: mapTicketSummary(ticket, ticket.event),
   });
 }
 

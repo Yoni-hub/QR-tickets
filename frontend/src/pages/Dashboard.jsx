@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import api from "../lib/api";
 import AppButton from "../components/ui/AppButton";
@@ -12,8 +12,8 @@ const DELIVERY_METHODS = {
 };
 
 const DASHBOARD_MENUS = [
-  { id: "tickets", label: "Tickets" },
   { id: "events", label: "Events" },
+  { id: "tickets", label: "Tickets" },
   { id: "delivery", label: "Delivery Method" },
   { id: "requests", label: "Ticket Requests" },
   { id: "promoters", label: "Promoters" },
@@ -67,6 +67,14 @@ const DEFAULT_EMAIL_HTML_TEMPLATE = `
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DEFAULT_TICKET_TYPE = "General";
+const EVENT_EDIT_MODES = {
+  EDIT: "EDIT",
+  CREATE: "CREATE",
+};
+
+function getSelectedEventStorageKey(accessCode) {
+  return `qr-dashboard:selected-event:${String(accessCode || "").trim()}`;
+}
 
 function parseRecipientEmails(rawValue) {
   return String(rawValue || "")
@@ -153,7 +161,7 @@ function resolveDeliveryMethodLabel(ticket) {
 
 export default function Dashboard() {
   const [params, setParams] = useSearchParams();
-  const [activeMenu, setActiveMenu] = useState("tickets");
+  const [activeMenu, setActiveMenu] = useState("events");
   const [code, setCode] = useState(params.get("code") || "");
   const [showPublicPreview, setShowPublicPreview] = useState(false);
   const [ticketPage, setTicketPage] = useState(1);
@@ -161,6 +169,9 @@ export default function Dashboard() {
   const [buyerSearch, setBuyerSearch] = useState("");
   const [ticketStatusFilter, setTicketStatusFilter] = useState(TICKET_STATUS_FILTERS.TOTAL);
   const [summary, setSummary] = useState(null);
+  const [events, setEvents] = useState([]);
+  const [selectedEventId, setSelectedEventId] = useState("");
+  const [eventEditMode, setEventEditMode] = useState(EVENT_EDIT_MODES.EDIT);
   const [eventDraft, setEventDraft] = useState({ eventName: "", eventDate: "", eventAddress: "", paymentInstructions: "" });
   const [savingEvent, setSavingEvent] = useState(false);
   const [savingTicketDraft, setSavingTicketDraft] = useState(false);
@@ -218,7 +229,7 @@ export default function Dashboard() {
       ? renderEmailTemplate(DEFAULT_EMAIL_HTML_TEMPLATE, sampleData)
       : renderEmailHtmlPreview(previewBody, sampleData.ticketUrl);
 
-  const accessCode = useMemo(() => summary?.event?.accessCode || code.trim(), [summary, code]);
+  const accessCode = useMemo(() => code.trim(), [code]);
   const ticketTypeOptions = useMemo(
     () =>
       Array.from(
@@ -337,11 +348,42 @@ export default function Dashboard() {
     });
   }, [deliverableCount]);
 
-  const loadRequestsAndPromoters = async (targetCode) => {
-    if (!targetCode) return;
+  const applySummaryEvent = useCallback((payload) => {
+    const nextEvents = Array.isArray(payload?.events) ? payload.events : [];
+    setEvents(nextEvents);
+    setSelectedEventId(String(payload?.event?.id || ""));
+    setSummary(payload);
+    setEventDraft({
+      eventName: String(payload?.event?.eventName || ""),
+      eventDate: toLocalDateTimeInputValue(payload?.event?.eventDate),
+      eventAddress: String(payload?.event?.eventAddress || ""),
+      paymentInstructions: String(payload?.event?.paymentInstructions || ""),
+    });
+    setEventEditMode(EVENT_EDIT_MODES.EDIT);
+  }, []);
+
+  const handleTicketLockError = useCallback((requestError) => {
+    const responseData = requestError?.response?.data || {};
+    if (responseData.code !== "EVENT_TICKETS_LOCKED") return false;
+    const fallbackMethods = Array.isArray(responseData.deliveryMethods) && responseData.deliveryMethods.length
+      ? responseData.deliveryMethods.join(", ")
+      : "delivery methods already used";
+    const message = responseData.error
+      || `You cant make changes on the tickets you already deliverd the tickets in ${fallbackMethods}. Create a new event from the Events menu.`;
+    window.alert(message);
+    setFeedback({ kind: "error", message });
+    return true;
+  }, []);
+
+  const loadRequestsAndPromoters = async (targetCode, targetEventId) => {
+    if (!targetCode || !targetEventId) return;
     const [requestRes, promoterRes] = await Promise.all([
-      api.get(`/events/by-code/${encodeURIComponent(targetCode)}/ticket-requests`),
-      api.get(`/events/by-code/${encodeURIComponent(targetCode)}/promoters`),
+      api.get(`/events/by-code/${encodeURIComponent(targetCode)}/ticket-requests`, {
+        params: { eventId: targetEventId },
+      }),
+      api.get(`/events/by-code/${encodeURIComponent(targetCode)}/promoters`, {
+        params: { eventId: targetEventId },
+      }),
     ]);
     setTicketRequests(requestRes.data.items || []);
     setPromoters(promoterRes.data.items || []);
@@ -360,32 +402,38 @@ export default function Dashboard() {
     );
   };
 
-  const load = async () => {
-    if (!code.trim() || loading) return;
+  const loadDashboard = useCallback(async (targetCode, requestedEventId = "") => {
+    const trimmedCode = String(targetCode || "").trim();
+    if (!trimmedCode || loading) return;
     setLoading(true);
     setFeedback({ kind: "", message: "" });
     setSendSummary(null);
-    setParams({ code: code.trim() });
+    setParams({ code: trimmedCode });
+
+    const storageKey = getSelectedEventStorageKey(trimmedCode);
+    const storedEventId = requestedEventId || localStorage.getItem(storageKey) || "";
+
     try {
-      const summaryRes = await withMinDelay(api.get(`/events/by-code/${encodeURIComponent(code.trim())}`));
-      setSummary(summaryRes.data);
-      setEventDraft({
-        eventName: String(summaryRes.data?.event?.eventName || ""),
-        eventDate: toLocalDateTimeInputValue(summaryRes.data?.event?.eventDate),
-        eventAddress: String(summaryRes.data?.event?.eventAddress || ""),
-        paymentInstructions: String(summaryRes.data?.event?.paymentInstructions || ""),
-      });
+      const summaryRes = await withMinDelay(api.get(`/events/by-code/${encodeURIComponent(trimmedCode)}`, {
+        params: storedEventId ? { eventId: storedEventId } : {},
+      }));
+      applySummaryEvent(summaryRes.data);
+      if (summaryRes.data?.event?.id) {
+        localStorage.setItem(storageKey, summaryRes.data.event.id);
+      }
       setTicketTypeFilter("ALL");
       setTicketStatusFilter(TICKET_STATUS_FILTERS.TOTAL);
-      setActiveMenu("tickets");
+      setActiveMenu("events");
       setShowPublicPreview(false);
       setTicketPage(1);
       await loadTicketsForEvent(summaryRes.data.event.id);
-      await loadRequestsAndPromoters(summaryRes.data.event.accessCode);
+      await loadRequestsAndPromoters(trimmedCode, summaryRes.data.event.id);
       setFeedback({ kind: "success", message: "Dashboard loaded." });
     } catch (requestError) {
       setFeedback({ kind: "error", message: requestError.response?.data?.error || "Unable to load dashboard." });
       setSummary(null);
+      setEvents([]);
+      setSelectedEventId("");
       setTickets([]);
       setTicketDeliverySummary({ undeliveredTickets: 0, pendingRequestedTickets: 0, downloadableTickets: 0 });
       setTicketRequests([]);
@@ -396,6 +444,10 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
+  }, [loading, setParams, applySummaryEvent]);
+
+  const load = async () => {
+    await loadDashboard(code.trim());
   };
 
   const copyTicketUrl = async (ticket) => {
@@ -432,8 +484,11 @@ export default function Dashboard() {
     });
 
     try {
-      await api.post(`/ticket-requests/${encodeURIComponent(requestId)}/approve`, { accessCode });
-      await loadRequestsAndPromoters(accessCode);
+      await api.post(`/ticket-requests/${encodeURIComponent(requestId)}/approve`, {
+        accessCode,
+        eventId: summary?.event?.id,
+      });
+      await loadRequestsAndPromoters(accessCode, summary?.event?.id);
       await loadTicketsForEvent(summary.event.id);
       setFeedback({ kind: "success", message: "Request approved and ticket Assigned to client." });
     } catch (requestError) {
@@ -452,7 +507,7 @@ export default function Dashboard() {
     if (!silent) setChatLoading(true);
     try {
       const response = await api.get(`/ticket-requests/${encodeURIComponent(requestId)}/messages`, {
-        params: { accessCode },
+        params: { accessCode, eventId: summary?.event?.id },
       });
       setChatMessages(response.data.messages || []);
       setTicketRequests((prev) =>
@@ -488,11 +543,12 @@ export default function Dashboard() {
     try {
       await api.post(`/ticket-requests/${encodeURIComponent(requestId)}/messages`, {
         accessCode,
+        eventId: summary?.event?.id,
         message,
       });
       setChatInput("");
       await loadChatMessages(requestId, { silent: true });
-      await loadRequestsAndPromoters(accessCode);
+      await loadRequestsAndPromoters(accessCode, summary?.event?.id);
     } catch (requestError) {
       setFeedback({ kind: "error", message: requestError.response?.data?.error || "Could not send message." });
     } finally {
@@ -507,9 +563,14 @@ export default function Dashboard() {
     }
 
     try {
-      await api.post("/promoters", { accessCode, name: promoterForm.name, code: promoterForm.code });
+      await api.post("/promoters", {
+        accessCode,
+        eventId: summary?.event?.id,
+        name: promoterForm.name,
+        code: promoterForm.code,
+      });
       setPromoterForm({ name: "", code: "" });
-      await loadRequestsAndPromoters(accessCode);
+      await loadRequestsAndPromoters(accessCode, summary?.event?.id);
       setFeedback({ kind: "success", message: "Promoter added." });
     } catch (requestError) {
       setFeedback({ kind: "error", message: requestError.response?.data?.error || "Could not add promoter." });
@@ -518,8 +579,10 @@ export default function Dashboard() {
 
   const deletePromoter = async (promoterId) => {
     try {
-      await api.delete(`/promoters/${encodeURIComponent(promoterId)}`, { data: { accessCode } });
-      await loadRequestsAndPromoters(accessCode);
+      await api.delete(`/promoters/${encodeURIComponent(promoterId)}`, {
+        data: { accessCode, eventId: summary?.event?.id },
+      });
+      await loadRequestsAndPromoters(accessCode, summary?.event?.id);
       setFeedback({ kind: "info", message: "Promoter deleted." });
     } catch (requestError) {
       setFeedback({ kind: "error", message: requestError.response?.data?.error || "Delete failed." });
@@ -600,6 +663,7 @@ export default function Dashboard() {
         const response = await withMinDelay(
           api.post(`/orders/${encodeURIComponent(accessCode)}/send-links`, {
             emails: recipientList,
+            eventId: summary?.event?.id,
             ticketType: deliveryTicketType,
             baseUrl: window.location.origin,
             emailSubject,
@@ -647,18 +711,41 @@ export default function Dashboard() {
 
   const handleTicketsGenerated = async () => {
     if (!summary?.event?.id || !accessCode) return;
-    const [summaryRes] = await Promise.all([
-      api.get(`/events/by-code/${encodeURIComponent(accessCode)}`),
-    ]);
-    setSummary(summaryRes.data);
-    await loadTicketsForEvent(summary.event.id);
+    await loadDashboard(accessCode, summary.event.id);
     setTicketPage(1);
   };
 
   const saveEventInline = async () => {
-    if (!summary?.event?.id || !accessCode || savingEvent) return;
+    if (!accessCode || savingEvent) return;
+    if (
+      !eventDraft.eventName.trim() ||
+      !eventDraft.eventDate ||
+      !eventDraft.eventAddress.trim()
+    ) {
+      setFeedback({
+        kind: "error",
+        message: "Event name, date, and location are required.",
+      });
+      return;
+    }
     setSavingEvent(true);
     try {
+      if (eventEditMode === EVENT_EDIT_MODES.CREATE) {
+        const response = await api.post(`/events/by-code/${encodeURIComponent(accessCode)}/create-new`, {
+          eventName: eventDraft.eventName,
+          eventDate: eventDraft.eventDate,
+          eventAddress: eventDraft.eventAddress,
+          paymentInstructions: eventDraft.paymentInstructions,
+        });
+        await loadDashboard(accessCode, response.data?.event?.id);
+        setFeedback({ kind: "success", message: "New event created." });
+        return;
+      }
+
+      if (!summary?.event?.id) {
+        setFeedback({ kind: "error", message: "Load an event first." });
+        return;
+      }
       const response = await api.patch(`/events/${summary.event.id}`, {
         accessCode,
         eventName: eventDraft.eventName,
@@ -666,16 +753,56 @@ export default function Dashboard() {
         eventAddress: eventDraft.eventAddress,
         paymentInstructions: eventDraft.paymentInstructions,
       });
-      setSummary((prev) => {
-        if (!prev) return prev;
-        return { ...prev, event: { ...prev.event, ...response.data.event } };
+      applySummaryEvent({
+        ...(summary || {}),
+        event: { ...summary?.event, ...response.data.event },
+        events: events.map((eventItem) =>
+          eventItem.id === response.data?.event?.id
+            ? {
+                ...eventItem,
+                eventName: response.data?.event?.eventName,
+                eventDate: response.data?.event?.eventDate,
+                eventAddress: response.data?.event?.eventAddress,
+              }
+            : eventItem,
+        ),
       });
       setFeedback({ kind: "success", message: "Event details updated." });
     } catch (requestError) {
+      if (handleTicketLockError(requestError)) return;
       setFeedback({ kind: "error", message: requestError.response?.data?.error || "Could not update event." });
     } finally {
       setSavingEvent(false);
     }
+  };
+
+  const switchToCreateEventMode = () => {
+    setEventEditMode(EVENT_EDIT_MODES.CREATE);
+    setEventDraft({
+      eventName: "",
+      eventDate: "",
+      eventAddress: "",
+      paymentInstructions: "",
+    });
+    setShowPublicPreview(false);
+  };
+
+  const switchToEditEventMode = () => {
+    if (!summary?.event) return;
+    setEventEditMode(EVENT_EDIT_MODES.EDIT);
+    setEventDraft({
+      eventName: String(summary.event.eventName || ""),
+      eventDate: toLocalDateTimeInputValue(summary.event.eventDate),
+      eventAddress: String(summary.event.eventAddress || ""),
+      paymentInstructions: String(summary.event.paymentInstructions || ""),
+    });
+  };
+
+  const selectExistingEvent = async (eventId) => {
+    if (!eventId || !accessCode || eventId === selectedEventId) return;
+    const storageKey = getSelectedEventStorageKey(accessCode);
+    localStorage.setItem(storageKey, eventId);
+    await loadDashboard(accessCode, eventId);
   };
 
   const applyTicketEditorDraft = (draft) => {
@@ -710,6 +837,7 @@ export default function Dashboard() {
     try {
       const payload = {
         accessCode,
+        eventId: summary.event.id,
         eventName: draft?.eventName || summary.event.eventName,
         eventAddress: draft?.eventAddress || summary.event.eventAddress,
         ticketType: draft?.ticketType || summary.event.ticketType || "",
@@ -733,6 +861,7 @@ export default function Dashboard() {
       });
       setFeedback({ kind: "success", message: "Ticket editor changes saved." });
     } catch (requestError) {
+      if (handleTicketLockError(requestError)) return;
       setFeedback({ kind: "error", message: requestError.response?.data?.error || "Could not save ticket changes." });
     } finally {
       setSavingTicketDraft(false);
@@ -773,6 +902,19 @@ export default function Dashboard() {
             <section className="mt-4 rounded border p-4">
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-[100px_1fr] sm:items-center">
                 <p className="font-semibold">Event:</p>
+                <select
+                  className="w-full rounded border p-2 text-sm"
+                  value={selectedEventId}
+                  onChange={(e) => selectExistingEvent(e.target.value)}
+                  disabled={!events.length || loading || savingEvent}
+                >
+                  {events.map((eventItem) => (
+                    <option key={eventItem.id} value={eventItem.id}>
+                      {eventItem.eventName} ({formatDate(eventItem.eventDate)})
+                    </option>
+                  ))}
+                </select>
+                <p className="font-semibold">Name:</p>
                 <input
                   className="w-full rounded border p-2 text-sm"
                   value={eventDraft.eventName}
@@ -800,9 +942,32 @@ export default function Dashboard() {
                   onChange={(e) => setEventDraft((prev) => ({ ...prev, paymentInstructions: e.target.value }))}
                 />
               </div>
-              <AppButton className="mt-3" onClick={saveEventInline} loading={savingEvent} loadingText="Saving...">
-                Save Event
-              </AppButton>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <AppButton className="" onClick={saveEventInline} loading={savingEvent} loadingText="Saving...">
+                  Save Event
+                </AppButton>
+                <AppButton type="button" variant="secondary" onClick={switchToCreateEventMode}>
+                  Add New Event
+                </AppButton>
+                <AppButton
+                  type="button"
+                  variant="secondary"
+                  className={eventEditMode === EVENT_EDIT_MODES.EDIT ? "text-blue-700" : ""}
+                  onClick={switchToEditEventMode}
+                  disabled={!summary?.event?.id}
+                >
+                  Edit Event
+                </AppButton>
+              </div>
+              {eventEditMode === EVENT_EDIT_MODES.CREATE ? (
+                <p className="mt-2 text-xs text-blue-700">
+                  You are creating a new event. Save Event will create a fresh event under this dashboard access code.
+                </p>
+              ) : (
+                <p className="mt-2 text-xs text-blue-700">
+                  Editing event: {String(summary?.event?.eventName || "Selected event")}
+                </p>
+              )}
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <p className="break-all"><span className="font-semibold">Public Event Link:</span> {summary.event.slug ? `${window.location.origin}/e/${summary.event.slug}` : "Not available"}</p>
                 {summary.event.slug ? (
@@ -884,6 +1049,7 @@ export default function Dashboard() {
                   initialDateTimeText={formatDate(summary.event.eventDate)}
                   initialTicketType={summary.event.ticketType || "General"}
                   initialTicketPrice={summary.event.ticketPrice || ""}
+                  initialDesignJson={summary.event.designJson || null}
                   onGenerated={handleTicketsGenerated}
                   onDraftChange={applyTicketEditorDraft}
                   onSave={saveTicketEditorDraft}

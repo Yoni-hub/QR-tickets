@@ -28,29 +28,31 @@ export default function App() {
   const isEmbedPreview = searchParams.get("embed") === "1" && location.pathname.startsWith("/e/");
 
   useEffect(() => {
-    const timerByButton = new WeakMap();
+    const timerByElement = new WeakMap();
     const activeTimers = new Set();
 
     const handleDocumentClick = (event) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
-      const button = target.closest("button");
-      if (!button || button.disabled) return;
+      const clickable = target.closest("button, a");
+      if (!clickable) return;
+      if (clickable instanceof HTMLButtonElement && clickable.disabled) return;
 
-      const existingTimer = timerByButton.get(button);
+      const existingTimer = timerByElement.get(clickable);
       if (existingTimer) {
         clearTimeout(existingTimer);
         activeTimers.delete(existingTimer);
       }
 
-      button.classList.add("btn-clicked");
+      const clickedClass = clickable instanceof HTMLAnchorElement ? "link-clicked" : "btn-clicked";
+      clickable.classList.add(clickedClass);
       const timeoutId = setTimeout(() => {
-        button.classList.remove("btn-clicked");
-        timerByButton.delete(button);
+        clickable.classList.remove(clickedClass);
+        timerByElement.delete(clickable);
         activeTimers.delete(timeoutId);
       }, 700);
 
-      timerByButton.set(button, timeoutId);
+      timerByElement.set(clickable, timeoutId);
       activeTimers.add(timeoutId);
     };
 

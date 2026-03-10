@@ -32,8 +32,9 @@ export default function AppButton({
   ...props
 }) {
   const [wasClicked, setWasClicked] = useState(false);
+  const [clickLocked, setClickLocked] = useState(false);
   const clickResetRef = useRef(null);
-  const isDisabled = disabled || loading;
+  const isDisabled = disabled || loading || clickLocked;
   const label = loading ? loadingText : children;
 
   useEffect(() => {
@@ -46,12 +47,14 @@ export default function AppButton({
 
   const handleClick = (event) => {
     if (isDisabled) return;
+    setClickLocked(true);
     setWasClicked(true);
     if (clickResetRef.current) {
       clearTimeout(clickResetRef.current);
     }
     clickResetRef.current = setTimeout(() => {
       setWasClicked(false);
+      setClickLocked(false);
     }, 700);
     if (typeof onClick === "function") {
       onClick(event);

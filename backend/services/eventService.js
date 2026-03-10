@@ -1,5 +1,5 @@
 ﻿const prisma = require("../utils/prisma");
-const { generateAccessCode } = require("../utils/accessCode");
+const { generateAccessCode, generateOrganizerAccessCode } = require("../utils/accessCode");
 const { generateTicketPublicId } = require("../utils/ticketPublicId");
 
 function getPublicBaseUrl() {
@@ -55,6 +55,18 @@ async function createEvent(payload, isDemo = false) {
     const existing = await prisma.userEvent.findUnique({ where: { accessCode: code } });
     return !existing;
   });
+  const organizerAccessCode = await generateOrganizerAccessCode(async (code) => {
+    const existing = await prisma.userEvent.findFirst({
+      where: {
+        OR: [
+          { organizerAccessCode: code },
+          { accessCode: code },
+        ],
+      },
+      select: { id: true },
+    });
+    return !existing;
+  });
 
   const slug = await generateEventSlug(payload.eventSlug || payload.eventName || "event");
   const event = await prisma.userEvent.create({
@@ -70,6 +82,7 @@ async function createEvent(payload, isDemo = false) {
         payload.designJson && typeof payload.designJson === "object" ? payload.designJson : null,
       quantity,
       accessCode,
+      organizerAccessCode,
       isDemo,
     },
   });
@@ -101,7 +114,7 @@ async function createEvent(payload, isDemo = false) {
   if (tickets.length) {
     await prisma.ticket.createMany({ data: tickets });
   }
-  return { eventId: event.id, accessCode };
+  return { eventId: event.id, accessCode, organizerAccessCode };
 }
 
 module.exports = { createEvent, getPublicBaseUrl, buildQrPayload };
