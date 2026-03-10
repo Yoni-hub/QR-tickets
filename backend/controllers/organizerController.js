@@ -157,6 +157,7 @@ async function createTicketsForRequest({ event, request }) {
       ticketRequestId: null,
       isInvalidated: false,
       status: "UNUSED",
+      deliveries: { none: { status: "SENT" } },
     },
     orderBy: { createdAt: "asc" },
     select: { id: true, ticketPublicId: true, qrPayload: true, ticketType: true },

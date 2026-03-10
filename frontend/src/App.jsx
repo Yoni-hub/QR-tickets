@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import HomePage from "./pages/HomePage";
 import Dashboard from "./pages/Dashboard";
@@ -25,6 +26,43 @@ export default function App() {
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
   const isEmbedPreview = searchParams.get("embed") === "1" && location.pathname.startsWith("/e/");
+
+  useEffect(() => {
+    const timerByButton = new WeakMap();
+    const activeTimers = new Set();
+
+    const handleDocumentClick = (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const button = target.closest("button");
+      if (!button || button.disabled) return;
+
+      const existingTimer = timerByButton.get(button);
+      if (existingTimer) {
+        clearTimeout(existingTimer);
+        activeTimers.delete(existingTimer);
+      }
+
+      button.classList.add("btn-clicked");
+      const timeoutId = setTimeout(() => {
+        button.classList.remove("btn-clicked");
+        timerByButton.delete(button);
+        activeTimers.delete(timeoutId);
+      }, 700);
+
+      timerByButton.set(button, timeoutId);
+      activeTimers.add(timeoutId);
+    };
+
+    document.addEventListener("click", handleDocumentClick, true);
+    return () => {
+      document.removeEventListener("click", handleDocumentClick, true);
+      for (const timeoutId of activeTimers) {
+        clearTimeout(timeoutId);
+      }
+      activeTimers.clear();
+    };
+  }, []);
 
   return (
     <div className="min-h-screen w-full overflow-x-clip bg-slate-50 text-slate-900">

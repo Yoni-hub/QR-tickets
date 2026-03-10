@@ -1,8 +1,11 @@
 const prisma = require("../utils/prisma");
 const crypto = require("crypto");
+const sharp = require("sharp");
 const { getPublicBaseUrl } = require("../services/eventService");
 
-const MAX_EVIDENCE_BYTES = 2 * 1024 * 1024;
+const MAX_EVIDENCE_INPUT_BYTES = 8 * 1024 * 1024;
+const MAX_EVIDENCE_OUTPUT_BYTES = 900 * 1024;
+const MAX_EVIDENCE_DIMENSION = 1600;
 const SUPPORTED_EVIDENCE_MIME = new Set(["image/png", "image/jpeg", "image/webp"]);
 const MAX_CHAT_MESSAGE_LENGTH = 1200;
 
@@ -32,17 +35,92 @@ function decodeEvidenceDataUrl(dataUrl) {
   const match = value.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=]+)$/);
   if (!match) return null;
   const mime = match[1].toLowerCase();
-  const bytes = Buffer.byteLength(match[2], "base64");
-  return { mime, bytes };
+  const base64 = match[2];
+  const bytes = Buffer.byteLength(base64, "base64");
+  let buffer;
+  try {
+    buffer = Buffer.from(base64, "base64");
+  } catch {
+    return null;
+  }
+  return { mime, bytes, buffer };
 }
 
-function validateEvidenceDataUrl(dataUrl) {
+function detectImageMime(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 12) return null;
+  const isPng =
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47 &&
+    buffer[4] === 0x0d &&
+    buffer[5] === 0x0a &&
+    buffer[6] === 0x1a &&
+    buffer[7] === 0x0a;
+  if (isPng) return "image/png";
+
+  const isJpeg = buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[buffer.length - 2] === 0xff && buffer[buffer.length - 1] === 0xd9;
+  if (isJpeg) return "image/jpeg";
+
+  const isWebp =
+    buffer[0] === 0x52 &&
+    buffer[1] === 0x49 &&
+    buffer[2] === 0x46 &&
+    buffer[3] === 0x46 &&
+    buffer[8] === 0x57 &&
+    buffer[9] === 0x45 &&
+    buffer[10] === 0x42 &&
+    buffer[11] === 0x50;
+  if (isWebp) return "image/webp";
+
+  return null;
+}
+
+async function sanitizeEvidenceDataUrl(dataUrl) {
   if (!dataUrl) return { ok: true, value: null };
   const decoded = decodeEvidenceDataUrl(dataUrl);
   if (!decoded) return { ok: false, error: "Evidence image must be a valid base64 image data URL." };
   if (!SUPPORTED_EVIDENCE_MIME.has(decoded.mime)) return { ok: false, error: "Evidence image must be PNG, JPEG, or WEBP." };
-  if (decoded.bytes > MAX_EVIDENCE_BYTES) return { ok: false, error: "Evidence image is too large. Maximum size is 2MB." };
-  return { ok: true, value: String(dataUrl) };
+  if (decoded.bytes > MAX_EVIDENCE_INPUT_BYTES) return { ok: false, error: "Evidence image is too large. Maximum upload size is 8MB." };
+
+  const detectedMime = detectImageMime(decoded.buffer);
+  if (!detectedMime || detectedMime !== decoded.mime) {
+    return { ok: false, error: "Evidence file content does not match the declared image type." };
+  }
+
+  try {
+    const optimized = await sharp(decoded.buffer, { limitInputPixels: 4096 * 4096 })
+      .rotate()
+      .resize({
+        width: MAX_EVIDENCE_DIMENSION,
+        height: MAX_EVIDENCE_DIMENSION,
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .webp({ quality: 78, effort: 4 })
+      .toBuffer();
+
+    if (optimized.length > MAX_EVIDENCE_OUTPUT_BYTES) {
+      const smaller = await sharp(decoded.buffer, { limitInputPixels: 4096 * 4096 })
+        .rotate()
+        .resize({
+          width: 1280,
+          height: 1280,
+          fit: "inside",
+          withoutEnlargement: true,
+        })
+        .webp({ quality: 68, effort: 4 })
+        .toBuffer();
+      if (smaller.length > MAX_EVIDENCE_OUTPUT_BYTES) {
+        return { ok: false, error: "Evidence image is too large after optimization. Please upload a smaller image." };
+      }
+      return { ok: true, value: `data:image/webp;base64,${smaller.toString("base64")}` };
+    }
+
+    return { ok: true, value: `data:image/webp;base64,${optimized.toString("base64")}` };
+  } catch {
+    return { ok: false, error: "Evidence image could not be processed safely." };
+  }
 }
 
 function generateClientAccessToken() {
@@ -78,7 +156,13 @@ async function buildTicketTypeStats(event) {
   const [availableByType, soldByType, pendingRequests] = await Promise.all([
     prisma.ticket.groupBy({
       by: ["ticketType"],
-      where: { eventId: event.id, ticketRequestId: null, status: "UNUSED" },
+      where: {
+        eventId: event.id,
+        ticketRequestId: null,
+        status: "UNUSED",
+        isInvalidated: false,
+        deliveries: { none: { status: "SENT" } },
+      },
       _count: { _all: true },
       _max: { ticketPrice: true },
     }),
@@ -230,7 +314,7 @@ async function createPublicTicketRequest(req, res) {
   const name = String(req.body?.name || "").trim();
   const promoterCode = String(req.body?.promoterCode || "").trim().toLowerCase();
   const ticketSelections = parseTicketSelections(req.body?.ticketSelections || []);
-  const evidenceValidation = validateEvidenceDataUrl(req.body?.evidenceImageDataUrl);
+  const evidenceValidation = await sanitizeEvidenceDataUrl(req.body?.evidenceImageDataUrl);
 
   if (!eventSlug || !name) {
     res.status(400).json({ error: "eventSlug and name are required." });

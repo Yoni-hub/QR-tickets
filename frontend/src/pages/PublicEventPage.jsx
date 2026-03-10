@@ -4,20 +4,88 @@ import api from "../lib/api";
 import AppButton from "../components/ui/AppButton";
 import FeedbackBanner from "../components/ui/FeedbackBanner";
 
-const MAX_EVIDENCE_BYTES = 2 * 1024 * 1024;
+const MAX_EVIDENCE_INPUT_BYTES = 8 * 1024 * 1024;
+const MAX_EVIDENCE_OUTPUT_BYTES = 900 * 1024;
+const MAX_EVIDENCE_DIMENSION = 1600;
 
 function formatDate(value) {
   if (!value) return "-";
   return new Date(value).toLocaleString();
 }
 
-function fileToDataUrl(file) {
+function estimateBase64Bytes(dataUrl) {
+  const base64 = String(dataUrl || "").split(",")[1] || "";
+  const sanitized = base64.replace(/=+$/, "");
+  return Math.floor((sanitized.length * 3) / 4);
+}
+
+function loadImageFromFile(file) {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("Could not read selected image."));
-    reader.onload = () => resolve(String(reader.result || ""));
-    reader.readAsDataURL(file);
+    const imageUrl = URL.createObjectURL(file);
+    const image = new Image();
+    image.onerror = () => {
+      URL.revokeObjectURL(imageUrl);
+      reject(new Error("Could not decode selected image."));
+    };
+    image.onload = () => {
+      URL.revokeObjectURL(imageUrl);
+      resolve(image);
+    };
+    image.src = imageUrl;
   });
+}
+
+async function optimizeEvidenceDataUrl(file) {
+  const image = await loadImageFromFile(file);
+  const sourceWidth = Number(image.width || 0);
+  const sourceHeight = Number(image.height || 0);
+  if (!sourceWidth || !sourceHeight) {
+    throw new Error("Could not read image dimensions.");
+  }
+
+  const scale = Math.min(1, MAX_EVIDENCE_DIMENSION / Math.max(sourceWidth, sourceHeight));
+  const width = Math.max(1, Math.round(sourceWidth * scale));
+  const height = Math.max(1, Math.round(sourceHeight * scale));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("Could not prepare image optimization.");
+  }
+  context.drawImage(image, 0, 0, width, height);
+
+  const outputConfigs = [
+    { mime: "image/webp", qualities: [0.82, 0.76, 0.7, 0.64] },
+    { mime: "image/jpeg", qualities: [0.82, 0.76, 0.7, 0.64] },
+  ];
+
+  let bestDataUrl = "";
+  let bestBytes = Number.POSITIVE_INFINITY;
+
+  for (const config of outputConfigs) {
+    for (const quality of config.qualities) {
+      const dataUrl = canvas.toDataURL(config.mime, quality);
+      if (!dataUrl.startsWith(`data:${config.mime};base64,`)) continue;
+      const bytes = estimateBase64Bytes(dataUrl);
+      if (bytes < bestBytes) {
+        bestDataUrl = dataUrl;
+        bestBytes = bytes;
+      }
+      if (bytes <= MAX_EVIDENCE_OUTPUT_BYTES) {
+        return dataUrl;
+      }
+    }
+  }
+
+  if (!bestDataUrl) {
+    throw new Error("Could not optimize selected image.");
+  }
+  if (bestBytes > MAX_EVIDENCE_OUTPUT_BYTES) {
+    throw new Error("Evidence image is too large after optimization. Please use a smaller image.");
+  }
+  return bestDataUrl;
 }
 
 export default function PublicEventPage() {
@@ -107,17 +175,17 @@ export default function PublicEventPage() {
       event.target.value = "";
       return;
     }
-    if (file.size > MAX_EVIDENCE_BYTES) {
-      setFeedback({ kind: "error", message: "Evidence image is too large. Maximum size is 2MB." });
+    if (file.size > MAX_EVIDENCE_INPUT_BYTES) {
+      setFeedback({ kind: "error", message: "Evidence image is too large. Maximum upload size is 8MB." });
       event.target.value = "";
       return;
     }
     try {
-      const dataUrl = await fileToDataUrl(file);
+      const dataUrl = await optimizeEvidenceDataUrl(file);
       setEvidenceImageDataUrl(dataUrl);
-      setFeedback({ kind: "success", message: "Evidence image attached." });
+      setFeedback({ kind: "success", message: "Evidence image attached and optimized." });
     } catch {
-      setFeedback({ kind: "error", message: "Could not read evidence image." });
+      setFeedback({ kind: "error", message: "Could not process evidence image." });
     }
     event.target.value = "";
   };
@@ -274,7 +342,7 @@ export default function PublicEventPage() {
 
         {!isFreeSelection ? (
           <div className="mt-3 rounded border bg-slate-50 p-3 text-sm">
-            <p className="font-semibold">Upload Payment Evidence (required, image, max 2MB)</p>
+            <p className="font-semibold">Upload Payment Evidence (required, image, optimized before upload)</p>
             <input className="mt-2 w-full rounded border p-2" type="file" accept="image/png,image/jpeg,image/webp" onChange={onEvidenceFileChange} />
             {evidenceImageDataUrl ? (
               <div className="mt-2">
