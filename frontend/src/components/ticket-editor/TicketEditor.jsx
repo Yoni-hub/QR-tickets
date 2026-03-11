@@ -88,7 +88,9 @@ export default function TicketEditor({
       ? design.ticketGroups.map((group) => ({
           ticketType: String(group?.ticketType || "General"),
           ticketPrice: String(group?.ticketPrice ?? "0"),
-          quantity: String(Math.max(1, Number.parseInt(String(group?.quantity || "1"), 10) || 1)),
+          quantity: mode === "append_to_event"
+            ? "0"
+            : String(Math.max(0, Number.parseInt(String(group?.quantity || "1"), 10) || 0)),
           headerImageDataUrl: group?.headerImageDataUrl || null,
           headerOverlay: Number(group?.headerOverlay ?? DEFAULT_OVERLAY),
           headerTextColorMode: String(group?.headerTextColorMode || DEFAULT_TEXT_COLOR_MODE),
@@ -97,16 +99,13 @@ export default function TicketEditor({
           {
             ticketType: initialTicketType || "General",
             ticketPrice: String(initialTicketPrice || "0"),
-            quantity: "10",
+            quantity: "0",
             headerImageDataUrl: design?.headerImageDataUrl || null,
             headerOverlay: Number(design?.headerOverlay ?? DEFAULT_OVERLAY),
             headerTextColorMode: String(design?.headerTextColorMode || DEFAULT_TEXT_COLOR_MODE),
           },
         ];
-    const quantity = Math.max(
-      1,
-      ticketGroups.reduce((sum, group) => sum + (Number.parseInt(group.quantity, 10) || 0), 0),
-    );
+    const quantity = Math.max(0, ticketGroups.reduce((sum, group) => sum + (Number.parseInt(group.quantity, 10) || 0), 0));
     return { quantity, ticketGroups };
   };
 
@@ -127,11 +126,7 @@ export default function TicketEditor({
   }, [eventId, initialEventName, initialEventAddress, initialDateTimeText, initialTicketType, initialTicketPrice, initialDesignJson]);
 
   const totalQuantity = useMemo(
-    () =>
-      Math.max(
-        1,
-        settings.ticketGroups.reduce((sum, group) => sum + (Number.parseInt(group.quantity, 10) || 0), 0),
-      ),
+    () => Math.max(0, settings.ticketGroups.reduce((sum, group) => sum + (Number.parseInt(group.quantity, 10) || 0), 0)),
     [settings.ticketGroups],
   );
 
@@ -139,10 +134,7 @@ export default function TicketEditor({
     setSettings((prev) => {
       const next = typeof updater === "function" ? updater(prev) : updater;
       const groups = next.ticketGroups || prev.ticketGroups;
-      const nextQuantity = Math.max(
-        1,
-        groups.reduce((sum, group) => sum + (Number.parseInt(group.quantity, 10) || 0), 0),
-      );
+      const nextQuantity = Math.max(0, groups.reduce((sum, group) => sum + (Number.parseInt(group.quantity, 10) || 0), 0));
       return { ...next, quantity: nextQuantity };
     });
   };
@@ -196,7 +188,7 @@ export default function TicketEditor({
         {
           ticketType: `Type ${prev.ticketGroups.length + 1}`,
           ticketPrice: "0",
-          quantity: "1",
+          quantity: "0",
           headerImageDataUrl: null,
           headerOverlay: DEFAULT_OVERLAY,
           headerTextColorMode: DEFAULT_TEXT_COLOR_MODE,
@@ -207,6 +199,10 @@ export default function TicketEditor({
 
   const generate = async () => {
     if (loading) return;
+    if (totalQuantity < 1) {
+      setFeedback({ kind: "error", message: "Set quantity to 1 or more before generating tickets." });
+      return;
+    }
     setLoading(true);
     setFeedback({ kind: "", message: "" });
     setResult(null);
@@ -246,6 +242,11 @@ export default function TicketEditor({
         }
 
         setFeedback({ kind: "success", message: "Tickets generated for current access code." });
+        setSettings((prev) => ({
+          ...prev,
+          quantity: 0,
+          ticketGroups: prev.ticketGroups.map((group) => ({ ...group, quantity: "0" })),
+        }));
         if (typeof onGenerated === "function") {
           await onGenerated({ quantity: totalQuantity });
         }
@@ -342,7 +343,7 @@ export default function TicketEditor({
               <input
                 className="w-full rounded border p-2 text-sm"
                 type="number"
-                min="1"
+                min="0"
                 value={group.quantity}
                 onChange={(event) => updateTicketGroup(index, "quantity", event.target.value)}
               />

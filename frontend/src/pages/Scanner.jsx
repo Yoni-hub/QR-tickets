@@ -85,12 +85,6 @@ function toOutcome(payload) {
   };
 }
 
-function resetDelayForOutcome(outcome) {
-  if (outcome === "VALID") return 1700;
-  if (outcome === "DUPLICATE_SCAN") return 700;
-  return 3000;
-}
-
 export default function Scanner() {
   const [params] = useSearchParams();
   const [organizerAccessCode, setOrganizerAccessCode] = useState(params.get("code") || "");
@@ -113,7 +107,6 @@ export default function Scanner() {
 
   const scannerRef = useRef(null);
   const audioContextRef = useRef(null);
-  const resultResetTimerRef = useRef(null);
   const lastTicketScanRef = useRef({ id: "", timestamp: 0 });
   const resultLockedRef = useRef(false);
 
@@ -128,19 +121,17 @@ export default function Scanner() {
     setScanOutcome(normalized);
     setScanDetails(normalized.ticket || null);
     outcomeTone(normalized.result, audioContextRef);
+  };
 
-    if (resultResetTimerRef.current) {
-      clearTimeout(resultResetTimerRef.current);
-    }
-    resultResetTimerRef.current = setTimeout(() => {
-      resultLockedRef.current = false;
-      setScanOutcome({
-        result: "READY",
-        statusText: "READY",
-        supportingText: scannerUnlocked ? "Scanner ready" : "Unlock scanner first",
-      });
-      setScanDetails(null);
-    }, resetDelayForOutcome(normalized.result));
+  const dismissScanOutcome = () => {
+    if (scanOutcome.result === "READY") return;
+    resultLockedRef.current = false;
+    setScanOutcome({
+      result: "READY",
+      statusText: "READY",
+      supportingText: scannerUnlocked ? "Scanner ready" : "Unlock scanner first",
+    });
+    setScanDetails(null);
   };
 
   const unlockScanner = async () => {
@@ -282,9 +273,6 @@ export default function Scanner() {
 
   useEffect(() => {
     return () => {
-      if (resultResetTimerRef.current) {
-        clearTimeout(resultResetTimerRef.current);
-      }
       if (scannerRef.current && cameraOn) {
         scannerRef.current.stop().catch(() => {});
       }
@@ -393,7 +381,20 @@ export default function Scanner() {
         </AppButton>
       </div>
 
-      <div id={SCANNER_ID} className="mt-4 overflow-hidden rounded border bg-white [&_canvas]:max-w-full [&_video]:max-w-full" />
+      <div className="relative mt-4">
+        <div id={SCANNER_ID} className="overflow-hidden rounded border bg-white [&_canvas]:max-w-full [&_video]:max-w-full" />
+        {scanOutcome.result !== "READY" ? (
+          <button
+            type="button"
+            onClick={dismissScanOutcome}
+            className={`absolute inset-0 z-20 flex flex-col items-center justify-center rounded border-2 p-5 text-center ${stateClass}`}
+          >
+            <p className="text-4xl font-black tracking-wide sm:text-5xl">{scanOutcome.statusText}</p>
+            <p className="mt-2 text-lg font-semibold sm:text-xl">{scanOutcome.supportingText}</p>
+            <p className="mt-3 text-xs font-semibold uppercase tracking-wide">Tap to close and continue scanning</p>
+          </button>
+        ) : null}
+      </div>
       <FeedbackBanner className="mt-2" kind={feedback.kind} message={feedback.message} />
 
       <section className={`mt-5 rounded border-2 p-5 text-center ${stateClass}`}>

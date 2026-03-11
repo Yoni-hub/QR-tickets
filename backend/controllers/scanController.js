@@ -186,7 +186,10 @@ async function scanTicket(req, res) {
   }
 
   const ticketOrganizerAccessCode = ticket.event.organizerAccessCode || ticket.event.accessCode;
-  if (String(ticketOrganizerAccessCode || "") !== String(normalizedOrganizerAccessCode || "")) {
+  const isCrossOrganizerTicket =
+    String(ticketOrganizerAccessCode || "") !== String(normalizedOrganizerAccessCode || "");
+
+  if (isCrossOrganizerTicket) {
     outcome = "INVALID_TICKET";
   } else if (ticket.event.id !== selectedEvent.id) {
     outcome = "WRONG_EVENT";
@@ -200,12 +203,12 @@ async function scanTicket(req, res) {
     }
   }
 
-  if (selectedEvent.adminStatus && selectedEvent.adminStatus !== "ACTIVE" && outcome === "INVALID_TICKET") {
+  if (!isCrossOrganizerTicket && selectedEvent.adminStatus && selectedEvent.adminStatus !== "ACTIVE" && outcome === "INVALID_TICKET") {
     outcome = "BLOCKED";
     outcomeNote = "Event is not active";
   }
 
-  if (outcome === "INVALID_TICKET" && ticket.isInvalidated) {
+  if (!isCrossOrganizerTicket && outcome === "INVALID_TICKET" && ticket.isInvalidated) {
     if (ticket.ticketRequest?.status === "REJECTED") {
       outcome = "CANCELED";
     } else {
@@ -213,11 +216,11 @@ async function scanTicket(req, res) {
     }
   }
 
-  if (outcome === "INVALID_TICKET" && ticket.status === "USED") {
+  if (!isCrossOrganizerTicket && outcome === "INVALID_TICKET" && ticket.status === "USED") {
     outcome = "ALREADY_USED";
   }
 
-  if (outcome === "INVALID_TICKET") {
+  if (!isCrossOrganizerTicket && outcome === "INVALID_TICKET") {
     // If it reached here and ticket exists in selected event context, it's valid.
     outcome = "VALID";
   }
@@ -244,7 +247,7 @@ async function scanTicket(req, res) {
     statusText: resolveScanOutcomeLabel(outcome),
     supportingText: resolveSupportingText(outcome),
     scannedAt,
-    ticket: mapTicketSummary(ticket, ticket.event),
+    ticket: isCrossOrganizerTicket ? null : mapTicketSummary(ticket, ticket.event),
   });
 }
 

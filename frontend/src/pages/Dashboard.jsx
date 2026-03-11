@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import api from "../lib/api";
 import AppButton from "../components/ui/AppButton";
@@ -130,13 +130,6 @@ function toLocalDateTimeInputValue(value) {
   return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
 }
 
-function normalizeTicketPrice(value) {
-  const raw = String(value ?? "").trim();
-  if (!raw) return null;
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
 function resolveDefaultTicketType(value) {
   return String(value || "").trim() || DEFAULT_TICKET_TYPE;
 }
@@ -156,7 +149,15 @@ function resolveDeliveryMethodLabel(ticket) {
   const method = String(ticket?.deliveryMethod || "NOT_DELIVERED").trim();
   if (method === "PDF_DOWNLOAD") return "PDF";
   if (method === "EMAIL_LINK") return "EMAIL";
+  if (method === "PUBLIC_EVENT_PAGE") return "PUBLIC EVENT PAGE";
   return "NOT_DELIVERED";
+}
+
+function resolveDeliveryMethodErrorLabel(method) {
+  if (method === "PDF") return "PDF download";
+  if (method === "EMAIL") return "email";
+  if (method === "PUBLIC EVENT PAGE") return "public event page";
+  return String(method || "delivery").toLowerCase();
 }
 
 export default function Dashboard() {
@@ -207,6 +208,8 @@ export default function Dashboard() {
   const [chatSending, setChatSending] = useState(false);
   const [evidencePreview, setEvidencePreview] = useState("");
   const [approvingRequestIds, setApprovingRequestIds] = useState(() => new Set());
+  const [ticketCopyError, setTicketCopyError] = useState({ ticketPublicId: "", message: "" });
+  const ticketEditorDraftRef = useRef(null);
 
   const recipientList = parseRecipientEmails(recipientEmails);
   const sampleRecipient = recipientList[0] || "customer@example.com";
@@ -452,14 +455,19 @@ export default function Dashboard() {
 
   const copyTicketUrl = async (ticket) => {
     const method = resolveDeliveryMethodLabel(ticket);
-    if (method === "PDF" || method === "EMAIL") {
-      setFeedback({ kind: "error", message: "Cant copy, already downloaded or sent via email." });
+    if (method !== "NOT_DELIVERED") {
+      const inlineMessage = `cant copy! ticket already delivered through ${resolveDeliveryMethodErrorLabel(method)}.`;
+      setTicketCopyError({
+        ticketPublicId: String(ticket?.ticketPublicId || ""),
+        message: inlineMessage,
+      });
       return;
     }
     const ticketPublicId = ticket?.ticketPublicId;
     if (!ticketPublicId) return;
     const url = `${window.location.origin}/t/${ticketPublicId}`;
     await navigator.clipboard.writeText(url);
+    setTicketCopyError({ ticketPublicId: "", message: "" });
     setFeedback({ kind: "success", message: "Ticket URL copied." });
   };
 
@@ -807,28 +815,9 @@ export default function Dashboard() {
 
   const applyTicketEditorDraft = (draft) => {
     if (!draft) return;
-    setSummary((prev) => {
-      if (!prev?.event) return prev;
-      return {
-        ...prev,
-        event: {
-          ...prev.event,
-          eventName: draft.eventName || prev.event.eventName,
-          eventAddress: draft.eventAddress || prev.event.eventAddress,
-          ...(draft.eventDate ? { eventDate: draft.eventDate } : {}),
-          ticketType: draft.ticketType || prev.event.ticketType,
-          ticketPrice: normalizeTicketPrice(draft.ticketPrice),
-          ...(draft.designJson ? { designJson: draft.designJson } : {}),
-        },
-      };
-    });
-
-    setEventDraft((prev) => ({
-      ...prev,
-      ...(draft.eventName ? { eventName: draft.eventName } : {}),
-      ...(draft.eventAddress ? { eventAddress: draft.eventAddress } : {}),
-      ...(draft.eventDate ? { eventDate: toLocalDateTimeInputValue(draft.eventDate) } : {}),
-    }));
+    // Keep latest draft without mutating parent event state; mutating summary here
+    // causes TicketEditor props to change and resets local editor fields on each keystroke.
+    ticketEditorDraftRef.current = draft;
   };
 
   const saveTicketEditorDraft = async (draft) => {
@@ -1137,11 +1126,15 @@ export default function Dashboard() {
                       <p>{formatDate(ticket.scannedAt)}</p>
                     </div>
                     <button
-                      className={`mt-2 rounded border px-2 py-1 text-xs ${resolveDeliveryMethodLabel(ticket) === "PDF" || resolveDeliveryMethodLabel(ticket) === "EMAIL" ? "opacity-60" : ""}`}
+                      className={`mt-2 rounded border px-2 py-1 text-xs ${resolveDeliveryMethodLabel(ticket) !== "NOT_DELIVERED" ? "opacity-60" : ""}`}
+                      title={resolveDeliveryMethodLabel(ticket) !== "NOT_DELIVERED" ? `cant copy! ticket already delivered through ${resolveDeliveryMethodErrorLabel(resolveDeliveryMethodLabel(ticket))}.` : "Copy ticket URL"}
                       onClick={() => copyTicketUrl(ticket)}
                     >
                       Copy
                     </button>
+                    {ticketCopyError.ticketPublicId === ticket.ticketPublicId && ticketCopyError.message ? (
+                      <p className="mt-1 text-xs text-red-600">{ticketCopyError.message}</p>
+                    ) : null}
                   </article>
                 ))}
                 {!pagedTickets.length ? <p className="text-sm text-slate-500">No tickets for selected filters.</p> : null}
@@ -1161,11 +1154,15 @@ export default function Dashboard() {
                         <td className="p-2">{formatDate(ticket.scannedAt)}</td>
                         <td className="p-2">
                           <button
-                            className={`rounded border px-2 py-1 text-xs ${resolveDeliveryMethodLabel(ticket) === "PDF" || resolveDeliveryMethodLabel(ticket) === "EMAIL" ? "opacity-60" : ""}`}
+                            className={`rounded border px-2 py-1 text-xs ${resolveDeliveryMethodLabel(ticket) !== "NOT_DELIVERED" ? "opacity-60" : ""}`}
+                            title={resolveDeliveryMethodLabel(ticket) !== "NOT_DELIVERED" ? `cant copy! ticket already delivered through ${resolveDeliveryMethodErrorLabel(resolveDeliveryMethodLabel(ticket))}.` : "Copy ticket URL"}
                             onClick={() => copyTicketUrl(ticket)}
                           >
                             Copy
                           </button>
+                          {ticketCopyError.ticketPublicId === ticket.ticketPublicId && ticketCopyError.message ? (
+                            <p className="mt-1 text-xs text-red-600">{ticketCopyError.message}</p>
+                          ) : null}
                         </td>
                       </tr>
                     ))}
@@ -1261,7 +1258,7 @@ export default function Dashboard() {
 
                   <div className="mt-4 rounded border bg-slate-50 p-3">
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-semibold">Email content preview (we send one ticket per email)</p>
+                      <p className="text-sm font-semibold">Email content sample - its only a sample ! the actual ticket links and ticket type is different for each recipient (we send one ticket per email)</p>
                       <AppButton type="button" variant="secondary" className="px-2 py-1 text-xs" onClick={() => setShowEmailPreview((prev) => !prev)}>
                         {showEmailPreview ? "Hide preview" : "View preview"}
                       </AppButton>

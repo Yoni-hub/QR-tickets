@@ -714,6 +714,121 @@ async function listAdminScans(req, res) {
   res.json({ items });
 }
 
+async function listAdminOrganizers(req, res) {
+  const limit = normalizeLimit(req.query.limit, 200, 1, 500);
+  const search = String(req.query.search || "").trim();
+
+  const where = {
+    organizerAccessCode: {
+      not: null,
+      notIn: [""],
+    },
+    ...(search
+      ? {
+          OR: [
+            { organizerAccessCode: { contains: search, mode: "insensitive" } },
+            { eventName: { contains: search, mode: "insensitive" } },
+            { accessCode: { contains: search, mode: "insensitive" } },
+          ],
+        }
+      : {}),
+  };
+
+  const rows = await prisma.userEvent.findMany({
+    where,
+    orderBy: [{ organizerAccessCode: "asc" }, { createdAt: "desc" }],
+    take: limit,
+    select: {
+      id: true,
+      eventName: true,
+      eventDate: true,
+      eventAddress: true,
+      accessCode: true,
+      organizerAccessCode: true,
+      adminStatus: true,
+      createdAt: true,
+      _count: {
+        select: {
+          tickets: true,
+          ticketRequests: true,
+        },
+      },
+    },
+  });
+
+  const eventIds = rows.map((row) => row.id);
+  const [usedGrouped, invalidatedGrouped] = eventIds.length
+    ? await Promise.all([
+        prisma.ticket.groupBy({
+          by: ["eventId"],
+          where: { eventId: { in: eventIds }, status: "USED" },
+          _count: { _all: true },
+        }),
+        prisma.ticket.groupBy({
+          by: ["eventId"],
+          where: { eventId: { in: eventIds }, isInvalidated: true },
+          _count: { _all: true },
+        }),
+      ])
+    : [[], []];
+
+  const usedMap = new Map(usedGrouped.map((row) => [row.eventId, row._count._all]));
+  const invalidatedMap = new Map(invalidatedGrouped.map((row) => [row.eventId, row._count._all]));
+  const organizerMap = new Map();
+
+  for (const event of rows) {
+    const organizerAccessCode = String(event.organizerAccessCode || "").trim();
+    if (!organizerAccessCode) continue;
+    const usedCount = usedMap.get(event.id) || 0;
+    const invalidatedCount = invalidatedMap.get(event.id) || 0;
+    const eventSummary = {
+      eventId: event.id,
+      eventName: event.eventName,
+      eventDate: event.eventDate,
+      location: event.eventAddress,
+      accessCode: event.accessCode,
+      organizerAccessCode,
+      status: String(event.adminStatus || "ACTIVE").toLowerCase(),
+      createdAt: event.createdAt,
+      ticketsTotal: event._count.tickets,
+      ticketsUsed: usedCount,
+      ticketsInvalidated: invalidatedCount,
+      ticketRequestsTotal: event._count.ticketRequests,
+    };
+
+    const existing = organizerMap.get(organizerAccessCode) || {
+      organizerAccessCode,
+      eventsTotal: 0,
+      ticketsTotal: 0,
+      ticketsUsed: 0,
+      ticketsInvalidated: 0,
+      ticketRequestsTotal: 0,
+      latestEventCreatedAt: null,
+      events: [],
+    };
+
+    existing.eventsTotal += 1;
+    existing.ticketsTotal += eventSummary.ticketsTotal;
+    existing.ticketsUsed += eventSummary.ticketsUsed;
+    existing.ticketsInvalidated += eventSummary.ticketsInvalidated;
+    existing.ticketRequestsTotal += eventSummary.ticketRequestsTotal;
+    if (!existing.latestEventCreatedAt || eventSummary.createdAt > existing.latestEventCreatedAt) {
+      existing.latestEventCreatedAt = eventSummary.createdAt;
+    }
+    existing.events.push(eventSummary);
+    organizerMap.set(organizerAccessCode, existing);
+  }
+
+  const items = Array.from(organizerMap.values())
+    .map((item) => ({
+      ...item,
+      events: item.events.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+    }))
+    .sort((a, b) => new Date(b.latestEventCreatedAt || 0).getTime() - new Date(a.latestEventCreatedAt || 0).getTime());
+
+  res.json({ items });
+}
+
 async function getAdminSettings(_req, res) {
   res.json({
     systemInfo: {
@@ -1233,6 +1348,7 @@ module.exports = {
   listAdminTickets,
   listAdminDeliveries,
   listAdminScans,
+  listAdminOrganizers,
   getAdminSettings,
   listAdminAuditLog,
   listAdminClientDashTokens,
