@@ -15,6 +15,19 @@ const {
   reservePendingTicketIds,
 } = require("../services/pendingTicketReservations");
 
+const SOLD_DELIVERY_METHODS = ["EMAIL_LINK", "PDF_DOWNLOAD"];
+
+function buildSoldTicketWhere(eventId) {
+  return {
+    eventId,
+    OR: [
+      { ticketRequestId: { not: null } },
+      { status: "USED" },
+      { deliveries: { some: { status: "SENT", method: { in: SOLD_DELIVERY_METHODS } } } },
+    ],
+  };
+}
+
 function slugify(value) {
   return String(value || "")
     .toLowerCase()
@@ -147,7 +160,7 @@ function resolveTicketGroupsFromDesign(designJson) {
 }
 
 async function getEventTicketMutationLock(eventId) {
-  const [deliveryMethodsRaw, soldCount, soldByTypeRaw] = await Promise.all([
+  const [deliveryMethodsRaw, soldCount, soldByTypeRaw, publicEventPageSoldCount] = await Promise.all([
     prisma.ticketDelivery.findMany({
       where: {
         status: "SENT",
@@ -157,17 +170,20 @@ async function getEventTicketMutationLock(eventId) {
       select: { method: true },
     }),
     prisma.ticket.count({
-      where: { eventId, ticketRequestId: { not: null } },
+      where: buildSoldTicketWhere(eventId),
     }),
     prisma.ticket.groupBy({
       by: ["ticketType"],
-      where: { eventId, ticketRequestId: { not: null } },
+      where: buildSoldTicketWhere(eventId),
       _count: { _all: true },
+    }),
+    prisma.ticket.count({
+      where: { eventId, ticketRequestId: { not: null } },
     }),
   ]);
 
   const methods = deliveryMethodsRaw.map((item) => item.method).filter(Boolean);
-  if (soldCount > 0) methods.push("PUBLIC_EVENT_PAGE");
+  if (publicEventPageSoldCount > 0) methods.push("PUBLIC_EVENT_PAGE");
   const uniqueMethods = Array.from(new Set(methods));
   if (!uniqueMethods.length) return null;
 
@@ -183,7 +199,7 @@ async function getEventTicketMutationLock(eventId) {
     ? soldByType.map((row) => `${row.count} ${row.ticketType}`).join(", ")
     : "Mixed";
   const error = soldCount > 0
-    ? `You cant make changes on the event/ticket(s) ! you already deliverd ${soldCount} ticket(s) (${soldTicketType}) through public event page. Create a new event from the events menu.`
+    ? `You cant make changes on the event/ticket(s) ! you already sold ${soldCount} ticket(s) (${soldTicketType}). Create a new event from the events menu.`
     : `You cant make changes on the event/ticket(s) ! you already deliverd tickets through ${friendlyMethods.join(", ")}. Create a new event from the events menu.`;
 
   return {
@@ -233,7 +249,7 @@ async function getEventByCode(req, res) {
 
   const totalTickets = await prisma.ticket.count({ where: { eventId: event.id } });
   const scannedTickets = await prisma.ticket.count({ where: { eventId: event.id, status: "USED" } });
-  const soldTickets = await prisma.ticket.count({ where: { eventId: event.id, ticketRequestId: { not: null } } });
+  const soldTickets = await prisma.ticket.count({ where: buildSoldTicketWhere(event.id) });
 
   const scans = await prisma.scanRecord.findMany({
     where: { eventId: event.id },

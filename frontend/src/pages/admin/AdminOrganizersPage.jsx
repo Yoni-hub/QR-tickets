@@ -62,7 +62,90 @@ export default function AdminOrganizersPage() {
 
       {!loading && !error && items.length ? (
         <div className="space-y-2">
-          <div className="overflow-x-auto rounded border bg-white">
+          <div className="rounded border bg-white md:hidden">
+            <ul className="divide-y">
+              {visibleItems.map((organizer) => {
+                const isExpanded = expandedOrganizerCode === organizer.organizerAccessCode;
+                return (
+                  <li key={organizer.organizerAccessCode} className="space-y-3 p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-slate-500">Organizer Access Code</p>
+                        <p className="font-mono text-sm font-semibold">{organizer.organizerAccessCode}</p>
+                        <p className="mt-1 text-xs text-slate-500">Latest event: {formatDate(organizer.latestEventCreatedAt)}</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded border bg-slate-50 p-2">
+                        <p className="text-slate-500">Events</p>
+                        <p className="text-sm font-semibold">{organizer.eventsTotal}</p>
+                      </div>
+                      <div className="rounded border bg-slate-50 p-2">
+                        <p className="text-slate-500">Tickets</p>
+                        <p className="text-sm font-semibold">{organizer.ticketsTotal}</p>
+                      </div>
+                      <div className="rounded border bg-slate-50 p-2">
+                        <p className="text-slate-500">Used</p>
+                        <p className="text-sm font-semibold">{organizer.ticketsUsed}</p>
+                      </div>
+                      <div className="rounded border bg-slate-50 p-2">
+                        <p className="text-slate-500">Invalidated</p>
+                        <p className="text-sm font-semibold">{organizer.ticketsInvalidated}</p>
+                      </div>
+                      <div className="rounded border bg-slate-50 p-2">
+                        <p className="text-slate-500">Requests</p>
+                        <p className="text-sm font-semibold">{organizer.ticketRequestsTotal}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        className="rounded border px-2 py-1 text-xs"
+                        onClick={() => navigator.clipboard.writeText(organizer.organizerAccessCode)}
+                      >
+                        Copy
+                      </button>
+                      <button
+                        className="rounded border px-2 py-1 text-xs"
+                        onClick={() => setExpandedOrganizerCode(isExpanded ? "" : organizer.organizerAccessCode)}
+                      >
+                        {isExpanded ? "Hide Events" : "View Events"}
+                      </button>
+                    </div>
+
+                    {isExpanded ? (
+                      Array.isArray(organizer.events) && organizer.events.length ? (
+                        <div className="space-y-2 rounded border bg-slate-50 p-2">
+                          {organizer.events.map((event) => (
+                            <article key={event.eventId} className="rounded border bg-white p-2 text-xs">
+                              <p className="font-semibold">{event.eventName}</p>
+                              <p className="text-slate-500">{event.location || "-"}</p>
+                              <div className="mt-2 space-y-1">
+                                <p><span className="font-medium">Access:</span> <span className="font-mono">{event.accessCode}</span></p>
+                                <p><span className="font-medium">Date:</span> {formatDate(event.eventDate)}</p>
+                                <div><StatusBadge value={event.status} /></div>
+                                <p><span className="font-medium">Tickets:</span> {event.ticketsTotal} | <span className="font-medium">Used:</span> {event.ticketsUsed}</p>
+                                <p><span className="font-medium">Invalidated:</span> {event.ticketsInvalidated} | <span className="font-medium">Requests:</span> {event.ticketRequestsTotal}</p>
+                              </div>
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                <Link className="rounded border px-2 py-1" to={`/admin/events/${event.eventId}`}>Event</Link>
+                                <Link className="rounded border px-2 py-1" to={`/admin/tickets?eventId=${encodeURIComponent(event.eventId)}`}>Tickets</Link>
+                              </div>
+                            </article>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-500">No events mapped to this organizer access code.</p>
+                      )
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+
+          <div className="hidden overflow-x-auto rounded border bg-white md:block">
             <table className="min-w-full text-left text-sm">
               <thead className="bg-slate-100 text-xs uppercase tracking-wide text-slate-600">
                 <tr>
