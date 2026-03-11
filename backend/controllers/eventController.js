@@ -112,8 +112,42 @@ function formatLockedDeliveryMethods(methods) {
   });
 }
 
+function normalizePriceText(value) {
+  if (value == null) return "Free";
+  const parsed = Number(value);
+  if (Number.isFinite(parsed) && parsed > 0) return `$${parsed.toFixed(2)}`;
+  if (Number.isFinite(parsed) && parsed === 0) return "Free";
+  const raw = String(value || "").trim();
+  return raw || "Free";
+}
+
+function resolveTicketGroupsFromDesign(designJson) {
+  if (!designJson || typeof designJson !== "object") return [];
+  const rawGroups = Array.isArray(designJson.ticketGroups) ? designJson.ticketGroups : [];
+  return rawGroups
+    .map((group, index) => {
+      const ticketType = String(group?.ticketType || "").trim() || `Type ${index + 1}`;
+      const ticketPriceRaw = String(group?.ticketPrice ?? "").trim();
+      const parsedPrice = ticketPriceRaw === "" ? null : Number(ticketPriceRaw);
+      const ticketPrice = Number.isFinite(parsedPrice) ? parsedPrice : null;
+      return {
+        ticketType,
+        ticketPrice,
+        groupDesign: {
+          ...designJson,
+          ticketTypeLabel: ticketType.toUpperCase(),
+          priceText: normalizePriceText(ticketPrice),
+          headerImageDataUrl: group?.headerImageDataUrl || null,
+          headerOverlay: Number(group?.headerOverlay ?? designJson?.headerOverlay ?? 0.25),
+          headerTextColorMode: String(group?.headerTextColorMode || designJson?.headerTextColorMode || "AUTO"),
+        },
+      };
+    })
+    .filter((group) => group.ticketType);
+}
+
 async function getEventTicketMutationLock(eventId) {
-  const [deliveryMethodsRaw, soldCount] = await Promise.all([
+  const [deliveryMethodsRaw, soldCount, soldByTypeRaw] = await Promise.all([
     prisma.ticketDelivery.findMany({
       where: {
         status: "SENT",
@@ -125,6 +159,11 @@ async function getEventTicketMutationLock(eventId) {
     prisma.ticket.count({
       where: { eventId, ticketRequestId: { not: null } },
     }),
+    prisma.ticket.groupBy({
+      by: ["ticketType"],
+      where: { eventId, ticketRequestId: { not: null } },
+      _count: { _all: true },
+    }),
   ]);
 
   const methods = deliveryMethodsRaw.map((item) => item.method).filter(Boolean);
@@ -133,10 +172,26 @@ async function getEventTicketMutationLock(eventId) {
   if (!uniqueMethods.length) return null;
 
   const friendlyMethods = formatLockedDeliveryMethods(uniqueMethods);
+  const soldByType = soldByTypeRaw
+    .map((row) => ({
+      ticketType: String(row?.ticketType || "General").trim() || "General",
+      count: Number(row?._count?._all || 0),
+    }))
+    .filter((row) => row.count > 0)
+    .sort((a, b) => b.count - a.count);
+  const soldTicketType = soldByType.length
+    ? soldByType.map((row) => `${row.count} ${row.ticketType}`).join(", ")
+    : "Mixed";
+  const error = soldCount > 0
+    ? `You cant make changes on the event/ticket(s) ! you already deliverd ${soldCount} ticket(s) (${soldTicketType}) through public event page. Create a new event from the events menu.`
+    : `You cant make changes on the event/ticket(s) ! you already deliverd tickets through ${friendlyMethods.join(", ")}. Create a new event from the events menu.`;
+
   return {
     code: "EVENT_TICKETS_LOCKED",
     deliveryMethods: friendlyMethods,
-    error: `You cant make changes on the tickets you already deliverd the tickets in ${friendlyMethods.join(", ")}. Create a new event from the Events menu.`,
+    soldTicketsCount: soldCount,
+    soldTicketType,
+    error,
   };
 }
 
@@ -247,7 +302,7 @@ async function getEventTickets(req, res) {
 
   const tickets = rawTickets.map((ticket) => ({
     ...ticket,
-    deliveryMethod: ticket.deliveries?.[0]?.method || "NOT_DELIVERED",
+    deliveryMethod: ticket.deliveries?.[0]?.method || (ticket.ticketRequestId ? "PUBLIC_EVENT_PAGE" : "NOT_DELIVERED"),
     deliveredAt: ticket.deliveries?.[0]?.sentAt || null,
     deliveredTo: ticket.deliveries?.[0]?.email || null,
     buyer:
@@ -298,11 +353,6 @@ async function generateTicketsByAccessCode(req, res) {
     res.status(404).json({ error: "Event not found." });
     return;
   }
-  const eventLock = await getEventTicketMutationLock(event.id);
-  if (eventLock) {
-    res.status(409).json(eventLock);
-    return;
-  }
 
   const eventName = String(req.body?.eventName || "").trim();
   const eventAddress = String(req.body?.eventAddress || "").trim();
@@ -311,7 +361,7 @@ async function generateTicketsByAccessCode(req, res) {
   const designJson = req.body?.designJson && typeof req.body.designJson === "object" ? req.body.designJson : null;
   const designGroups = Array.isArray(designJson?.ticketGroups) ? designJson.ticketGroups : [];
 
-  const fallbackQuantity = Math.max(1, Number.parseInt(String(req.body?.quantity || "1"), 10) || 1);
+  const fallbackQuantity = Math.max(0, Number.parseInt(String(req.body?.quantity || "0"), 10) || 0);
   const fallbackType = String(req.body?.ticketType || "").trim();
   const fallbackPriceRaw = String(req.body?.ticketPrice || "").trim();
 
@@ -324,7 +374,7 @@ async function generateTicketsByAccessCode(req, res) {
     headerTextColorMode: designJson?.headerTextColorMode || "AUTO",
   }])
     .map((group, index) => {
-      const quantity = Math.max(1, Number.parseInt(String(group?.quantity || "1"), 10) || 1);
+      const quantity = Math.max(0, Number.parseInt(String(group?.quantity || "0"), 10) || 0);
       const ticketType = String(group?.ticketType || "").trim() || `Type ${index + 1}`;
       const ticketPriceRaw = String(group?.ticketPrice ?? "").trim();
       const parsedPrice = ticketPriceRaw === "" ? null : Number(ticketPriceRaw);
@@ -347,7 +397,13 @@ async function generateTicketsByAccessCode(req, res) {
           headerTextColorMode: String(group?.headerTextColorMode || "AUTO"),
         },
       };
-    });
+    })
+    .filter((group) => group.quantity > 0);
+
+  if (!normalizedGroups.length) {
+    res.status(400).json({ error: "Set quantity to 1 or more before generating tickets." });
+    return;
+  }
 
   const ids = new Set();
   const rows = [];
@@ -475,6 +531,65 @@ async function updateEventInline(req, res) {
       designJson: true,
     },
   });
+
+  // Keep existing editable tickets aligned with latest event editor changes.
+  // Ticket verify pages read ticket-level snapshots (ticketType/ticketPrice/designJson),
+  // so event-level updates alone are not enough for already-generated inventory.
+  const shouldSyncTickets = Boolean(ticketType) || hasTicketPrice || hasDesignJson;
+  if (shouldSyncTickets) {
+    const editableTickets = await prisma.ticket.findMany({
+      where: {
+        eventId,
+        ticketRequestId: null,
+        deliveries: { none: { status: "SENT" } },
+      },
+      select: {
+        id: true,
+        ticketType: true,
+      },
+    });
+
+    if (editableTickets.length) {
+      const groups = hasDesignJson ? resolveTicketGroupsFromDesign(req.body.designJson) : [];
+      const groupsMap = new Map(groups.map((group) => [group.ticketType, group]));
+      const fallbackGroup = groups[0] || null;
+
+      const updates = editableTickets.map((ticket) => {
+        const currentType = String(ticket.ticketType || "").trim();
+        const matchedGroup = currentType ? groupsMap.get(currentType) : null;
+        const resolvedGroup = matchedGroup || fallbackGroup;
+
+        const resolvedType = resolvedGroup?.ticketType || ticketType || currentType || updated.ticketType || "General";
+        const resolvedPrice = resolvedGroup
+          ? resolvedGroup.ticketPrice
+          : hasTicketPrice
+            ? parsedTicketPrice
+            : null;
+        const resolvedDesign = resolvedGroup
+          ? resolvedGroup.groupDesign
+          : hasDesignJson
+            ? {
+                ...req.body.designJson,
+                ticketTypeLabel: resolvedType.toUpperCase(),
+                priceText: normalizePriceText(hasTicketPrice ? parsedTicketPrice : updated.ticketPrice),
+              }
+            : null;
+
+        const ticketUpdate = {
+          ...(ticketType || resolvedGroup ? { ticketType: resolvedType } : {}),
+          ...(hasTicketPrice || resolvedGroup ? { ticketPrice: resolvedPrice } : {}),
+          ...(hasDesignJson ? { designJson: resolvedDesign } : {}),
+        };
+
+        return prisma.ticket.update({
+          where: { id: ticket.id },
+          data: ticketUpdate,
+        });
+      });
+
+      await prisma.$transaction(updates);
+    }
+  }
 
   res.json({ event: updated });
 }

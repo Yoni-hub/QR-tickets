@@ -6,6 +6,7 @@ const {
   listAdminTickets,
   listAdminDeliveries,
   listAdminScans,
+  listAdminOrganizers,
   getAdminSettings,
   listAdminAuditLog,
   listAdminClientDashTokens,
@@ -52,6 +53,7 @@ router.post("/deliveries/:deliveryId/retry", retryAdminDelivery);
 
 router.get("/scans", listAdminScans);
 router.patch("/scans/:scanId/mark-suspicious", markScanSuspicious);
+router.get("/organizers", listAdminOrganizers);
 
 router.get("/settings", getAdminSettings);
 router.get("/audit-log", listAdminAuditLog);

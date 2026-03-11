@@ -18,6 +18,7 @@ import AdminEventDetailPage from "./pages/admin/AdminEventDetailPage";
 import AdminTicketsPage from "./pages/admin/AdminTicketsPage";
 import AdminDeliveriesPage from "./pages/admin/AdminDeliveriesPage";
 import AdminScansPage from "./pages/admin/AdminScansPage";
+import AdminOrganizersPage from "./pages/admin/AdminOrganizersPage";
 import AdminSettingsPage from "./pages/admin/AdminSettingsPage";
 import AdminAuditLogPage from "./pages/admin/AdminAuditLogPage";
 import AdminClientDashTokensPage from "./pages/admin/AdminClientDashTokensPage";
@@ -101,6 +102,7 @@ export default function App() {
           <Route path="tickets" element={<AdminTicketsPage />} />
           <Route path="deliveries" element={<AdminDeliveriesPage />} />
           <Route path="scans" element={<AdminScansPage />} />
+          <Route path="organizers" element={<AdminOrganizersPage />} />
           <Route path="client-dash-tokens" element={<AdminClientDashTokensPage />} />
           <Route path="settings" element={<AdminSettingsPage />} />
           <Route path="audit-log" element={<AdminAuditLogPage />} />

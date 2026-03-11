@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { to: "/admin/tickets", label: "Tickets" },
   { to: "/admin/deliveries", label: "Deliveries" },
   { to: "/admin/scans", label: "Scans" },
+  { to: "/admin/organizers", label: "Organizers" },
   { to: "/admin/client-dash-tokens", label: "Client Dash Tokens" },
   { to: "/admin/settings", label: "Settings" },
   { to: "/admin/audit-log", label: "Audit Log" },
