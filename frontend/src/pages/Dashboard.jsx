@@ -160,6 +160,14 @@ function resolveDeliveryMethodErrorLabel(method) {
   return String(method || "delivery").toLowerCase();
 }
 
+function isTicketSold(ticket) {
+  const deliveryMethod = String(ticket?.deliveryMethod || "").trim();
+  return Boolean(ticket?.ticketRequestId)
+    || ticket?.status === "USED"
+    || deliveryMethod === "EMAIL_LINK"
+    || deliveryMethod === "PDF_DOWNLOAD";
+}
+
 export default function Dashboard() {
   const [params, setParams] = useSearchParams();
   const [activeMenu, setActiveMenu] = useState("events");
@@ -293,20 +301,20 @@ export default function Dashboard() {
         if (!buyerValue.includes(buyerSearch.trim().toLowerCase())) return false;
       }
 
-      if (ticketStatusFilter === TICKET_STATUS_FILTERS.SOLD) return Boolean(ticket.ticketRequestId);
+      if (ticketStatusFilter === TICKET_STATUS_FILTERS.SOLD) return isTicketSold(ticket);
       if (ticketStatusFilter === TICKET_STATUS_FILTERS.SCANNED) return ticket.status === "USED";
       if (ticketStatusFilter === TICKET_STATUS_FILTERS.REMAINING) {
-        return !ticket.ticketRequestId && ticket.status !== "USED";
+        return !isTicketSold(ticket);
       }
       return true;
     });
   }, [tickets, ticketTypeFilter, buyerSearch, ticketStatusFilter, summary?.event?.ticketType]);
   const totalTicketPages = Math.max(1, Math.ceil(filteredTickets.length / 5));
   const pagedTickets = filteredTickets.slice((ticketPage - 1) * 5, ticketPage * 5);
-  const soldTicketsCount = useMemo(() => tickets.filter((ticket) => Boolean(ticket.ticketRequestId)).length, [tickets]);
+  const soldTicketsCount = useMemo(() => tickets.filter((ticket) => isTicketSold(ticket)).length, [tickets]);
   const scannedTicketsCount = useMemo(() => tickets.filter((ticket) => ticket.status === "USED").length, [tickets]);
   const remainingTicketsCount = useMemo(
-    () => tickets.filter((ticket) => !ticket.ticketRequestId && ticket.status !== "USED").length,
+    () => tickets.filter((ticket) => !isTicketSold(ticket)).length,
     [tickets],
   );
   const deliverableTickets = useMemo(
@@ -1107,23 +1115,36 @@ export default function Dashboard() {
               <div className="mt-3 space-y-3 lg:hidden">
                 {pagedTickets.map((ticket) => (
                   <article key={ticket.ticketPublicId} className="rounded border bg-white p-3 text-sm">
-                    <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_1fr] gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                      <p>ticket id</p>
-                      <p>ticket type</p>
-                      <p>buyer</p>
-                      <p>sold</p>
-                      <p>status</p>
-                      <p>delivery</p>
-                      <p>scanned at</p>
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-[11px] uppercase tracking-wide text-slate-500">Ticket ID</p>
+                        <p className="break-all font-mono text-xs">{ticket.ticketPublicId}</p>
+                      </div>
+                      <p className="rounded bg-slate-100 px-2 py-1 text-[11px] font-semibold uppercase text-slate-700">
+                        {ticket.status}
+                      </p>
                     </div>
-                    <div className="mt-1 grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_1fr] gap-2 text-xs text-slate-900">
-                      <p className="break-all font-mono">{ticket.ticketPublicId}</p>
-                      <p>{ticket.ticketType || summary.event.ticketType || "General"}</p>
-                      <p>{ticket.buyer || "-"}</p>
-                      <p>{ticket.ticketRequestId ? "YES" : "NO"}</p>
-                      <p>{ticket.status}</p>
-                      <p>{resolveDeliveryMethodLabel(ticket)}</p>
-                      <p>{formatDate(ticket.scannedAt)}</p>
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded border bg-slate-50 p-2">
+                        <p className="text-[11px] uppercase tracking-wide text-slate-500">Ticket Type</p>
+                        <p className="mt-1 font-medium text-slate-900">{ticket.ticketType || summary.event.ticketType || "General"}</p>
+                      </div>
+                      <div className="rounded border bg-slate-50 p-2">
+                        <p className="text-[11px] uppercase tracking-wide text-slate-500">Sold</p>
+                        <p className="mt-1 font-medium text-slate-900">{isTicketSold(ticket) ? "YES" : "NO"}</p>
+                      </div>
+                      <div className="rounded border bg-slate-50 p-2">
+                        <p className="text-[11px] uppercase tracking-wide text-slate-500">Buyer</p>
+                        <p className="mt-1 break-all font-medium text-slate-900">{ticket.buyer || "-"}</p>
+                      </div>
+                      <div className="rounded border bg-slate-50 p-2">
+                        <p className="text-[11px] uppercase tracking-wide text-slate-500">Delivery</p>
+                        <p className="mt-1 font-medium text-slate-900">{resolveDeliveryMethodLabel(ticket)}</p>
+                      </div>
+                    </div>
+                    <div className="mt-2 rounded border bg-slate-50 p-2 text-xs">
+                      <p className="text-[11px] uppercase tracking-wide text-slate-500">Scanned At</p>
+                      <p className="mt-1 font-medium text-slate-900">{formatDate(ticket.scannedAt)}</p>
                     </div>
                     <button
                       className={`mt-2 rounded border px-2 py-1 text-xs ${resolveDeliveryMethodLabel(ticket) !== "NOT_DELIVERED" ? "opacity-60" : ""}`}
@@ -1148,7 +1169,7 @@ export default function Dashboard() {
                         <td className="break-all p-2 font-mono">{ticket.ticketPublicId}</td>
                         <td className="p-2">{ticket.ticketType || summary.event.ticketType || "General"}</td>
                         <td className="p-2">{ticket.buyer || "-"}</td>
-                        <td className="p-2">{ticket.ticketRequestId ? "YES" : "NO"}</td>
+                        <td className="p-2">{isTicketSold(ticket) ? "YES" : "NO"}</td>
                         <td className="p-2">{ticket.status}</td>
                         <td className="p-2">{resolveDeliveryMethodLabel(ticket)}</td>
                         <td className="p-2">{formatDate(ticket.scannedAt)}</td>
