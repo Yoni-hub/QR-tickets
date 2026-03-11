@@ -27,6 +27,7 @@ export default function App() {
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
   const isEmbedPreview = searchParams.get("embed") === "1" && location.pathname.startsWith("/e/");
+  const isHomePage = location.pathname === "/";
 
   useEffect(() => {
     const timerByElement = new WeakMap();
@@ -69,7 +70,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen w-full overflow-x-clip bg-slate-50 text-slate-900">
-      {!isEmbedPreview ? (
+      {!isEmbedPreview && !isHomePage ? (
         <nav className="border-b bg-white px-4 py-3">
           <ul className="flex flex-wrap items-center gap-3 text-sm font-semibold">
             <li><Link to="/">Home</Link></li>
