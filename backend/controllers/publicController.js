@@ -275,6 +275,7 @@ async function getPublicEventBySlug(req, res) {
     select: {
       id: true,
       slug: true,
+      organizerName: true,
       eventName: true,
       eventDate: true,
       eventAddress: true,
@@ -306,6 +307,7 @@ async function getPublicEventBySlug(req, res) {
       eventId: event.id,
       slug: event.slug,
       eventName: event.eventName,
+      organizerName: event.organizerName,
       eventDate: event.eventDate,
       location: event.eventAddress,
       price: event.ticketPrice,

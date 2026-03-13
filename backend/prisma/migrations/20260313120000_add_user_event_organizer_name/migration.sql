@@ -1,0 +1,2 @@
+ALTER TABLE "UserEvent"
+ADD COLUMN IF NOT EXISTS "organizerName" TEXT;

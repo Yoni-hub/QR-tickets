@@ -52,6 +52,7 @@ function toEventListItem(event) {
   return {
     id: event.id,
     slug: event.slug,
+    organizerName: event.organizerName,
     eventName: event.eventName,
     eventDate: event.eventDate,
     eventAddress: event.eventAddress,
@@ -79,6 +80,7 @@ async function resolveEventGroupByAccessCode(accessCode) {
     select: {
       id: true,
       slug: true,
+      organizerName: true,
       eventName: true,
       eventDate: true,
       eventAddress: true,
@@ -371,6 +373,7 @@ async function generateTicketsByAccessCode(req, res) {
   }
 
   const eventName = String(req.body?.eventName || "").trim();
+  const organizerName = String(req.body?.organizerName || "").trim();
   const eventAddress = String(req.body?.eventAddress || "").trim();
   const rawEventDate = String(req.body?.eventDateTime || req.body?.dateTimeText || "").trim();
   const parsedEventDate = rawEventDate ? new Date(rawEventDate) : null;
@@ -450,6 +453,7 @@ async function generateTicketsByAccessCode(req, res) {
     where: { id: event.id },
     data: {
       quantity: (event.quantity || 0) + createdCount,
+      ...(Object.prototype.hasOwnProperty.call(req.body || {}, "organizerName") ? { organizerName: organizerName || null } : {}),
       ...(eventName ? { eventName } : {}),
       ...(eventAddress ? { eventAddress } : {}),
       ...(parsedEventDate && !Number.isNaN(parsedEventDate.getTime()) ? { eventDate: parsedEventDate } : {}),
@@ -495,6 +499,7 @@ async function updateEventInline(req, res) {
   }
 
   const eventName = String(req.body?.eventName || "").trim();
+  const organizerName = String(req.body?.organizerName || "").trim();
   const eventAddress = String(req.body?.eventAddress || "").trim();
   const paymentInstructions = String(req.body?.paymentInstructions || "").trim();
   const eventDateRaw = String(req.body?.eventDate || "").trim();
@@ -524,6 +529,9 @@ async function updateEventInline(req, res) {
     where: { id: eventId },
     data: {
       ...(eventName ? { eventName } : {}),
+      ...(Object.prototype.hasOwnProperty.call(req.body || {}, "organizerName")
+        ? { organizerName: organizerName || null }
+        : {}),
       ...(eventAddress ? { eventAddress } : {}),
       ...(nextSlug ? { slug: nextSlug } : {}),
       ...(Object.prototype.hasOwnProperty.call(req.body || {}, "paymentInstructions")
@@ -537,6 +545,7 @@ async function updateEventInline(req, res) {
     select: {
       id: true,
       slug: true,
+      organizerName: true,
       eventName: true,
       eventDate: true,
       eventAddress: true,
@@ -624,6 +633,7 @@ async function createEventForAccessCode(req, res) {
   }
 
   const eventName = String(req.body?.eventName || "").trim();
+  const organizerName = String(req.body?.organizerName || "").trim();
   const eventAddress = String(req.body?.eventAddress || "").trim();
   const paymentInstructions = String(req.body?.paymentInstructions || "").trim();
   const eventDateRaw = String(req.body?.eventDate || "").trim();
@@ -645,6 +655,7 @@ async function createEventForAccessCode(req, res) {
   const slug = await generateEventSlug(eventName);
   const created = await prisma.userEvent.create({
     data: {
+      organizerName: organizerName || null,
       eventName,
       eventAddress,
       eventDate: parsedEventDate,
@@ -658,6 +669,7 @@ async function createEventForAccessCode(req, res) {
     select: {
       id: true,
       slug: true,
+      organizerName: true,
       eventName: true,
       eventDate: true,
       eventAddress: true,

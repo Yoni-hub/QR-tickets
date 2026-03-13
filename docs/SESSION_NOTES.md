@@ -79,3 +79,6 @@
 
 ## 2026-03-12 (Checkpoint)
 - [2026-03-12 22:56:52 -04:00] Implemented homepage redesign, how-it-works page, real UI screenshots, interactive feature-card walkthroughs, and hero slideshow refinements.
+
+## 2026-03-13 (Checkpoint)
+- [2026-03-13 00:09:49 -04:00] Implemented organizer field persistence, real public-event preview in dashboard, ticket-type deletion guard before generation, and fixed backend Prisma runtime generation issue.

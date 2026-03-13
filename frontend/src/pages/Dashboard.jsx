@@ -181,7 +181,7 @@ export default function Dashboard() {
   const [events, setEvents] = useState([]);
   const [selectedEventId, setSelectedEventId] = useState("");
   const [eventEditMode, setEventEditMode] = useState(EVENT_EDIT_MODES.EDIT);
-  const [eventDraft, setEventDraft] = useState({ eventName: "", eventDate: "", eventAddress: "", paymentInstructions: "" });
+  const [eventDraft, setEventDraft] = useState({ organizerName: "", eventName: "", eventDate: "", eventAddress: "", paymentInstructions: "" });
   const [savingEvent, setSavingEvent] = useState(false);
   const [savingTicketDraft, setSavingTicketDraft] = useState(false);
   const [tickets, setTickets] = useState([]);
@@ -365,6 +365,7 @@ export default function Dashboard() {
     setSelectedEventId(String(payload?.event?.id || ""));
     setSummary(payload);
     setEventDraft({
+      organizerName: String(payload?.event?.organizerName || ""),
       eventName: String(payload?.event?.eventName || ""),
       eventDate: toLocalDateTimeInputValue(payload?.event?.eventDate),
       eventAddress: String(payload?.event?.eventAddress || ""),
@@ -748,6 +749,7 @@ export default function Dashboard() {
     try {
       if (eventEditMode === EVENT_EDIT_MODES.CREATE) {
         const response = await api.post(`/events/by-code/${encodeURIComponent(accessCode)}/create-new`, {
+          organizerName: eventDraft.organizerName,
           eventName: eventDraft.eventName,
           eventDate: eventDraft.eventDate,
           eventAddress: eventDraft.eventAddress,
@@ -764,6 +766,7 @@ export default function Dashboard() {
       }
       const response = await api.patch(`/events/${summary.event.id}`, {
         accessCode,
+        organizerName: eventDraft.organizerName,
         eventName: eventDraft.eventName,
         eventDate: eventDraft.eventDate,
         eventAddress: eventDraft.eventAddress,
@@ -776,6 +779,7 @@ export default function Dashboard() {
           eventItem.id === response.data?.event?.id
             ? {
                 ...eventItem,
+                organizerName: response.data?.event?.organizerName,
                 eventName: response.data?.event?.eventName,
                 eventDate: response.data?.event?.eventDate,
                 eventAddress: response.data?.event?.eventAddress,
@@ -795,6 +799,7 @@ export default function Dashboard() {
   const switchToCreateEventMode = () => {
     setEventEditMode(EVENT_EDIT_MODES.CREATE);
     setEventDraft({
+      organizerName: "",
       eventName: "",
       eventDate: "",
       eventAddress: "",
@@ -807,6 +812,7 @@ export default function Dashboard() {
     if (!summary?.event) return;
     setEventEditMode(EVENT_EDIT_MODES.EDIT);
     setEventDraft({
+      organizerName: String(summary.event.organizerName || ""),
       eventName: String(summary.event.eventName || ""),
       eventDate: toLocalDateTimeInputValue(summary.event.eventDate),
       eventAddress: String(summary.event.eventAddress || ""),
@@ -835,6 +841,7 @@ export default function Dashboard() {
       const payload = {
         accessCode,
         eventId: summary.event.id,
+        organizerName: draft?.organizerName ?? summary.event.organizerName ?? "",
         eventName: draft?.eventName || summary.event.eventName,
         eventAddress: draft?.eventAddress || summary.event.eventAddress,
         ticketType: draft?.ticketType || summary.event.ticketType || "",
@@ -851,6 +858,7 @@ export default function Dashboard() {
         return { ...prev, event: { ...prev.event, ...response.data.event } };
       });
       setEventDraft({
+        organizerName: String(response.data?.event?.organizerName || ""),
         eventName: String(response.data?.event?.eventName || ""),
         eventDate: toLocalDateTimeInputValue(response.data?.event?.eventDate),
         eventAddress: String(response.data?.event?.eventAddress || ""),
@@ -911,6 +919,13 @@ export default function Dashboard() {
                     </option>
                   ))}
                 </select>
+                <p className="font-semibold">Organizer:</p>
+                <input
+                  className="w-full rounded border p-2 text-sm"
+                  value={eventDraft.organizerName}
+                  onChange={(e) => setEventDraft((prev) => ({ ...prev, organizerName: e.target.value }))}
+                  placeholder="Organizer or brand name"
+                />
                 <p className="font-semibold">Name:</p>
                 <input
                   className="w-full rounded border p-2 text-sm"
@@ -1008,24 +1023,15 @@ export default function Dashboard() {
                     {showPublicPreview ? "Hide" : "Preview Public Event Page"}
                   </button>
                   {showPublicPreview ? (
-                    <div className="max-w-xl rounded border bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Public Event Page Sample</p>
-                      <h3 className="mt-2 text-xl font-bold">{eventDraft.eventName || summary.event.eventName}</h3>
-                      <p className="mt-1 text-sm text-slate-600">{formatDate(eventDraft.eventDate || summary.event.eventDate)} | {eventDraft.eventAddress || summary.event.eventAddress}</p>
-                      <p className="mt-1 text-sm">Price: {summary.event.ticketPrice ? `$${summary.event.ticketPrice}` : "Ask organizer"}</p>
-                      <p className="mt-1 text-sm">Tickets remaining: {summary.remainingTickets}</p>
-                      <div className="mt-3 border-t pt-3">
-                        <p className="text-sm font-semibold">Request Tickets</p>
-                        <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                          <input className="rounded border bg-white p-2 text-sm" value="Customer Name" readOnly />
-                          <input className="rounded border bg-white p-2 text-sm" value="Phone (optional)" readOnly />
-                          <input className="rounded border bg-white p-2 text-sm sm:col-span-2" value="Email (optional)" readOnly />
-                          <input className="rounded border bg-white p-2 text-sm" value="1" readOnly />
-                        </div>
-                        <button type="button" className="mt-3 rounded bg-slate-900 px-3 py-2 text-sm font-semibold text-white" disabled>
-                          Request Tickets
-                        </button>
-                      </div>
+                    <div className="max-w-3xl overflow-hidden rounded border bg-white">
+                      <p className="border-b bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Live Public Event Preview
+                      </p>
+                      <iframe
+                        title="Public event page preview"
+                        src={`${window.location.origin}/e/${summary.event.slug}?embed=1`}
+                        className="h-[760px] w-full border-0"
+                      />
                     </div>
                   ) : null}
                 </div>
@@ -1047,6 +1053,8 @@ export default function Dashboard() {
                   initialTicketType={summary.event.ticketType || "General"}
                   initialTicketPrice={summary.event.ticketPrice || ""}
                   initialDesignJson={summary.event.designJson || null}
+                  initialOrganizerName={summary.event.organizerName || ""}
+                  canDeleteTicketTypes={tickets.length < 1}
                   onGenerated={handleTicketsGenerated}
                   onDraftChange={applyTicketEditorDraft}
                   onSave={saveTicketEditorDraft}
