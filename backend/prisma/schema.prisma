@@ -9,6 +9,7 @@ datasource db {
 
 model UserEvent {
   id          String      @id @default(cuid())
+  organizerName String?
   eventName   String
   eventDate   DateTime
   eventAddress String

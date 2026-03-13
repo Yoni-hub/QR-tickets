@@ -29,6 +29,8 @@ export default function TicketPreview({
   imageLoading,
   title,
   helperText,
+  showRemoveTicketType = false,
+  onRemoveTicketType = null,
 }) {
   const [autoTextColor, setAutoTextColor] = useState("#ffffff");
 
@@ -109,6 +111,16 @@ export default function TicketPreview({
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <h3 className="text-sm font-semibold text-slate-700">{title}</h3>
           {helperText ? <p className="text-xs text-slate-500">{helperText}</p> : null}
+          {showRemoveTicketType && typeof onRemoveTicketType === "function" ? (
+            <AppButton
+              type="button"
+              variant="secondary"
+              className="!w-auto px-2 py-1 text-xs"
+              onClick={onRemoveTicketType}
+            >
+              Delete ticket type
+            </AppButton>
+          ) : null}
         </div>
       ) : null}
       <div className="mb-3">
@@ -155,9 +167,15 @@ export default function TicketPreview({
           />
           <div className="relative z-10" style={{ color: resolvedHeaderTextColor, textShadow: headerTextShadow }}>
             <EditableText
+              value={ticketDesign.organizerName || "Organizer Name"}
+              onChange={(next) => updateDesignField("organizerName", next)}
+              className="break-words text-xs font-semibold uppercase tracking-[0.16em] opacity-90"
+              ariaLabel="Edit organizer name"
+            />
+            <EditableText
               value={ticketDesign.eventName}
               onChange={(next) => updateDesignField("eventName", next)}
-              className="break-words text-2xl font-extrabold leading-tight sm:text-3xl"
+              className="mt-2 break-words text-2xl font-extrabold leading-tight sm:text-3xl"
               ariaLabel="Edit event name"
             />
             <EditableText

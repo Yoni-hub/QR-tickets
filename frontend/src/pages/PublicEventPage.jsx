@@ -247,6 +247,11 @@ export default function PublicEventPage() {
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-4 sm:px-6 sm:py-6">
       <h1 className="text-2xl font-bold sm:text-3xl">{eventData.event.eventName}</h1>
+      {eventData.event.organizerName ? (
+        <p className="mt-2 text-sm font-semibold uppercase tracking-[0.14em] text-slate-500">
+          {eventData.event.organizerName}
+        </p>
+      ) : null}
       <p className="mt-2 text-slate-600">{formatDate(eventData.event.eventDate)} | {eventData.event.location}</p>
       <div className="mt-3 rounded border bg-white p-3 text-sm">
         <p className="font-semibold">Ticket Types</p>

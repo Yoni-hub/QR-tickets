@@ -61,3 +61,5 @@
 - 2026-03-09: Added TicketRequest.organizerMessage and new TicketRequestMessage model with sender/read tracking for chat.
 
 - 2026-03-10: Added/used organizerAccessCode for organizer-scoped event grouping and code handling
+
+- 2026-03-13: Added UserEvent.organizerName field for organizer-facing event details.

@@ -71,6 +71,7 @@ async function createEvent(payload, isDemo = false) {
   const slug = await generateEventSlug(payload.eventSlug || payload.eventName || "event");
   const event = await prisma.userEvent.create({
     data: {
+      organizerName: String(payload.organizerName || "").trim() || null,
       eventName: payload.eventName || "QR Tickets Demo Event",
       eventDate: resolveEventDate(payload),
       eventAddress: payload.eventAddress || "Demo Venue",

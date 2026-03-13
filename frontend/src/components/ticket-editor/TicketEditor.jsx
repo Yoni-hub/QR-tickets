@@ -60,6 +60,7 @@ export default function TicketEditor({
   mode = "create_event",
   accessCode = "",
   eventId = "",
+  initialOrganizerName = "",
   initialEventName = "",
   initialEventAddress = "",
   initialDateTimeText = "",
@@ -70,11 +71,13 @@ export default function TicketEditor({
   onDraftChange = null,
   onSave = null,
   saveLoading = false,
+  canDeleteTicketTypes = true,
 }) {
   const navigate = useNavigate();
   const resolveInitialDesign = () => {
     const design = initialDesignJson && typeof initialDesignJson === "object" ? initialDesignJson : {};
     return {
+      organizerName: String(design.organizerName || initialOrganizerName || ""),
       eventName: String(design.eventName || initialEventName || "QR Tickets Demo Event"),
       location: String(design.location || initialEventAddress || "Sample Venue"),
       dateTimeText: String(design.dateTimeText || initialDateTimeText || "May 15, 2024 | 7:00 PM"),
@@ -197,6 +200,14 @@ export default function TicketEditor({
     }));
   };
 
+  const removeTicketType = (groupIndex) => {
+    if (!canDeleteTicketTypes || settings.ticketGroups.length <= 1) return;
+    updateSettings((prev) => ({
+      ...prev,
+      ticketGroups: prev.ticketGroups.filter((_, index) => index !== groupIndex),
+    }));
+  };
+
   const generate = async () => {
     if (loading) return;
     if (totalQuantity < 1) {
@@ -210,6 +221,7 @@ export default function TicketEditor({
     try {
       const singleGroup = settings.ticketGroups.length === 1 ? settings.ticketGroups[0] : null;
       const payload = {
+        organizerName: ticketDesign.organizerName,
         eventName: ticketDesign.eventName,
         eventAddress: ticketDesign.location,
         eventDateTime: ticketDesign.dateTimeText,
@@ -294,12 +306,14 @@ export default function TicketEditor({
         : primaryPrice || "Free";
     return {
       eventName: String(design.eventName || "").trim(),
+      organizerName: String(design.organizerName || "").trim(),
       eventAddress: String(design.location || "").trim(),
       eventDate: Number.isNaN(parsedDate.getTime()) ? null : parsedDate.toISOString(),
       ticketType: String(primaryGroup.ticketType || "").trim(),
       ticketPrice: primaryPrice,
       designJson: {
         ...design,
+        organizerName: String(design.organizerName || "").trim(),
         ticketTypeLabel: String(primaryGroup.ticketType || "General").toUpperCase(),
         priceText: resolvedPriceText,
         headerImageDataUrl: primaryGroup.headerImageDataUrl || null,
@@ -337,6 +351,8 @@ export default function TicketEditor({
               imageLoading={imageLoading}
               title={`Live ticket preview: ${group.ticketType || `Ticket ${index + 1}`}`}
               helperText="(you can change the event name, location, time, type and price directly on the ticket preview)"
+              showRemoveTicketType={canDeleteTicketTypes && settings.ticketGroups.length > 1}
+              onRemoveTicketType={() => removeTicketType(index)}
             />
             <div className="mx-auto w-full max-w-xl">
               <label className="mb-1 block text-sm font-medium">Quantity</label>
