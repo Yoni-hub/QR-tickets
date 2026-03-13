@@ -76,3 +76,6 @@
 
 ## 2026-03-11 (Checkpoint)
 - [2026-03-11 01:47:35 -04:00] Implemented admin organizer table view, ticket editor stability/quantity flow fixes, delivery/copy UX updates, scanner overlay dismissal flow, and scan ownership hardening for cross-organizer tickets
+
+## 2026-03-12 (Checkpoint)
+- [2026-03-12 22:56:52 -04:00] Implemented homepage redesign, how-it-works page, real UI screenshots, interactive feature-card walkthroughs, and hero slideshow refinements.
