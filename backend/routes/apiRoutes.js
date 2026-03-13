@@ -25,6 +25,7 @@ const {
   approveTicketRequest,
   rejectTicketRequest,
   messageTicketRequest,
+  cancelOrganizerTicket,
   getTicketRequestMessages,
   sendTicketRequestMessage,
   listPromoters,
@@ -60,6 +61,7 @@ router.get("/events/by-code/:accessCode/ticket-requests", getOrganizerTicketRequ
 router.post("/ticket-requests/:id/approve", approveTicketRequest);
 router.post("/ticket-requests/:id/reject", rejectTicketRequest);
 router.post("/ticket-requests/:id/message", messageTicketRequest);
+router.post("/tickets/:ticketPublicId/cancel", cancelOrganizerTicket);
 router.get("/ticket-requests/:id/messages", getTicketRequestMessages);
 router.post("/ticket-requests/:id/messages", sendTicketRequestMessage);
 router.post("/events/by-code/:accessCode/guests", createGuestAndApprove);

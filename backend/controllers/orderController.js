@@ -67,6 +67,7 @@ async function resolveEventForAccessCode(accessCode, eventIdRaw) {
     select: {
       id: true,
       accessCode: true,
+      organizerName: true,
       eventName: true,
       eventDate: true,
       eventAddress: true,
@@ -222,6 +223,7 @@ async function sendOrderTicketLinks(req, res) {
     try {
       await sendTicketLinkEmail({
         to: email,
+        organizerName: event.organizerName,
         eventName: event.eventName,
         eventDate: event.eventDate,
         eventAddress: event.eventAddress,

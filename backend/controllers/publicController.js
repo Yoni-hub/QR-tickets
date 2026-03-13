@@ -133,6 +133,7 @@ function mapChatMessage(message) {
     id: message.id,
     senderType: message.senderType,
     message: message.message,
+    evidenceImageDataUrl: message.evidenceImageDataUrl || null,
     createdAt: message.createdAt,
     readAt: message.readAt || null,
   };
@@ -469,6 +470,10 @@ async function getClientDashboardByToken(req, res) {
       totalPrice: true,
       ticketSelections: true,
       organizerMessage: true,
+      cancelledAt: true,
+      cancellationReason: true,
+      cancellationOtherReason: true,
+      cancellationEvidenceImageDataUrl: true,
       createdAt: true,
       updatedAt: true,
       event: {
@@ -486,6 +491,10 @@ async function getClientDashboardByToken(req, res) {
           ticketType: true,
           status: true,
           isInvalidated: true,
+          cancelledAt: true,
+          cancellationReason: true,
+          cancellationOtherReason: true,
+          cancellationEvidenceImageDataUrl: true,
           qrPayload: true,
         },
       },
@@ -503,6 +512,10 @@ async function getClientDashboardByToken(req, res) {
     ticketType: ticket.ticketType || "General",
     status: ticket.status,
     isInvalidated: ticket.isInvalidated,
+    cancelledAt: ticket.cancelledAt,
+    cancellationReason: ticket.cancellationReason,
+    cancellationOtherReason: ticket.cancellationOtherReason,
+    cancellationEvidenceImageDataUrl: ticket.cancellationEvidenceImageDataUrl,
     ticketUrl: ticket.qrPayload || `${baseUrl}/t/${ticket.ticketPublicId}`,
   }));
 
@@ -516,6 +529,10 @@ async function getClientDashboardByToken(req, res) {
       ticketType: request.ticketType,
       ticketSelections: request.ticketSelections,
       organizerMessage: request.organizerMessage,
+      cancelledAt: request.cancelledAt,
+      cancellationReason: request.cancellationReason,
+      cancellationOtherReason: request.cancellationOtherReason,
+      cancellationEvidenceImageDataUrl: request.cancellationEvidenceImageDataUrl,
       totalPrice: request.totalPrice,
       createdAt: request.createdAt,
       updatedAt: request.updatedAt,
@@ -558,7 +575,7 @@ async function getClientRequestMessagesByToken(req, res) {
   const messages = await prisma.ticketRequestMessage.findMany({
     where: { ticketRequestId: request.id },
     orderBy: { createdAt: "asc" },
-    select: { id: true, senderType: true, message: true, createdAt: true, readAt: true },
+    select: { id: true, senderType: true, message: true, evidenceImageDataUrl: true, createdAt: true, readAt: true },
   });
 
   res.json({
@@ -598,7 +615,7 @@ async function createClientRequestMessageByToken(req, res) {
       senderType: "CLIENT",
       message,
     },
-    select: { id: true, senderType: true, message: true, createdAt: true, readAt: true },
+    select: { id: true, senderType: true, message: true, evidenceImageDataUrl: true, createdAt: true, readAt: true },
   });
 
   res.status(201).json({ message: mapChatMessage(created) });
