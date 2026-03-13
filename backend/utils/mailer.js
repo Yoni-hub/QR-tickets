@@ -8,6 +8,7 @@ const DEFAULT_BODY_TEMPLATE = [
   "",
   "Your {{ticketType}} ticket for {{eventName}} is ready.",
   "",
+  "Organizer: {{organizerName}}",
   "Event: {{eventName}}",
   "Date: {{eventDate}}",
   "Location: {{eventAddress}}",
@@ -40,6 +41,10 @@ const DEFAULT_HTML_TEMPLATE = `
             </p>
 
             <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;text-align:left;">
+              <tr>
+                <td style="padding:4px 10px 4px 0;">Organizer:</td>
+                <td><strong>{{organizerName}}</strong></td>
+              </tr>
               <tr>
                 <td style="padding:4px 10px 4px 0;">Event:</td>
                 <td><strong>{{eventName}}</strong></td>
@@ -111,6 +116,7 @@ function getTransporter() {
 
 function renderEmailTemplate(template, values) {
   const replacements = {
+    "{{organizerName}}": String(values.organizerName || ""),
     "{{eventName}}": String(values.eventName || ""),
     "{{eventDate}}": new Date(values.eventDate).toLocaleString(),
     "{{eventAddress}}": String(values.eventAddress || ""),
@@ -145,6 +151,7 @@ function renderEmailHtml(textBody, ticketUrl) {
 
 function buildTicketLinkEmailContent({
   to,
+  organizerName,
   eventName,
   eventDate,
   eventAddress,
@@ -155,6 +162,7 @@ function buildTicketLinkEmailContent({
 }) {
   const templateValues = {
     to,
+    organizerName,
     eventName,
     eventDate,
     eventAddress,
@@ -176,6 +184,7 @@ function buildTicketLinkEmailContent({
 
 async function sendTicketLinkEmail({
   to,
+  organizerName,
   eventName,
   eventDate,
   eventAddress,
@@ -188,6 +197,7 @@ async function sendTicketLinkEmail({
   const from = process.env.MAIL_FROM || "no-reply@localhost";
   const content = buildTicketLinkEmailContent({
     to,
+    organizerName,
     eventName,
     eventDate,
     eventAddress,

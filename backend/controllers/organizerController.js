@@ -22,9 +22,28 @@ function mapChatMessage(message) {
     id: message.id,
     senderType: message.senderType,
     message: message.message,
+    evidenceImageDataUrl: message.evidenceImageDataUrl || null,
     createdAt: message.createdAt,
     readAt: message.readAt || null,
   };
+}
+
+function normalizeCancellationReason(value) {
+  const raw = String(value || "").trim().toUpperCase();
+  if (raw === "EVENT_CANCELLED") return "EVENT_CANCELLED";
+  if (raw === "PAYMENT_REFUNDED_TO_CUSTOMER") return "PAYMENT_REFUNDED_TO_CUSTOMER";
+  if (raw === "OTHER") return "OTHER";
+  return "";
+}
+
+function buildCancellationMessage({ ticketPublicId, reason, otherReason, cancelledAt }) {
+  const label =
+    reason === "EVENT_CANCELLED"
+      ? "Event cancelled"
+      : reason === "PAYMENT_REFUNDED_TO_CUSTOMER"
+        ? "Payment refunded to customer"
+        : otherReason || "Other";
+  return `Ticket ${ticketPublicId} was cancelled on ${new Date(cancelledAt).toLocaleString()}. Reason: ${label}.`;
 }
 
 async function findEventByAccessCode(accessCode, eventId = "") {
@@ -91,6 +110,10 @@ async function getOrganizerTicketRequests(req, res) {
       ticketSelections: true,
       evidenceImageDataUrl: true,
       organizerMessage: true,
+      cancelledAt: true,
+      cancellationReason: true,
+      cancellationOtherReason: true,
+      cancellationEvidenceImageDataUrl: true,
       quantity: true,
       status: true,
       createdAt: true,
@@ -100,6 +123,10 @@ async function getOrganizerTicketRequests(req, res) {
       tickets: {
         select: {
           ticketPublicId: true,
+          cancelledAt: true,
+          cancellationReason: true,
+          cancellationOtherReason: true,
+          cancellationEvidenceImageDataUrl: true,
           deliveries: {
             orderBy: { sentAt: "desc" },
             take: 1,
@@ -146,6 +173,7 @@ async function getOrganizerTicketRequests(req, res) {
       deliveryStatus,
       unreadClientMessages,
       ticketIds: tickets.map((ticket) => ticket.ticketPublicId).filter(Boolean),
+      cancelledTicketIds: tickets.filter((ticket) => ticket.cancelledAt).map((ticket) => ticket.ticketPublicId),
     };
   });
 
@@ -469,7 +497,7 @@ async function getTicketRequestMessages(req, res) {
   const messages = await prisma.ticketRequestMessage.findMany({
     where: { ticketRequestId: request.id },
     orderBy: { createdAt: "asc" },
-    select: { id: true, senderType: true, message: true, createdAt: true, readAt: true },
+    select: { id: true, senderType: true, message: true, evidenceImageDataUrl: true, createdAt: true, readAt: true },
   });
 
   res.json({
@@ -516,7 +544,7 @@ async function sendTicketRequestMessage(req, res) {
       senderType: "ORGANIZER",
       message,
     },
-    select: { id: true, senderType: true, message: true, createdAt: true, readAt: true },
+    select: { id: true, senderType: true, message: true, evidenceImageDataUrl: true, createdAt: true, readAt: true },
   });
 
   await prisma.ticketRequest.update({
@@ -528,6 +556,141 @@ async function sendTicketRequestMessage(req, res) {
   });
 
   res.status(201).json({ message: mapChatMessage(created) });
+}
+
+async function cancelOrganizerTicket(req, res) {
+  const ticketPublicId = String(req.params.ticketPublicId || "").trim();
+  const accessCode = parseAccessCode(req.body?.accessCode || req.query?.accessCode);
+  const eventId = parseEventId(req.body?.eventId || req.query?.eventId);
+  const cancellationReason = normalizeCancellationReason(req.body?.reason);
+  const cancellationOtherReason = String(req.body?.otherReason || "").trim();
+  const evidenceImageDataUrl = String(req.body?.evidenceImageDataUrl || "").trim() || null;
+
+  if (!ticketPublicId || !accessCode || !eventId) {
+    res.status(400).json({ error: "ticketPublicId, accessCode and eventId are required." });
+    return;
+  }
+  if (!cancellationReason) {
+    res.status(400).json({ error: "Valid cancellation reason is required." });
+    return;
+  }
+
+  const event = await findEventByAccessCode(accessCode, eventId);
+  if (!event) {
+    res.status(404).json({ error: "Event not found." });
+    return;
+  }
+
+  const ticket = await prisma.ticket.findFirst({
+    where: { ticketPublicId, eventId: event.id },
+    select: {
+      id: true,
+      ticketPublicId: true,
+      attendeeName: true,
+      attendeeEmail: true,
+      ticketRequestId: true,
+      isInvalidated: true,
+      cancelledAt: true,
+      deliveries: {
+        where: { status: "SENT" },
+        orderBy: { sentAt: "desc" },
+        take: 1,
+        select: { method: true, email: true },
+      },
+    },
+  });
+  if (!ticket) {
+    res.status(404).json({ error: "Ticket not found." });
+    return;
+  }
+  if (ticket.cancelledAt || ticket.isInvalidated) {
+    res.status(400).json({ error: "Ticket already cancelled." });
+    return;
+  }
+
+  const deliveryMethod = ticket.deliveries?.[0]?.method || (ticket.ticketRequestId ? "PUBLIC_EVENT_PAGE" : "NOT_DELIVERED");
+  const isSoldTicket = deliveryMethod !== "NOT_DELIVERED";
+  if (!isSoldTicket) {
+    res.status(400).json({ error: "Only sold tickets can be cancelled." });
+    return;
+  }
+  if (deliveryMethod === "PUBLIC_EVENT_PAGE" && !evidenceImageDataUrl) {
+    res.status(400).json({ error: "Evidence is required for public event page ticket cancellations." });
+    return;
+  }
+
+  const cancelledAt = new Date();
+  const organizerMessage = buildCancellationMessage({
+    ticketPublicId,
+    reason: cancellationReason,
+    otherReason: cancellationOtherReason,
+    cancelledAt,
+  });
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const updatedTicket = await tx.ticket.update({
+      where: { id: ticket.id },
+      data: {
+        isInvalidated: true,
+        invalidatedAt: cancelledAt,
+        cancelledAt,
+        cancellationReason,
+        cancellationOtherReason: cancellationReason === "OTHER" ? cancellationOtherReason || "Other" : null,
+        cancellationEvidenceImageDataUrl: evidenceImageDataUrl,
+      },
+      select: {
+        ticketPublicId: true,
+        cancelledAt: true,
+        cancellationReason: true,
+        cancellationOtherReason: true,
+        cancellationEvidenceImageDataUrl: true,
+        isInvalidated: true,
+      },
+    });
+
+    let updatedRequest = null;
+    let createdMessage = null;
+    if (ticket.ticketRequestId) {
+      updatedRequest = await tx.ticketRequest.update({
+        where: { id: ticket.ticketRequestId },
+        data: {
+          status: "CANCELLED",
+          organizerMessage,
+          cancelledAt,
+          cancellationReason,
+          cancellationOtherReason: cancellationReason === "OTHER" ? cancellationOtherReason || "Other" : null,
+          cancellationEvidenceImageDataUrl: evidenceImageDataUrl,
+        },
+        select: {
+          id: true,
+          status: true,
+          organizerMessage: true,
+          cancelledAt: true,
+          cancellationReason: true,
+          cancellationOtherReason: true,
+          cancellationEvidenceImageDataUrl: true,
+        },
+      });
+
+      createdMessage = await tx.ticketRequestMessage.create({
+        data: {
+          ticketRequestId: ticket.ticketRequestId,
+          senderType: "ORGANIZER",
+          message: organizerMessage,
+          evidenceImageDataUrl,
+        },
+        select: { id: true, senderType: true, message: true, evidenceImageDataUrl: true, createdAt: true, readAt: true },
+      });
+    }
+
+    return { ticket: updatedTicket, request: updatedRequest, message: createdMessage };
+  });
+
+  res.json({
+    ticket: updated.ticket,
+    request: updated.request,
+    message: updated.message ? mapChatMessage(updated.message) : null,
+  });
 }
 
 function normalizePromoterCode(value) {
@@ -795,6 +958,7 @@ module.exports = {
   approveTicketRequest,
   rejectTicketRequest,
   messageTicketRequest,
+  cancelOrganizerTicket,
   getTicketRequestMessages,
   sendTicketRequestMessage,
   listPromoters,

@@ -63,3 +63,5 @@
 - 2026-03-10: Added/used organizerAccessCode for organizer-scoped event grouping and code handling
 
 - 2026-03-13: Added UserEvent.organizerName field for organizer-facing event details.
+
+- 2026-03-13: Added ticket/request cancellation fields, request CANCELLED status, and evidenceImageDataUrl on ticket request messages.

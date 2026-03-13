@@ -82,3 +82,6 @@
 
 ## 2026-03-13 (Checkpoint)
 - [2026-03-13 00:09:49 -04:00] Implemented organizer field persistence, real public-event preview in dashboard, ticket-type deletion guard before generation, and fixed backend Prisma runtime generation issue.
+
+## 2026-03-13 (Checkpoint)
+- [2026-03-13 18:22:54 -04:00] Unified the dashboard public-event preview with the live public page, connected organizerName into email preview/sending, and added organizer ticket cancellation flow with buyer messaging.

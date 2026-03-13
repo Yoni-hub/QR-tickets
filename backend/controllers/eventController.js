@@ -299,6 +299,11 @@ async function getEventTickets(req, res) {
         attendeeEmail: true,
         ticketRequestId: true,
         isInvalidated: true,
+        invalidatedAt: true,
+        cancelledAt: true,
+        cancellationReason: true,
+        cancellationOtherReason: true,
+        cancellationEvidenceImageDataUrl: true,
         deliveries: {
           where: { status: "SENT" },
           orderBy: { sentAt: "desc" },

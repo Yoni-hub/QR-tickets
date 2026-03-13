@@ -209,7 +209,7 @@ async function scanTicket(req, res) {
   }
 
   if (!isCrossOrganizerTicket && outcome === "INVALID_TICKET" && ticket.isInvalidated) {
-    if (ticket.ticketRequest?.status === "REJECTED") {
+    if (ticket.ticketRequest?.status === "REJECTED" || ticket.ticketRequest?.status === "CANCELLED") {
       outcome = "CANCELED";
     } else {
       outcome = "BLOCKED";

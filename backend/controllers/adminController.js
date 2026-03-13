@@ -1206,6 +1206,7 @@ async function retryAdminDelivery(req, res) {
           event: {
             select: {
               id: true,
+              organizerName: true,
               eventName: true,
               eventDate: true,
               eventAddress: true,
@@ -1227,6 +1228,7 @@ async function retryAdminDelivery(req, res) {
   try {
     await sendTicketLinkEmail({
       to: delivery.email,
+      organizerName: delivery.ticket.event.organizerName,
       eventName: delivery.ticket.event.eventName,
       eventDate: delivery.ticket.event.eventDate,
       eventAddress: delivery.ticket.event.eventAddress,

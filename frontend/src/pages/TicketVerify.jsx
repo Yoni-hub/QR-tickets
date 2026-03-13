@@ -5,6 +5,7 @@ import AppButton from "../components/ui/AppButton";
 
 function resolveStatus(ticket, order) {
   if (!order || order.status !== "ACTIVE") return "DISABLED";
+  if (ticket.isInvalidated) return "DISABLED";
   if (ticket.status === "USED") return "ALREADY_USED";
   return "VALID";
 }

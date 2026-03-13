@@ -52,6 +52,10 @@ model Ticket {
   status         TicketStatus @default(UNUSED)
   isInvalidated  Boolean      @default(false)
   invalidatedAt  DateTime?
+  cancelledAt    DateTime?
+  cancellationReason String?
+  cancellationOtherReason String?
+  cancellationEvidenceImageDataUrl String?
   scannedAt      DateTime?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
@@ -157,6 +161,10 @@ model TicketRequest {
   ticketSelections Json?
   evidenceImageDataUrl String?
   organizerMessage String?
+  cancelledAt DateTime?
+  cancellationReason String?
+  cancellationOtherReason String?
+  cancellationEvidenceImageDataUrl String?
   quantity   Int
   promoterId String?
   status     TicketRequestStatus @default(PENDING_PAYMENT)
@@ -177,6 +185,7 @@ model TicketRequestMessage {
   ticketRequestId String
   senderType     TicketRequestMessageSender
   message        String
+  evidenceImageDataUrl String?
   readAt         DateTime?
   createdAt      DateTime @default(now())
   ticketRequest  TicketRequest @relation(fields: [ticketRequestId], references: [id], onDelete: Cascade)
@@ -189,6 +198,7 @@ enum TicketRequestStatus {
   PENDING_PAYMENT
   APPROVED
   REJECTED
+  CANCELLED
 }
 
 enum TicketRequestMessageSender {

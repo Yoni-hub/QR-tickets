@@ -12,7 +12,10 @@ function formatDate(value) {
 }
 
 function resolveRequestStatusLabel(status) {
-  return String(status || "").toUpperCase() === "APPROVED" ? "APPROVED" : "PENDING";
+  const normalized = String(status || "").toUpperCase();
+  if (normalized === "APPROVED") return "APPROVED";
+  if (normalized === "CANCELLED") return "CANCELLED";
+  return "PENDING";
 }
 
 export default function ClientDashboardPage() {
@@ -136,14 +139,28 @@ export default function ClientDashboardPage() {
                 Organizer message: {requestData.request.organizerMessage}
               </p>
             ) : null}
+            {requestData.request?.cancellationEvidenceImageDataUrl ? (
+              <div className="mt-2">
+                <p className="text-xs font-semibold text-slate-600">Cancellation evidence</p>
+                <a className="mt-1 inline-block" href={requestData.request.cancellationEvidenceImageDataUrl} target="_blank" rel="noreferrer">
+                  <img src={requestData.request.cancellationEvidenceImageDataUrl} alt="Cancellation evidence" className="h-20 w-20 rounded border object-cover" />
+                </a>
+              </div>
+            ) : null}
             {requestData.tickets?.length ? (
               <div className="mt-2 space-y-2">
                 {requestData.tickets.map((ticket) => (
                   <article key={ticket.ticketPublicId} className="rounded border bg-slate-50 p-3">
                     <p><span className="font-semibold">Type:</span> {ticket.ticketType || "General"}</p>
-                    <a className="mt-2 inline-block text-xs font-semibold text-blue-700 underline break-all" href={ticket.ticketUrl} target="_blank" rel="noreferrer">
-                      Open Ticket Link
-                    </a>
+                    {ticket.cancelledAt ? (
+                      <p className="mt-2 text-xs text-red-700">
+                        Cancelled at {formatDate(ticket.cancelledAt)}: {ticket.cancellationReason === "OTHER" ? ticket.cancellationOtherReason || "Other" : ticket.cancellationReason?.replaceAll("_", " ").toLowerCase()}
+                      </p>
+                    ) : (
+                      <a className="mt-2 inline-block text-xs font-semibold text-blue-700 underline break-all" href={ticket.ticketUrl} target="_blank" rel="noreferrer">
+                        Open Ticket Link
+                      </a>
+                    )}
                   </article>
                 ))}
               </div>
@@ -165,6 +182,11 @@ export default function ClientDashboardPage() {
                       <div key={message.id} className={`flex ${isClient ? "justify-end" : "justify-start"}`}>
                         <div className={`max-w-[85%] rounded px-2 py-1 text-xs ${isClient ? "bg-indigo-600 text-white" : "bg-white text-slate-900 border"}`}>
                           <p>{message.message}</p>
+                          {message.evidenceImageDataUrl ? (
+                            <a className="mt-2 block" href={message.evidenceImageDataUrl} target="_blank" rel="noreferrer">
+                              <img src={message.evidenceImageDataUrl} alt="Message evidence" className="h-20 w-20 rounded border object-cover" />
+                            </a>
+                          ) : null}
                           <p className={`mt-1 text-[10px] ${isClient ? "text-indigo-100" : "text-slate-500"}`}>
                             {formatDate(message.createdAt)}
                           </p>

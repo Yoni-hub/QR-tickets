@@ -5,6 +5,7 @@ import AppButton from "../components/ui/AppButton";
 import FeedbackBanner from "../components/ui/FeedbackBanner";
 import { withMinDelay } from "../lib/withMinDelay";
 import TicketEditor from "../components/ticket-editor/TicketEditor";
+import PublicEventExperience from "../components/public/PublicEventExperience";
 
 const DELIVERY_METHODS = {
   PDF: "PDF",
@@ -32,6 +33,7 @@ const DEFAULT_EMAIL_BODY = [
   "",
   "Your {{ticketType}} ticket for {{eventName}} is ready.",
   "",
+  "Organizer: {{organizerName}}",
   "Event: {{eventName}}",
   "Date: {{eventDate}}",
   "Location: {{eventAddress}}",
@@ -56,6 +58,24 @@ const DEFAULT_EMAIL_HTML_TEMPLATE = `
             <p style="margin:0 0 18px 0;font-size:20px;font-weight:700;">Ticket Confirmed</p>
             <p style="margin:0 0 16px 0;">Hello,</p>
             <p style="margin:0 0 20px 0;">Your <strong>{{ticketType}}</strong> ticket for <strong>{{eventName}}</strong> is ready.</p>
+            <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto 20px auto;text-align:left;">
+              <tr>
+                <td style="padding:4px 10px 4px 0;">Organizer:</td>
+                <td><strong>{{organizerName}}</strong></td>
+              </tr>
+              <tr>
+                <td style="padding:4px 10px 4px 0;">Event:</td>
+                <td><strong>{{eventName}}</strong></td>
+              </tr>
+              <tr>
+                <td style="padding:4px 10px 4px 0;">Date:</td>
+                <td><strong>{{eventDate}}</strong></td>
+              </tr>
+              <tr>
+                <td style="padding:4px 10px 4px 0;">Location:</td>
+                <td><strong>{{eventAddress}}</strong></td>
+              </tr>
+            </table>
             <p style="text-align:center;margin:20px 0;"><a href="{{ticketUrl}}" target="_blank" rel="noopener noreferrer" style="background:#2d5bd1;color:#ffffff;padding:12px 22px;border-radius:6px;text-decoration:none;font-weight:600;display:inline-block;">View Your Ticket</a></p>
           </td>
         </tr>
@@ -71,6 +91,11 @@ const EVENT_EDIT_MODES = {
   EDIT: "EDIT",
   CREATE: "CREATE",
 };
+const CANCELLATION_REASON_OPTIONS = [
+  { value: "EVENT_CANCELLED", label: "Event cancelled" },
+  { value: "PAYMENT_REFUNDED_TO_CUSTOMER", label: "Payment refunded to customer" },
+  { value: "OTHER", label: "Other" },
+];
 
 function getSelectedEventStorageKey(accessCode) {
   return `qr-dashboard:selected-event:${String(accessCode || "").trim()}`;
@@ -85,6 +110,7 @@ function parseRecipientEmails(rawValue) {
 
 function renderEmailTemplate(template, values) {
   const replacements = {
+    "{{organizerName}}": String(values.organizerName || ""),
     "{{eventName}}": String(values.eventName || ""),
     "{{eventDate}}": String(values.eventDate || ""),
     "{{eventAddress}}": String(values.eventAddress || ""),
@@ -168,6 +194,26 @@ function isTicketSold(ticket) {
     || deliveryMethod === "PDF_DOWNLOAD";
 }
 
+function isTicketCancelled(ticket) {
+  return Boolean(ticket?.cancelledAt || ticket?.isInvalidated);
+}
+
+function resolveCancellationReasonLabel(reason, otherReason = "") {
+  if (reason === "EVENT_CANCELLED") return "Event cancelled";
+  if (reason === "PAYMENT_REFUNDED_TO_CUSTOMER") return "Payment refunded to customer";
+  if (reason === "OTHER") return otherReason || "Other";
+  return "-";
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Could not read selected file."));
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function Dashboard() {
   const [params, setParams] = useSearchParams();
   const [activeMenu, setActiveMenu] = useState("events");
@@ -217,6 +263,17 @@ export default function Dashboard() {
   const [evidencePreview, setEvidencePreview] = useState("");
   const [approvingRequestIds, setApprovingRequestIds] = useState(() => new Set());
   const [ticketCopyError, setTicketCopyError] = useState({ ticketPublicId: "", message: "" });
+  const [ticketCancelError, setTicketCancelError] = useState({ ticketPublicId: "", message: "" });
+  const [cancelModal, setCancelModal] = useState({
+    open: false,
+    ticket: null,
+    reason: "",
+    evidenceImageDataUrl: "",
+    evidenceName: "",
+    step: "form",
+    loading: false,
+    error: "",
+  });
   const ticketEditorDraftRef = useRef(null);
 
   const recipientList = parseRecipientEmails(recipientEmails);
@@ -226,6 +283,7 @@ export default function Dashboard() {
     || tickets[0]?.ticketPublicId
     || "TICKET-PUBLIC-ID";
   const sampleData = {
+    organizerName: summary?.event?.organizerName || "Organizer name",
     eventName: summary?.event?.eventName || "Your Event",
     eventDate: summary?.event?.eventDate ? new Date(summary.event.eventDate).toLocaleString() : "Event date",
     eventAddress: summary?.event?.eventAddress || "Event address",
@@ -486,8 +544,111 @@ export default function Dashboard() {
     setEvidencePreview(value);
   };
 
+  const closeCancelModal = () => {
+    setCancelModal({
+      open: false,
+      ticket: null,
+      reason: "",
+      evidenceImageDataUrl: "",
+      evidenceName: "",
+      step: "form",
+      loading: false,
+      error: "",
+    });
+  };
+
+  const openCancelTicketModal = (ticket) => {
+    if (!isTicketSold(ticket)) return;
+    if (isTicketCancelled(ticket)) {
+      setTicketCancelError({
+        ticketPublicId: String(ticket?.ticketPublicId || ""),
+        message: "Ticket already cancelled.",
+      });
+      return;
+    }
+    setTicketCancelError({ ticketPublicId: "", message: "" });
+    setCancelModal({
+      open: true,
+      ticket,
+      reason: "",
+      evidenceImageDataUrl: "",
+      evidenceName: "",
+      step: "form",
+      loading: false,
+      error: "",
+    });
+  };
+
+  const onCancelEvidenceFileChange = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      setCancelModal((prev) => ({
+        ...prev,
+        evidenceImageDataUrl: dataUrl,
+        evidenceName: file.name,
+        error: "",
+      }));
+    } catch (fileError) {
+      setCancelModal((prev) => ({ ...prev, error: fileError.message || "Could not load evidence file." }));
+    }
+    event.target.value = "";
+  };
+
+  const submitTicketCancellation = async () => {
+    const ticket = cancelModal.ticket;
+    if (!ticket?.ticketPublicId || !summary?.event?.id || !accessCode) return;
+    setCancelModal((prev) => ({ ...prev, loading: true, error: "" }));
+    try {
+      await api.post(`/tickets/${encodeURIComponent(ticket.ticketPublicId)}/cancel`, {
+        accessCode,
+        eventId: summary.event.id,
+        reason: cancelModal.reason,
+        evidenceImageDataUrl: cancelModal.evidenceImageDataUrl || undefined,
+      });
+      await loadTicketsForEvent(summary.event.id);
+      await loadRequestsAndPromoters(accessCode, summary.event.id);
+      if (chatContext?.id) {
+        await loadChatMessages(chatContext.id, { silent: true });
+      }
+      setTicketCancelError({ ticketPublicId: "", message: "" });
+      closeCancelModal();
+      setFeedback({ kind: "success", message: `Ticket ${ticket.ticketPublicId} cancelled.` });
+    } catch (requestError) {
+      setCancelModal((prev) => ({
+        ...prev,
+        loading: false,
+        error: requestError.response?.data?.error || "Could not cancel ticket.",
+      }));
+      const inlineMessage = requestError.response?.data?.error || "Could not cancel ticket.";
+      setTicketCancelError({
+        ticketPublicId: String(ticket?.ticketPublicId || ""),
+        message: inlineMessage,
+      });
+    }
+  };
+
+  const continueCancelModal = () => {
+    const ticket = cancelModal.ticket;
+    const requiresEvidence = resolveDeliveryMethodLabel(ticket) === "PUBLIC EVENT PAGE";
+    if (!cancelModal.reason) {
+      setCancelModal((prev) => ({ ...prev, error: "Select a cancellation reason." }));
+      return;
+    }
+    if (requiresEvidence && !cancelModal.evidenceImageDataUrl) {
+      setCancelModal((prev) => ({ ...prev, error: "Evidence is required for public event page cancellations." }));
+      return;
+    }
+    setCancelModal((prev) => ({ ...prev, step: "confirm", error: "" }));
+  };
+
   const approveRequest = async (requestId) => {
     const requestItem = ticketRequests.find((item) => item.id === requestId);
+    if (requestItem?.status === "CANCELLED") {
+      setFeedback({ kind: "info", message: "request already cancelled" });
+      return;
+    }
     if (requestItem?.status === "APPROVED") {
       setFeedback({ kind: "info", message: "request already approved" });
       return;
@@ -904,139 +1065,132 @@ export default function Dashboard() {
           </div>
 
           {activeMenu === "events" ? (
-            <section className="mt-4 rounded border p-4">
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-[100px_1fr] sm:items-center">
-                <p className="font-semibold">Event:</p>
-                <select
-                  className="w-full rounded border p-2 text-sm"
-                  value={selectedEventId}
-                  onChange={(e) => selectExistingEvent(e.target.value)}
-                  disabled={!events.length || loading || savingEvent}
-                >
-                  {events.map((eventItem) => (
-                    <option key={eventItem.id} value={eventItem.id}>
-                      {eventItem.eventName} ({formatDate(eventItem.eventDate)})
-                    </option>
-                  ))}
-                </select>
-                <p className="font-semibold">Organizer:</p>
-                <input
-                  className="w-full rounded border p-2 text-sm"
-                  value={eventDraft.organizerName}
-                  onChange={(e) => setEventDraft((prev) => ({ ...prev, organizerName: e.target.value }))}
-                  placeholder="Organizer or brand name"
-                />
-                <p className="font-semibold">Name:</p>
-                <input
-                  className="w-full rounded border p-2 text-sm"
-                  value={eventDraft.eventName}
-                  onChange={(e) => setEventDraft((prev) => ({ ...prev, eventName: e.target.value }))}
-                />
-                <p className="font-semibold">Date:</p>
-                <input
-                  type="datetime-local"
-                  className="w-full rounded border p-2 text-sm"
-                  value={eventDraft.eventDate}
-                  onChange={(e) => setEventDraft((prev) => ({ ...prev, eventDate: e.target.value }))}
-                />
-                <p className="font-semibold">Location:</p>
-                <input
-                  className="w-full rounded border p-2 text-sm"
-                  value={eventDraft.eventAddress}
-                  onChange={(e) => setEventDraft((prev) => ({ ...prev, eventAddress: e.target.value }))}
-                />
-                <p className="font-semibold">Payment:</p>
-                <textarea
-                  className="w-full rounded border p-2 text-sm"
-                  rows={3}
-                  placeholder="How should clients pay? (e.g. CashApp $..., Zelle ..., bank transfer...)"
-                  value={eventDraft.paymentInstructions}
-                  onChange={(e) => setEventDraft((prev) => ({ ...prev, paymentInstructions: e.target.value }))}
-                />
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <AppButton className="" onClick={saveEventInline} loading={savingEvent} loadingText="Saving...">
-                  Save Event
-                </AppButton>
-                <AppButton type="button" variant="secondary" onClick={switchToCreateEventMode}>
-                  Add New Event
-                </AppButton>
-                <AppButton
-                  type="button"
-                  variant="secondary"
-                  className={eventEditMode === EVENT_EDIT_MODES.EDIT ? "text-blue-700" : ""}
-                  onClick={switchToEditEventMode}
-                  disabled={!summary?.event?.id}
-                >
-                  Edit Event
-                </AppButton>
-              </div>
-              {eventEditMode === EVENT_EDIT_MODES.CREATE ? (
-                <p className="mt-2 text-xs text-blue-700">
-                  You are creating a new event. Save Event will create a fresh event under this dashboard access code.
-                </p>
-              ) : (
-                <p className="mt-2 text-xs text-blue-700">
-                  Editing event: {String(summary?.event?.eventName || "Selected event")}
-                </p>
-              )}
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <p className="break-all"><span className="font-semibold">Public Event Link:</span> {summary.event.slug ? `${window.location.origin}/e/${summary.event.slug}` : "Not available"}</p>
-                {summary.event.slug ? (
-                  <button
-                    type="button"
-                    className="rounded border px-2 py-1 text-xs disabled:opacity-60"
-                    disabled={noDeliverableTickets}
-                    onClick={() => {
-                      if (noDeliverableTickets) {
-                        setFeedback({
-                          kind: "error",
-                          message:
-                            pendingRequestedCount > 0
-                              ? "You have no free tickets to deliver right now because pending public requests reserved them."
-                              : "You have no more tickets to deliver and downloaded all tickets. Generate more before sharing public link.",
-                        });
-                        return;
-                      }
-                      navigator.clipboard.writeText(`${window.location.origin}/e/${summary.event.slug}`);
-                      setFeedback({ kind: "success", message: "Public event link copied." });
-                    }}
+            <>
+              <section className="mt-4 rounded border p-4">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-[100px_1fr] sm:items-center">
+                  <p className="font-semibold">Event:</p>
+                  <select
+                    className="w-full rounded border p-2 text-sm"
+                    value={selectedEventId}
+                    onChange={(e) => selectExistingEvent(e.target.value)}
+                    disabled={!events.length || loading || savingEvent}
                   >
-                    Copy
-                  </button>
-                ) : null}
-              </div>
-              {noDeliverableTickets ? (
-                <p className="mt-2 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
-                  {pendingRequestedCount > 0
-                    ? "You have no free tickets to deliver right now because pending public requests reserved them."
-                    : "You have no more tickets to deliver and downloaded all tickets. Please generate more before sharing this link."}
-                </p>
-              ) : null}
-              {summary.event.slug ? (
-                <div className="mt-3 space-y-2">
-                  <button
+                    {events.map((eventItem) => (
+                      <option key={eventItem.id} value={eventItem.id}>
+                        {eventItem.eventName} ({formatDate(eventItem.eventDate)})
+                      </option>
+                    ))}
+                  </select>
+                  <p className="font-semibold">Organizer:</p>
+                  <input
+                    className="w-full rounded border p-2 text-sm"
+                    value={eventDraft.organizerName}
+                    onChange={(e) => setEventDraft((prev) => ({ ...prev, organizerName: e.target.value }))}
+                    placeholder="Organizer or brand name"
+                  />
+                  <p className="font-semibold">Event Name:</p>
+                  <input
+                    className="w-full rounded border p-2 text-sm"
+                    value={eventDraft.eventName}
+                    onChange={(e) => setEventDraft((prev) => ({ ...prev, eventName: e.target.value }))}
+                  />
+                  <p className="font-semibold">Date:</p>
+                  <input
+                    type="datetime-local"
+                    className="w-full rounded border p-2 text-sm"
+                    value={eventDraft.eventDate}
+                    onChange={(e) => setEventDraft((prev) => ({ ...prev, eventDate: e.target.value }))}
+                  />
+                  <p className="font-semibold">Location:</p>
+                  <input
+                    className="w-full rounded border p-2 text-sm"
+                    value={eventDraft.eventAddress}
+                    onChange={(e) => setEventDraft((prev) => ({ ...prev, eventAddress: e.target.value }))}
+                  />
+                  <p className="font-semibold">Payment:</p>
+                  <textarea
+                    className="w-full rounded border p-2 text-sm"
+                    rows={3}
+                    placeholder="How should clients pay? (e.g. CashApp $..., Zelle ..., bank transfer...)"
+                    value={eventDraft.paymentInstructions}
+                    onChange={(e) => setEventDraft((prev) => ({ ...prev, paymentInstructions: e.target.value }))}
+                  />
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <AppButton className="" onClick={saveEventInline} loading={savingEvent} loadingText="Saving...">
+                    Save Event
+                  </AppButton>
+                  <AppButton type="button" variant="secondary" onClick={switchToCreateEventMode}>
+                    Add New Event
+                  </AppButton>
+                  <AppButton
                     type="button"
-                    className="inline-flex rounded border bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                    onClick={() => setShowPublicPreview((prev) => !prev)}
+                    variant="secondary"
+                    className={eventEditMode === EVENT_EDIT_MODES.EDIT ? "text-blue-700" : ""}
+                    onClick={switchToEditEventMode}
+                    disabled={!summary?.event?.id}
                   >
-                    {showPublicPreview ? "Hide" : "Preview Public Event Page"}
-                  </button>
-                  {showPublicPreview ? (
-                    <div className="max-w-3xl overflow-hidden rounded border bg-white">
-                      <p className="border-b bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Live Public Event Preview
-                      </p>
-                      <iframe
-                        title="Public event page preview"
-                        src={`${window.location.origin}/e/${summary.event.slug}?embed=1`}
-                        className="h-[760px] w-full border-0"
-                      />
-                    </div>
+                    Edit Event
+                  </AppButton>
+                </div>
+                {eventEditMode === EVENT_EDIT_MODES.CREATE ? (
+                  <p className="mt-2 text-xs text-blue-700">
+                    You are creating a new event. Save Event will create a fresh event under this dashboard access code.
+                  </p>
+                ) : (
+                  <p className="mt-2 text-xs text-blue-700">
+                    Editing event: {String(summary?.event?.eventName || "Selected event")}
+                  </p>
+                )}
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <p className="break-all"><span className="font-semibold">Public Event Link:</span> {summary.event.slug ? `${window.location.origin}/e/${summary.event.slug}` : "Not available"}</p>
+                  {summary.event.slug ? (
+                    <button
+                      type="button"
+                      className="rounded border px-2 py-1 text-xs disabled:opacity-60"
+                      disabled={noDeliverableTickets}
+                      onClick={() => {
+                        if (noDeliverableTickets) {
+                          setFeedback({
+                            kind: "error",
+                            message:
+                              pendingRequestedCount > 0
+                                ? "You have no free tickets to deliver right now because pending public requests reserved them."
+                                : "You have no more tickets to deliver and downloaded all tickets. Generate more before sharing public link.",
+                          });
+                          return;
+                        }
+                        navigator.clipboard.writeText(`${window.location.origin}/e/${summary.event.slug}`);
+                        setFeedback({ kind: "success", message: "Public event link copied." });
+                      }}
+                    >
+                      Copy
+                    </button>
                   ) : null}
                 </div>
+                {noDeliverableTickets ? (
+                  <p className="mt-2 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+                    {pendingRequestedCount > 0
+                      ? "You have no free tickets to deliver right now because pending public requests reserved them."
+                      : "You have no more tickets to deliver and downloaded all tickets. Please generate more before sharing this link."}
+                  </p>
+                ) : null}
+                {summary.event.slug ? (
+                  <div className="mt-3">
+                    <button
+                      type="button"
+                      className="inline-flex rounded border bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                      onClick={() => setShowPublicPreview((prev) => !prev)}
+                    >
+                      {showPublicPreview ? "Hide" : "Preview Public Event Page"}
+                    </button>
+                  </div>
+                ) : null}
+              </section>
+              {summary.event.slug && showPublicPreview ? (
+                <PublicEventExperience eventSlug={summary.event.slug} previewMode />
               ) : null}
-            </section>
+            </>
           ) : null}
 
           {activeMenu === "tickets" ? (
@@ -1154,6 +1308,28 @@ export default function Dashboard() {
                       <p className="text-[11px] uppercase tracking-wide text-slate-500">Scanned At</p>
                       <p className="mt-1 font-medium text-slate-900">{formatDate(ticket.scannedAt)}</p>
                     </div>
+                    <div className="mt-2 rounded border bg-slate-50 p-2 text-xs">
+                      <p className="text-[11px] uppercase tracking-wide text-slate-500">Cancellations</p>
+                      {isTicketSold(ticket) ? (
+                        <button
+                          type="button"
+                          className={`mt-1 rounded border px-2 py-1 text-xs ${isTicketCancelled(ticket) ? "opacity-60" : ""}`}
+                          onClick={() => openCancelTicketModal(ticket)}
+                        >
+                          {isTicketCancelled(ticket) ? `Cancelled at ${formatDate(ticket.cancelledAt || ticket.invalidatedAt)}` : "Cancel Ticket"}
+                        </button>
+                      ) : (
+                        <p className="mt-1 font-medium text-slate-900">-</p>
+                      )}
+                      {isTicketCancelled(ticket) ? (
+                        <p className="mt-1 text-[11px] text-slate-600">
+                          {resolveCancellationReasonLabel(ticket.cancellationReason, ticket.cancellationOtherReason)}
+                        </p>
+                      ) : null}
+                      {ticketCancelError.ticketPublicId === ticket.ticketPublicId && ticketCancelError.message ? (
+                        <p className="mt-1 text-xs text-red-600">{ticketCancelError.message}</p>
+                      ) : null}
+                    </div>
                     <button
                       className={`mt-2 rounded border px-2 py-1 text-xs ${resolveDeliveryMethodLabel(ticket) !== "NOT_DELIVERED" ? "opacity-60" : ""}`}
                       title={resolveDeliveryMethodLabel(ticket) !== "NOT_DELIVERED" ? `cant copy! ticket already delivered through ${resolveDeliveryMethodErrorLabel(resolveDeliveryMethodLabel(ticket))}.` : "Copy ticket URL"}
@@ -1169,8 +1345,8 @@ export default function Dashboard() {
                 {!pagedTickets.length ? <p className="text-sm text-slate-500">No tickets for selected filters.</p> : null}
               </div>
               <div className="mt-3 hidden overflow-x-auto rounded border lg:block">
-                <table className="w-full min-w-[860px] text-left text-sm">
-                  <thead className="bg-slate-100"><tr><th className="p-2">Ticket ID</th><th className="p-2">Ticket Type</th><th className="p-2">Buyer</th><th className="p-2">Sold</th><th className="p-2">Status</th><th className="p-2">Delivery Method</th><th className="p-2">Scanned At</th><th className="p-2">Copy</th></tr></thead>
+                  <table className="w-full min-w-[980px] text-left text-sm">
+                    <thead className="bg-slate-100"><tr><th className="p-2">Ticket ID</th><th className="p-2">Ticket Type</th><th className="p-2">Buyer</th><th className="p-2">Sold</th><th className="p-2">Status</th><th className="p-2">Delivery Method</th><th className="p-2">Scanned At</th><th className="p-2">Cancellations</th><th className="p-2">Copy</th></tr></thead>
                   <tbody>
                     {pagedTickets.map((ticket) => (
                       <tr key={ticket.ticketPublicId} className="border-t">
@@ -1181,6 +1357,29 @@ export default function Dashboard() {
                         <td className="p-2">{ticket.status}</td>
                         <td className="p-2">{resolveDeliveryMethodLabel(ticket)}</td>
                         <td className="p-2">{formatDate(ticket.scannedAt)}</td>
+                        <td className="p-2">
+                          {isTicketSold(ticket) ? (
+                            <>
+                              <button
+                                type="button"
+                                className={`rounded border px-2 py-1 text-xs ${isTicketCancelled(ticket) ? "opacity-60" : ""}`}
+                                onClick={() => openCancelTicketModal(ticket)}
+                              >
+                                {isTicketCancelled(ticket) ? `Cancelled at ${formatDate(ticket.cancelledAt || ticket.invalidatedAt)}` : "Cancel Ticket"}
+                              </button>
+                              {isTicketCancelled(ticket) ? (
+                                <p className="mt-1 text-xs text-slate-600">
+                                  {resolveCancellationReasonLabel(ticket.cancellationReason, ticket.cancellationOtherReason)}
+                                </p>
+                              ) : null}
+                              {ticketCancelError.ticketPublicId === ticket.ticketPublicId && ticketCancelError.message ? (
+                                <p className="mt-1 text-xs text-red-600">{ticketCancelError.message}</p>
+                              ) : null}
+                            </>
+                          ) : (
+                            "-"
+                          )}
+                        </td>
                         <td className="p-2">
                           <button
                             className={`rounded border px-2 py-1 text-xs ${resolveDeliveryMethodLabel(ticket) !== "NOT_DELIVERED" ? "opacity-60" : ""}`}
@@ -1197,7 +1396,7 @@ export default function Dashboard() {
                     ))}
                     {!pagedTickets.length ? (
                       <tr className="border-t">
-                        <td className="p-3 text-slate-500" colSpan={8}>No tickets for selected filters.</td>
+                        <td className="p-3 text-slate-500" colSpan={9}>No tickets for selected filters.</td>
                       </tr>
                     ) : null}
                   </tbody>
@@ -1321,6 +1520,7 @@ export default function Dashboard() {
                 {ticketRequests.map((item) => {
                   const selections = Array.isArray(item.ticketSelections) ? item.ticketSelections : [];
                   const isApproved = item.status === "APPROVED";
+                  const isCancelled = item.status === "CANCELLED";
                   const isApproving = approvingRequestIds.has(item.id);
                   return (
                     <article key={item.id} className="rounded border bg-white p-3 text-sm">
@@ -1348,13 +1548,13 @@ export default function Dashboard() {
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2">
                         <AppButton
-                          className={`px-2 py-1 text-xs ${isApproved ? "opacity-70" : ""}`}
-                          variant={isApproved ? "secondary" : "success"}
+                          className={`px-2 py-1 text-xs ${isApproved || isCancelled ? "opacity-70" : ""}`}
+                          variant={isApproved || isCancelled ? "secondary" : "success"}
                           onClick={() => approveRequest(item.id)}
                           loading={isApproving}
                           loadingText="Approving..."
                         >
-                          {isApproved ? "Approved" : "Approve"}
+                          {isCancelled ? "Cancelled" : isApproved ? "Approved" : "Approve"}
                         </AppButton>
                         <AppButton className="px-2 py-1 text-xs" variant="secondary" onClick={() => openRequestChat(item)}>
                           Message buyer{item.unreadClientMessages ? ` (${item.unreadClientMessages})` : ""}
@@ -1384,6 +1584,7 @@ export default function Dashboard() {
                     {ticketRequests.map((item) => {
                       const selections = Array.isArray(item.ticketSelections) ? item.ticketSelections : [];
                       const isApproved = item.status === "APPROVED";
+                      const isCancelled = item.status === "CANCELLED";
                       const isApproving = approvingRequestIds.has(item.id);
                       return (
                         <tr key={item.id} className="border-t align-top">
@@ -1413,13 +1614,13 @@ export default function Dashboard() {
                           <td className="p-2">
                             <div className="flex flex-wrap gap-2">
                               <AppButton
-                                className={`px-2 py-1 text-xs ${isApproved ? "opacity-70" : ""}`}
-                                variant={isApproved ? "secondary" : "success"}
+                                className={`px-2 py-1 text-xs ${isApproved || isCancelled ? "opacity-70" : ""}`}
+                                variant={isApproved || isCancelled ? "secondary" : "success"}
                                 onClick={() => approveRequest(item.id)}
                                 loading={isApproving}
                                 loadingText="Approving..."
                               >
-                                {isApproved ? "Approved" : "Approve"}
+                                {isCancelled ? "Cancelled" : isApproved ? "Approved" : "Approve"}
                               </AppButton>
                               <AppButton className="px-2 py-1 text-xs" variant="secondary" onClick={() => openRequestChat(item)}>
                                 Message buyer{item.unreadClientMessages ? ` (${item.unreadClientMessages})` : ""}
@@ -1482,6 +1683,83 @@ export default function Dashboard() {
             </section>
           ) : null}
 
+          {cancelModal.open ? (
+            <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-3 sm:items-center">
+              <section className="w-full max-w-lg rounded border bg-white p-4 shadow-xl">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold">Cancel Ticket</p>
+                    <p className="text-xs text-slate-500">{cancelModal.ticket?.ticketPublicId || "-"}</p>
+                  </div>
+                  <AppButton type="button" variant="secondary" className="px-2 py-1 text-xs" onClick={closeCancelModal} disabled={cancelModal.loading}>
+                    Close
+                  </AppButton>
+                </div>
+
+                {cancelModal.step === "form" ? (
+                  <>
+                    <div className="mt-3 space-y-3 text-sm">
+                      <div>
+                        <p className="font-medium">Reason for cancellation</p>
+                        <div className="mt-2 space-y-2">
+                          {CANCELLATION_REASON_OPTIONS.map((option) => (
+                            <label key={option.value} className="flex items-center gap-2">
+                              <input
+                                type="radio"
+                                name="ticket-cancel-reason"
+                                value={option.value}
+                                checked={cancelModal.reason === option.value}
+                                onChange={(event) => setCancelModal((prev) => ({ ...prev, reason: event.target.value, error: "" }))}
+                              />
+                              <span>{option.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+
+                      {resolveDeliveryMethodLabel(cancelModal.ticket) === "PUBLIC EVENT PAGE" ? (
+                        <div>
+                          <p className="font-medium">Cancellation evidence</p>
+                          <input className="mt-2 w-full rounded border p-2 text-sm" type="file" accept="image/png,image/jpeg,image/webp" onChange={onCancelEvidenceFileChange} />
+                          {cancelModal.evidenceName ? <p className="mt-1 text-xs text-slate-600">{cancelModal.evidenceName}</p> : null}
+                          {cancelModal.evidenceImageDataUrl ? (
+                            <button type="button" className="mt-2 inline-block" onClick={() => openEvidenceImage(cancelModal.evidenceImageDataUrl)}>
+                              <img src={cancelModal.evidenceImageDataUrl} alt="Cancellation evidence preview" className="h-16 w-16 rounded border object-cover" />
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                    {cancelModal.error ? <p className="mt-3 text-sm text-red-600">{cancelModal.error}</p> : null}
+                    <div className="mt-4 flex justify-end gap-2">
+                      <AppButton type="button" variant="secondary" onClick={closeCancelModal} disabled={cancelModal.loading}>
+                        Go Back
+                      </AppButton>
+                      <AppButton type="button" variant="danger" onClick={continueCancelModal} disabled={cancelModal.loading}>
+                        Cancel Ticket
+                      </AppButton>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p className="mt-3 text-sm text-amber-900">
+                      This action cannot be undone. Proceed with cancelling this ticket?
+                    </p>
+                    {cancelModal.error ? <p className="mt-3 text-sm text-red-600">{cancelModal.error}</p> : null}
+                    <div className="mt-4 flex justify-end gap-2">
+                      <AppButton type="button" variant="secondary" onClick={() => setCancelModal((prev) => ({ ...prev, step: "form", error: "" }))} disabled={cancelModal.loading}>
+                        Go Back
+                      </AppButton>
+                      <AppButton type="button" variant="danger" onClick={submitTicketCancellation} loading={cancelModal.loading} loadingText="Cancelling...">
+                        Proceed
+                      </AppButton>
+                    </div>
+                  </>
+                )}
+              </section>
+            </div>
+          ) : null}
+
           {chatContext ? (
             <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-3 sm:items-center">
               <section className="w-full max-w-xl rounded border bg-white p-3 shadow-xl">
@@ -1506,6 +1784,11 @@ export default function Dashboard() {
                           <div key={message.id} className={`flex ${isOrganizer ? "justify-end" : "justify-start"}`}>
                             <div className={`max-w-[85%] rounded px-2 py-1 text-xs ${isOrganizer ? "bg-indigo-600 text-white" : "bg-white text-slate-900 border"}`}>
                               <p>{message.message}</p>
+                              {message.evidenceImageDataUrl ? (
+                                <button type="button" className="mt-2 block" onClick={() => openEvidenceImage(message.evidenceImageDataUrl)}>
+                                  <img src={message.evidenceImageDataUrl} alt="Chat evidence" className="h-20 w-20 rounded border object-cover" />
+                                </button>
+                              ) : null}
                               <p className={`mt-1 text-[10px] ${isOrganizer ? "text-indigo-100" : "text-slate-500"}`}>
                                 {formatDate(message.createdAt)}
                               </p>

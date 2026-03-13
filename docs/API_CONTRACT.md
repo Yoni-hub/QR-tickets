@@ -113,3 +113,5 @@ Admin action APIs:
 - 2026-03-10: Updated scan contract and organizer access-code based scanner/event selection behavior
 
 - 2026-03-11: Updated scan and event behavior: cross-organizer ticket scans are always INVALID without ticket details, generation is allowed after prior deliveries, and ticket delivery method mapping includes PUBLIC_EVENT_PAGE.
+
+- 2026-03-13: Added organizer ticket cancellation API route and expanded ticket/client-dashboard payloads with cancellation metadata and message evidence fields.
