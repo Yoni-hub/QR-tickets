@@ -12,12 +12,16 @@ const DELIVERY_METHODS = {
   EMAIL_LINK: "EMAIL_LINK",
 };
 
-const DASHBOARD_MENUS = [
+const DASHBOARD_MENUS_ALL = [
   { id: "events", label: "Events" },
   { id: "tickets", label: "Tickets" },
   { id: "delivery", label: "Delivery Method" },
   { id: "requests", label: "Ticket Requests" },
   { id: "promoters", label: "Promoters" },
+];
+
+const DASHBOARD_MENUS_PRELOAD = [
+  { id: "events", label: "Events" },
 ];
 
 const PDF_TICKETS_PER_PAGE_OPTIONS = [1, 2, 3, 4];
@@ -226,7 +230,7 @@ export default function Dashboard() {
   const [summary, setSummary] = useState(null);
   const [events, setEvents] = useState([]);
   const [selectedEventId, setSelectedEventId] = useState("");
-  const [eventEditMode, setEventEditMode] = useState(EVENT_EDIT_MODES.EDIT);
+  const [eventEditMode, setEventEditMode] = useState(EVENT_EDIT_MODES.CREATE);
   const [eventDraft, setEventDraft] = useState({ organizerName: "", eventName: "", eventDate: "", eventAddress: "", paymentInstructions: "" });
   const [savingEvent, setSavingEvent] = useState(false);
   const [savingTicketDraft, setSavingTicketDraft] = useState(false);
@@ -274,6 +278,11 @@ export default function Dashboard() {
     loading: false,
     error: "",
   });
+  const [generatedOrganizerCodeModal, setGeneratedOrganizerCodeModal] = useState({
+    open: false,
+    code: "",
+    copied: false,
+  });
   const ticketEditorDraftRef = useRef(null);
 
   const recipientList = parseRecipientEmails(recipientEmails);
@@ -299,6 +308,7 @@ export default function Dashboard() {
       : renderEmailHtmlPreview(previewBody, sampleData.ticketUrl);
 
   const accessCode = useMemo(() => code.trim(), [code]);
+  const visibleMenus = summary ? DASHBOARD_MENUS_ALL : DASHBOARD_MENUS_PRELOAD;
   const ticketTypeOptions = useMemo(
     () =>
       Array.from(
@@ -894,7 +904,7 @@ export default function Dashboard() {
   };
 
   const saveEventInline = async () => {
-    if (!accessCode || savingEvent) return;
+    if (savingEvent) return;
     if (
       !eventDraft.eventName.trim() ||
       !eventDraft.eventDate ||
@@ -909,6 +919,32 @@ export default function Dashboard() {
     setSavingEvent(true);
     try {
       if (eventEditMode === EVENT_EDIT_MODES.CREATE) {
+        if (!accessCode) {
+          const response = await api.post("/events", {
+            organizerName: eventDraft.organizerName,
+            eventName: eventDraft.eventName,
+            eventDateTime: eventDraft.eventDate,
+            eventAddress: eventDraft.eventAddress,
+            paymentInstructions: eventDraft.paymentInstructions,
+            generateAccessOnly: true,
+          });
+          const nextOrganizerCode = String(
+            response.data?.organizerAccessCode || response.data?.accessCode || "",
+          ).trim();
+          if (!nextOrganizerCode) {
+            throw new Error("Organizer code was not generated.");
+          }
+          setCode(nextOrganizerCode);
+          await loadDashboard(nextOrganizerCode, response.data?.eventId);
+          setGeneratedOrganizerCodeModal({
+            open: true,
+            code: nextOrganizerCode,
+            copied: false,
+          });
+          setFeedback({ kind: "success", message: "Event created and organizer code generated." });
+          return;
+        }
+
         const response = await api.post(`/events/by-code/${encodeURIComponent(accessCode)}/create-new`, {
           organizerName: eventDraft.organizerName,
           eventName: eventDraft.eventName,
@@ -981,6 +1017,17 @@ export default function Dashboard() {
     });
   };
 
+  const closeOrganizerCodeModal = () => {
+    setGeneratedOrganizerCodeModal((prev) => ({ ...prev, open: false, copied: false }));
+  };
+
+  const copyOrganizerCode = async () => {
+    const value = String(generatedOrganizerCodeModal.code || "").trim();
+    if (!value) return;
+    await navigator.clipboard.writeText(value);
+    setGeneratedOrganizerCodeModal((prev) => ({ ...prev, copied: true }));
+  };
+
   const selectExistingEvent = async (eventId) => {
     if (!eventId || !accessCode || eventId === selectedEventId) return;
     const storageKey = getSelectedEventStorageKey(accessCode);
@@ -1039,31 +1086,31 @@ export default function Dashboard() {
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-2xl font-bold sm:text-3xl">Dashboard</h1>
         <span className="rounded border bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">
-          Current Access Code: <span className="font-mono">{accessCode || "-"}</span>
+          Organizer Code: <span className="font-mono">{accessCode || "-"}</span>
         </span>
       </div>
       <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-        <input className="w-full rounded border p-2" value={code} onChange={(e) => setCode(e.target.value)} placeholder="Access code" />
+        <input className="w-full rounded border p-2" value={code} onChange={(e) => setCode(e.target.value)} placeholder="Organizer code (optional - load existing dashboard)" />
         <AppButton onClick={load} loading={loading} loadingText="Loading..." variant="primary">Load</AppButton>
       </div>
 
       <FeedbackBanner className="mt-3" kind={feedback.kind} message={feedback.message} />
 
+      <div className="mt-4 flex flex-wrap items-center gap-2 text-sm font-semibold">
+        {visibleMenus.map((menu) => (
+          <button
+            key={menu.id}
+            type="button"
+            onClick={() => setActiveMenu(menu.id)}
+            className={`rounded border px-3 py-1.5 ${activeMenu === menu.id ? "bg-slate-900 text-white" : "bg-white text-slate-800"}`}
+          >
+            {menu.label}
+          </button>
+        ))}
+      </div>
+
       {summary ? (
         <>
-          <div className="mt-4 flex flex-wrap items-center gap-2 text-sm font-semibold">
-            {DASHBOARD_MENUS.map((menu) => (
-              <button
-                key={menu.id}
-                type="button"
-                onClick={() => setActiveMenu(menu.id)}
-                className={`rounded border px-3 py-1.5 ${activeMenu === menu.id ? "bg-slate-900 text-white" : "bg-white text-slate-800"}`}
-              >
-                {menu.label}
-              </button>
-            ))}
-          </div>
-
           {activeMenu === "events" ? (
             <>
               <section className="mt-4 rounded border p-4">
@@ -1841,6 +1888,88 @@ export default function Dashboard() {
             </div>
           ) : null}
         </>
+      ) : (
+        <section className="mt-4 rounded border p-4">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-[100px_1fr] sm:items-center">
+            <p className="font-semibold">Organizer:</p>
+            <input
+              className="w-full rounded border p-2 text-sm"
+              value={eventDraft.organizerName}
+              onChange={(e) => setEventDraft((prev) => ({ ...prev, organizerName: e.target.value }))}
+              placeholder="Organizer or brand name"
+            />
+            <p className="font-semibold">Event Name:</p>
+            <input
+              className="w-full rounded border p-2 text-sm"
+              value={eventDraft.eventName}
+              onChange={(e) => setEventDraft((prev) => ({ ...prev, eventName: e.target.value }))}
+            />
+            <p className="font-semibold">Date:</p>
+            <input
+              type="datetime-local"
+              className="w-full rounded border p-2 text-sm"
+              value={eventDraft.eventDate}
+              onChange={(e) => setEventDraft((prev) => ({ ...prev, eventDate: e.target.value }))}
+            />
+            <p className="font-semibold">Location:</p>
+            <input
+              className="w-full rounded border p-2 text-sm"
+              value={eventDraft.eventAddress}
+              onChange={(e) => setEventDraft((prev) => ({ ...prev, eventAddress: e.target.value }))}
+            />
+            <p className="font-semibold">Payment:</p>
+            <textarea
+              className="w-full rounded border p-2 text-sm"
+              rows={3}
+              placeholder="How should clients pay? (e.g. CashApp $..., Zelle ..., bank transfer...)"
+              value={eventDraft.paymentInstructions}
+              onChange={(e) => setEventDraft((prev) => ({ ...prev, paymentInstructions: e.target.value }))}
+            />
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <AppButton className="" onClick={saveEventInline} loading={savingEvent} loadingText="Saving...">
+              Save Event
+            </AppButton>
+          </div>
+        </section>
+      )}
+
+      {generatedOrganizerCodeModal.open ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-3 sm:items-center">
+          <section className="w-full max-w-xl rounded border bg-white p-4 shadow-xl">
+            <p className="text-lg font-semibold">Your organizer code has been generated.</p>
+            <div className="mt-3 rounded border bg-slate-50 p-3">
+              <p className="text-sm font-semibold">Organizer Code</p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <code className="rounded bg-white px-2 py-1 font-mono text-sm">{generatedOrganizerCodeModal.code}</code>
+                <AppButton type="button" variant="secondary" className="px-2 py-1 text-xs" onClick={copyOrganizerCode}>
+                  {generatedOrganizerCodeModal.copied ? "Copied" : "Copy"}
+                </AppButton>
+              </div>
+            </div>
+            <div className="mt-4 space-y-1 text-sm text-slate-700">
+              <p className="font-semibold">Use this code to:</p>
+              <p>✓ Unlock your dashboard and continue generating tickets.</p>
+              <p>✓ Deliver QR tickets to your customers.</p>
+              <p>✓ Unlock the QR scanner and validate tickets at the event.</p>
+            </div>
+            <div className="mt-4 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+              <p><span className="font-semibold">Important:</span></p>
+              <p>
+                This code is extremely important. Please save it and <strong>do not share it with anyone you do not trust.</strong>
+              </p>
+              <p className="mt-2">
+                - If you lose this code, you will lose access to your events and tickets. <strong>There is no way to recover it.</strong>
+              </p>
+              <p>- If the code is lost, you will need to create a new event and generate new tickets.</p>
+            </div>
+            <div className="mt-4 flex justify-end">
+              <AppButton type="button" variant="primary" onClick={closeOrganizerCodeModal}>
+                I saved the code
+              </AppButton>
+            </div>
+          </section>
+        </div>
       ) : null}
     </main>
   );
