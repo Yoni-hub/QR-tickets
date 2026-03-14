@@ -10,6 +10,7 @@ import PublicEventExperience from "../components/public/PublicEventExperience";
 const DELIVERY_METHODS = {
   PDF: "PDF",
   EMAIL_LINK: "EMAIL_LINK",
+  PUBLIC_EVENT_LINK: "PUBLIC_EVENT_LINK",
 };
 
 const DASHBOARD_MENUS_ALL = [
@@ -258,7 +259,7 @@ export default function Dashboard() {
   const [showEmailPreview, setShowEmailPreview] = useState(true);
   const [sendSummary, setSendSummary] = useState(null);
   const [feedback, setFeedback] = useState({ kind: "", message: "" });
-  const [promoterForm, setPromoterForm] = useState({ name: "", code: "" });
+  const [promoterForm, setPromoterForm] = useState({ name: "" });
   const [chatContext, setChatContext] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState("");
@@ -283,7 +284,13 @@ export default function Dashboard() {
     code: "",
     copied: false,
   });
+  const [deliveryWarningModal, setDeliveryWarningModal] = useState({
+    open: false,
+    action: "",
+    payload: null,
+  });
   const ticketEditorDraftRef = useRef(null);
+  const feedbackRef = useRef(null);
 
   const recipientList = parseRecipientEmails(recipientEmails);
   const sampleRecipient = recipientList[0] || "customer@example.com";
@@ -308,6 +315,9 @@ export default function Dashboard() {
       : renderEmailHtmlPreview(previewBody, sampleData.ticketUrl);
 
   const accessCode = useMemo(() => code.trim(), [code]);
+  const isAccessCodeGenerationMode = !accessCode;
+  const eventPrimaryActionLabel = isAccessCodeGenerationMode ? "Generate Access Code" : "Save Event";
+  const eventPrimaryLoadingLabel = isAccessCodeGenerationMode ? "Generating..." : "Saving...";
   const visibleMenus = summary ? DASHBOARD_MENUS_ALL : DASHBOARD_MENUS_PRELOAD;
   const ticketTypeOptions = useMemo(
     () =>
@@ -421,6 +431,10 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [chatContext?.id, accessCode]);
   useEffect(() => {
+    if (!feedback.message) return;
+    feedbackRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [feedback.kind, feedback.message]);
+  useEffect(() => {
     setPdfTicketCount((prev) => {
       if (deliverableCount < 1) return 1;
       return Math.min(Math.max(1, Number(prev) || 1), deliverableCount);
@@ -527,7 +541,12 @@ export default function Dashboard() {
   }, [loading, setParams, applySummaryEvent]);
 
   const load = async () => {
-    await loadDashboard(code.trim());
+    const trimmedCode = code.trim();
+    if (!trimmedCode) {
+      setFeedback({ kind: "info", message: "New here? Fill in your event details to generate your access code." });
+      return;
+    }
+    await loadDashboard(trimmedCode);
   };
 
   const copyTicketUrl = async (ticket) => {
@@ -755,9 +774,8 @@ export default function Dashboard() {
         accessCode,
         eventId: summary?.event?.id,
         name: promoterForm.name,
-        code: promoterForm.code,
       });
-      setPromoterForm({ name: "", code: "" });
+      setPromoterForm({ name: "" });
       await loadRequestsAndPromoters(accessCode, summary?.event?.id);
       setFeedback({ kind: "success", message: "Promoter added." });
     } catch (requestError) {
@@ -777,10 +795,14 @@ export default function Dashboard() {
     }
   };
 
-  const downloadPdf = async () => {
+  const downloadPdf = async (skipWarning = false) => {
     if (!summary?.event?.id || downloading) return;
     if (deliverableCount < 1) {
       setFeedback({ kind: "error", message: "You downloaded all your tickets. Please generate more tickets." });
+      return;
+    }
+    if (!skipWarning) {
+      openDeliveryWarningModal("download-pdf");
       return;
     }
     const safeCount = Math.min(Math.max(1, Number.parseInt(String(pdfTicketCount || 1), 10) || 1), deliverableCount);
@@ -828,7 +850,7 @@ export default function Dashboard() {
     }
   };
 
-  const sendTicketLinks = async () => {
+  const sendTicketLinks = async (skipWarning = false) => {
     if (!accessCode || sending) return;
     if (!deliveryTicketType) {
       setFeedback({ kind: "error", message: "Select a ticket type first." });
@@ -840,6 +862,10 @@ export default function Dashboard() {
     }
     if (!emailSubject.trim() || !emailBody.trim()) {
       setFeedback({ kind: "error", message: "Email subject and body cannot be empty." });
+      return;
+    }
+    if (!skipWarning) {
+      openDeliveryWarningModal("send-ticket-links");
       return;
     }
 
@@ -900,7 +926,29 @@ export default function Dashboard() {
   const handleTicketsGenerated = async () => {
     if (!summary?.event?.id || !accessCode) return;
     await loadDashboard(accessCode, summary.event.id);
+    setActiveMenu("tickets");
     setTicketPage(1);
+  };
+
+  const confirmDeliveryWarningModal = async () => {
+    const { action, payload } = deliveryWarningModal;
+    closeDeliveryWarningModal();
+
+    if (action === "copy-public-event-link") {
+      await copyPublicEventLink(true);
+      return;
+    }
+    if (action === "download-pdf") {
+      await downloadPdf(true);
+      return;
+    }
+    if (action === "send-ticket-links") {
+      await sendTicketLinks(true);
+      return;
+    }
+    if (action === "copy-promoter-link") {
+      await copyPromoterLink(payload?.promoterLink, true);
+    }
   };
 
   const saveEventInline = async () => {
@@ -1090,11 +1138,13 @@ export default function Dashboard() {
         </span>
       </div>
       <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-        <input className="w-full rounded border p-2" value={code} onChange={(e) => setCode(e.target.value)} placeholder="Organizer code (optional - load existing dashboard)" />
+        <input className="w-full rounded border p-2" value={code} onChange={(e) => setCode(e.target.value)} placeholder="Enter your organizer access code" />
         <AppButton onClick={load} loading={loading} loadingText="Loading..." variant="primary">Load</AppButton>
       </div>
 
-      <FeedbackBanner className="mt-3" kind={feedback.kind} message={feedback.message} />
+      <div ref={feedbackRef}>
+        <FeedbackBanner className="mt-3" kind={feedback.kind} message={feedback.message} />
+      </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-2 text-sm font-semibold">
         {visibleMenus.map((menu) => (
@@ -1108,6 +1158,11 @@ export default function Dashboard() {
           </button>
         ))}
       </div>
+      {!summary ? (
+        <p className="mt-2 text-xs text-blue-700">
+          Fill in your event details. You can update them anytime.
+        </p>
+      ) : null}
 
       {summary ? (
         <>
@@ -1155,17 +1210,20 @@ export default function Dashboard() {
                     onChange={(e) => setEventDraft((prev) => ({ ...prev, eventAddress: e.target.value }))}
                   />
                   <p className="font-semibold">Payment:</p>
-                  <textarea
-                    className="w-full rounded border p-2 text-sm"
-                    rows={3}
-                    placeholder="How should clients pay? (e.g. CashApp $..., Zelle ..., bank transfer...)"
-                    value={eventDraft.paymentInstructions}
-                    onChange={(e) => setEventDraft((prev) => ({ ...prev, paymentInstructions: e.target.value }))}
-                  />
+                  <div>
+                    <textarea
+                      className="w-full rounded border p-2 text-sm"
+                      rows={3}
+                      placeholder="How should clients pay? (e.g. CashApp $..., Zelle ..., bank transfer...)"
+                      value={eventDraft.paymentInstructions}
+                      onChange={(e) => setEventDraft((prev) => ({ ...prev, paymentInstructions: e.target.value }))}
+                    />
+                    <p className="mt-1 text-xs text-slate-500">Leave this blank for free events.</p>
+                  </div>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <AppButton className="" onClick={saveEventInline} loading={savingEvent} loadingText="Saving...">
-                    Save Event
+                  <AppButton className="" onClick={saveEventInline} loading={savingEvent} loadingText={eventPrimaryLoadingLabel}>
+                    {eventPrimaryActionLabel}
                   </AppButton>
                   <AppButton type="button" variant="secondary" onClick={switchToCreateEventMode}>
                     Add New Event
@@ -1182,7 +1240,9 @@ export default function Dashboard() {
                 </div>
                 {eventEditMode === EVENT_EDIT_MODES.CREATE ? (
                   <p className="mt-2 text-xs text-blue-700">
-                    You are creating a new event. Save Event will create a fresh event under this dashboard access code.
+                    {isAccessCodeGenerationMode
+                      ? "Generate your access code to start editing and sending QR tickets to your clients."
+                      : "You are creating a new event. Save Event will create a fresh event under this dashboard access code."}
                   </p>
                 ) : (
                   <p className="mt-2 text-xs text-blue-700">
@@ -1197,18 +1257,7 @@ export default function Dashboard() {
                       className="rounded border px-2 py-1 text-xs disabled:opacity-60"
                       disabled={noDeliverableTickets}
                       onClick={() => {
-                        if (noDeliverableTickets) {
-                          setFeedback({
-                            kind: "error",
-                            message:
-                              pendingRequestedCount > 0
-                                ? "You have no free tickets to deliver right now because pending public requests reserved them."
-                                : "You have no more tickets to deliver and downloaded all tickets. Generate more before sharing public link.",
-                          });
-                          return;
-                        }
-                        navigator.clipboard.writeText(`${window.location.origin}/e/${summary.event.slug}`);
-                        setFeedback({ kind: "success", message: "Public event link copied." });
+                        void copyPublicEventLink();
                       }}
                     >
                       Copy
@@ -1484,6 +1533,10 @@ export default function Dashboard() {
                 <input type="radio" name="deliveryMethod" value={DELIVERY_METHODS.EMAIL_LINK} checked={deliveryMethod === DELIVERY_METHODS.EMAIL_LINK} onChange={(event) => setDeliveryMethod(event.target.value)} />
                 <span>Send by email (links)</span>
               </label>
+              <label className="mt-2 flex items-center gap-2 text-sm">
+                <input type="radio" name="deliveryMethod" value={DELIVERY_METHODS.PUBLIC_EVENT_LINK} checked={deliveryMethod === DELIVERY_METHODS.PUBLIC_EVENT_LINK} onChange={(event) => setDeliveryMethod(event.target.value)} />
+                <span>Public event link</span>
+              </label>
 
               {deliveryMethod === DELIVERY_METHODS.PDF ? (
                 <div className="mt-3">
@@ -1548,6 +1601,32 @@ export default function Dashboard() {
                   </div>
 
                   <AppButton className="mt-3" variant="indigo" onClick={sendTicketLinks} loading={sending} loadingText="Sending...">Send tickets</AppButton>
+                </div>
+              ) : null}
+
+              {deliveryMethod === DELIVERY_METHODS.PUBLIC_EVENT_LINK ? (
+                <div className="mt-3">
+                  <p className="text-sm text-slate-700">
+                    Share your public event link so guests can request tickets directly.
+                  </p>
+                  <p className="mt-2 break-all rounded border bg-slate-50 p-2 text-xs text-slate-700">
+                    {summary?.event?.slug ? `${window.location.origin}/e/${summary.event.slug}` : "Public event link is not available yet."}
+                  </p>
+                  <AppButton
+                    className="mt-3"
+                    variant="secondary"
+                    onClick={() => void copyPublicEventLink()}
+                    disabled={!summary?.event?.slug || noDeliverableTickets}
+                  >
+                    Copy Public Event Link
+                  </AppButton>
+                  {noDeliverableTickets ? (
+                    <p className="mt-2 text-xs text-amber-700">
+                      {pendingRequestedCount > 0
+                        ? "You have no free tickets to deliver right now because pending public requests reserved them."
+                        : "You have no more tickets to deliver and downloaded all tickets. Generate more before sharing this link."}
+                    </p>
+                  ) : null}
                 </div>
               ) : null}
 
@@ -1693,9 +1772,11 @@ export default function Dashboard() {
               <p className="text-sm font-semibold">Promoters</p>
               <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <input className="rounded border p-2" placeholder="Name" value={promoterForm.name} onChange={(e) => setPromoterForm((prev) => ({ ...prev, name: e.target.value }))} />
-                <input className="rounded border p-2" placeholder="Code (optional)" value={promoterForm.code} onChange={(e) => setPromoterForm((prev) => ({ ...prev, code: e.target.value }))} />
               </div>
               <AppButton className="mt-3" onClick={addPromoter}>Add Promoter</AppButton>
+              <p className="mt-2 text-xs text-slate-600">
+                Add a promoter name to generate a tracking link and measure how many guests each promoter brings.
+              </p>
 
               <div className="mt-4 space-y-2">
                 {promoters.map((promoter) => (
@@ -1707,7 +1788,7 @@ export default function Dashboard() {
                     <p className="mt-1 break-all text-xs">{promoter.link}</p>
                     <p className="mt-1 text-xs">Requests: {promoter.requestCount} | Approved: {promoter.approvedTickets} | Scanned: {promoter.scannedEntries}</p>
                     <div className="mt-2 flex flex-wrap gap-2">
-                      <button className="rounded border px-2 py-1 text-xs" onClick={() => navigator.clipboard.writeText(promoter.link)}>Copy Link</button>
+                      <button className="rounded border px-2 py-1 text-xs" onClick={() => void copyPromoterLink(promoter.link)}>Copy Link</button>
                       <button className="rounded border px-2 py-1 text-xs" onClick={() => deletePromoter(promoter.id)}>Delete</button>
                     </div>
                   </article>
@@ -1872,6 +1953,25 @@ export default function Dashboard() {
             </div>
           ) : null}
 
+          {deliveryWarningModal.open ? (
+            <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-3 sm:items-center">
+              <section className="w-full max-w-lg rounded border bg-white p-4 shadow-xl">
+                <p className="text-sm font-semibold">Before You Continue</p>
+                <p className="mt-2 text-sm text-slate-700">
+                  Once you deliver a ticket, you cannot change organizer, event, or ticket details. Make sure everything is final.
+                </p>
+                <div className="mt-4 flex justify-end gap-2">
+                  <AppButton type="button" variant="secondary" onClick={closeDeliveryWarningModal}>
+                    Go Back
+                  </AppButton>
+                  <AppButton type="button" variant="primary" onClick={() => void confirmDeliveryWarningModal()}>
+                    Understood
+                  </AppButton>
+                </div>
+              </section>
+            </div>
+          ) : null}
+
           {evidencePreview ? (
             <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/70 p-3 sm:items-center">
               <section className="w-full max-w-4xl rounded border bg-slate-900 p-3 shadow-xl">
@@ -1918,19 +2018,27 @@ export default function Dashboard() {
               onChange={(e) => setEventDraft((prev) => ({ ...prev, eventAddress: e.target.value }))}
             />
             <p className="font-semibold">Payment:</p>
-            <textarea
-              className="w-full rounded border p-2 text-sm"
-              rows={3}
-              placeholder="How should clients pay? (e.g. CashApp $..., Zelle ..., bank transfer...)"
-              value={eventDraft.paymentInstructions}
-              onChange={(e) => setEventDraft((prev) => ({ ...prev, paymentInstructions: e.target.value }))}
-            />
+            <div>
+              <textarea
+                className="w-full rounded border p-2 text-sm"
+                rows={3}
+                placeholder="How should clients pay? (e.g. CashApp $..., Zelle ..., bank transfer...)"
+                value={eventDraft.paymentInstructions}
+                onChange={(e) => setEventDraft((prev) => ({ ...prev, paymentInstructions: e.target.value }))}
+              />
+              <p className="mt-1 text-xs text-slate-500">Leave this blank for free events.</p>
+            </div>
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
-            <AppButton className="" onClick={saveEventInline} loading={savingEvent} loadingText="Saving...">
-              Save Event
+            <AppButton className="" onClick={saveEventInline} loading={savingEvent} loadingText={eventPrimaryLoadingLabel}>
+              {eventPrimaryActionLabel}
             </AppButton>
           </div>
+          {isAccessCodeGenerationMode ? (
+            <p className="mt-2 text-xs text-blue-700">
+              Generate your access code to start editing and sending QR tickets to your clients.
+            </p>
+          ) : null}
         </section>
       )}
 
@@ -1974,3 +2082,48 @@ export default function Dashboard() {
     </main>
   );
 }
+  const openDeliveryWarningModal = (action, payload = null) => {
+    setDeliveryWarningModal({
+      open: true,
+      action,
+      payload,
+    });
+  };
+
+  const closeDeliveryWarningModal = () => {
+    setDeliveryWarningModal({
+      open: false,
+      action: "",
+      payload: null,
+    });
+  };
+
+  const copyPromoterLink = async (promoterLink, skipWarning = false) => {
+    if (!promoterLink) return;
+    if (!skipWarning) {
+      openDeliveryWarningModal("copy-promoter-link", { promoterLink });
+      return;
+    }
+    await navigator.clipboard.writeText(promoterLink);
+    setFeedback({ kind: "success", message: "Promoter link copied." });
+  };
+
+  const copyPublicEventLink = async (skipWarning = false) => {
+    if (!summary?.event?.slug) return;
+    if (noDeliverableTickets) {
+      setFeedback({
+        kind: "error",
+        message:
+          pendingRequestedCount > 0
+            ? "You have no free tickets to deliver right now because pending public requests reserved them."
+            : "You have no more tickets to deliver and downloaded all tickets. Generate more before sharing public link.",
+      });
+      return;
+    }
+    if (!skipWarning) {
+      openDeliveryWarningModal("copy-public-event-link");
+      return;
+    }
+    await navigator.clipboard.writeText(`${window.location.origin}/e/${summary.event.slug}`);
+    setFeedback({ kind: "success", message: "Public event link copied." });
+  };
