@@ -88,3 +88,6 @@
 
 ## 2026-03-14 (Checkpoint)
 - [2026-03-14 01:46:02 -04:00] Updated dashboard-first organizer onboarding: removed homepage/how-it-works/demo routes, added events-first pre-load mode, organizer-code generation modal on first event save, and full menu unlock after organizer-code dashboard load.
+
+## 2026-03-14 (Checkpoint)
+- [2026-03-14 14:28:12 -04:00] Reconciled memory gaps: API contract status/endpoints and dashboard-first route documentation
