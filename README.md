@@ -18,7 +18,10 @@ Standalone QR event ticketing app.
 - https://qr-tickets.connsura.com
 - Blue/green deployment model
 
+## Current App Entry
+- Frontend root (`/`) redirects to the dashboard (`/dashboard`).
+- Organizer onboarding and event setup run from the dashboard flow (events-first pre-load mode).
+
 ## Ticket Design Persistence
-- Home page ticket preview now uses an editable ticket sample (in-place editing + optional header image upload).
-- The selected design is stored on each event as `designJson`.
-- PDF downloads render from stored `designJson` with the same HTML/CSS ticket spec used by preview, so re-downloads keep the original look.
+- Ticket design is edited in dashboard ticket tooling and stored on each event as `designJson`.
+- PDF downloads render from stored `designJson` so re-downloads keep the original look.

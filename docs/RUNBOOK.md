@@ -6,6 +6,7 @@
 3. npx prisma migrate dev
 4. npm run dev (backend)
 5. cd ../frontend && npm run dev
+6. Open `http://localhost:5174` (root redirects to `/dashboard`).
 
 ## Production Blue/Green
 - Follow ops/deploy_blue_green.md

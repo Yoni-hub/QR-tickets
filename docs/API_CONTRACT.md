@@ -4,6 +4,7 @@
 - `POST /api/events`
 - `POST /api/demo/events`
 - `GET /api/events/by-code/:accessCode`
+- `POST /api/events/by-code/:accessCode/create-new` (create another event under an existing organizer access code)
 - `PATCH /api/events/:eventId` (inline update, requires `accessCode` in body)
 - `POST /api/events/by-code/:accessCode/generate-tickets` (generate tickets for existing event/access code)
 - `GET /api/events/by-code/:accessCode/ticket-requests`
@@ -30,6 +31,7 @@
 ## Organizer Request/Promoter APIs
 - `POST /api/ticket-requests/:id/approve`
 - `POST /api/ticket-requests/:id/reject`
+- `POST /api/tickets/:ticketPublicId/cancel`
 - `POST /api/promoters`
 - `PATCH /api/promoters/:id`
 - `DELETE /api/promoters/:id`
@@ -47,6 +49,7 @@ Ticket request statuses:
 - `PENDING_PAYMENT`
 - `APPROVED`
 - `REJECTED`
+- `CANCELLED`
 
 Send-links request body:
 - `emails: string[]` (required)
