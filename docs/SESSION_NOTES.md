@@ -91,3 +91,6 @@
 
 ## 2026-03-14 (Checkpoint)
 - [2026-03-14 14:28:12 -04:00] Reconciled memory gaps: API contract status/endpoints and dashboard-first route documentation
+
+## 2026-03-14 (Checkpoint)
+- [2026-03-14 16:47:52 -04:00] Dashboard UX updates: onboarding guidance, delivery warning modal, promoter flow simplification, and public event link delivery option
