@@ -85,3 +85,6 @@
 
 ## 2026-03-13 (Checkpoint)
 - [2026-03-13 18:22:54 -04:00] Unified the dashboard public-event preview with the live public page, connected organizerName into email preview/sending, and added organizer ticket cancellation flow with buyer messaging.
+
+## 2026-03-14 (Checkpoint)
+- [2026-03-14 01:46:02 -04:00] Updated dashboard-first organizer onboarding: removed homepage/how-it-works/demo routes, added events-first pre-load mode, organizer-code generation modal on first event save, and full menu unlock after organizer-code dashboard load.

@@ -1,11 +1,8 @@
 import { useEffect } from "react";
 import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
-import HomePage from "./pages/HomePage";
 import Dashboard from "./pages/Dashboard";
 import Scanner from "./pages/Scanner";
-import Demo from "./pages/Demo";
 import TicketVerify from "./pages/TicketVerify";
-import HowItWorksPage from "./pages/HowItWorksPage";
 import PublicEventPage from "./pages/PublicEventPage";
 import PublicEventConfirmPage from "./pages/PublicEventConfirmPage";
 import ClientDashboardPage from "./pages/ClientDashboardPage";
@@ -28,7 +25,6 @@ export default function App() {
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
   const isEmbedPreview = searchParams.get("embed") === "1" && location.pathname.startsWith("/e/");
-  const isHomePage = location.pathname === "/";
 
   useEffect(() => {
     const timerByElement = new WeakMap();
@@ -70,28 +66,23 @@ export default function App() {
   }, []);
 
   return (
-    <div className="min-h-screen w-full overflow-x-clip bg-slate-50 text-slate-900">
-      {!isEmbedPreview && !isHomePage ? (
+      <div className="min-h-screen w-full overflow-x-clip bg-slate-50 text-slate-900">
+      {!isEmbedPreview ? (
         <nav className="border-b bg-white px-4 py-3">
           <ul className="flex flex-wrap items-center gap-3 text-sm font-semibold">
-            <li><Link to="/">Home</Link></li>
-            <li><Link to="/how-it-works">How It Works</Link></li>
             <li><Link to="/dashboard">Dashboard</Link></li>
             <li><Link to="/scanner">Scanner</Link></li>
-            <li><Link to="/demo">Demo</Link></li>
             <li><Link to="/admin/dashboard">Admin</Link></li>
           </ul>
         </nav>
       ) : null}
       <Routes>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/how-it-works" element={<HowItWorksPage />} />
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/dashboard/ticket-requests" element={<DashboardTicketRequestsPage />} />
         <Route path="/dashboard/promoters" element={<DashboardPromotersPage />} />
         <Route path="/dashboard/promoters/:id" element={<DashboardPromoterDetailPage />} />
         <Route path="/scanner" element={<Scanner />} />
-        <Route path="/demo" element={<Demo />} />
         <Route path="/e/:eventSlug" element={<PublicEventPage />} />
         <Route path="/e/:eventSlug/confirm" element={<PublicEventConfirmPage />} />
         <Route path="/client" element={<ClientDashboardPage />} />
@@ -111,6 +102,7 @@ export default function App() {
           <Route path="settings" element={<AdminSettingsPage />} />
           <Route path="audit-log" element={<AdminAuditLogPage />} />
         </Route>
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </div>
   );
