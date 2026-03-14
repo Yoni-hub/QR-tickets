@@ -1,0 +1,12 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "QR Launcher (Tkinter)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/qr-launcher.py",
+      "console": "integratedTerminal"
+    }
+  ]
+}
