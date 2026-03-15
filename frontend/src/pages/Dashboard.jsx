@@ -288,6 +288,9 @@ export default function Dashboard() {
     code: "",
     copied: false,
   });
+  const [copiedPublicEventLink, setCopiedPublicEventLink] = useState(false);
+  const [copiedTicketPublicId, setCopiedTicketPublicId] = useState("");
+  const [copiedPromoterId, setCopiedPromoterId] = useState("");
   const [deliveryWarningAcknowledged, setDeliveryWarningAcknowledged] = useState(false);
   const [deliveryWarningModal, setDeliveryWarningModal] = useState({
     open: false,
@@ -296,6 +299,11 @@ export default function Dashboard() {
   });
   const ticketEditorDraftRef = useRef(null);
   const feedbackRef = useRef(null);
+  const copyResetTimersRef = useRef({
+    publicEventLink: null,
+    ticketPublicId: null,
+    promoterId: null,
+  });
 
   const recipientList = parseRecipientEmails(recipientEmails);
   const sampleRecipient = recipientList[0] || "customer@example.com";
@@ -424,6 +432,9 @@ export default function Dashboard() {
   const noDeliverableTickets = tickets.length > 0 && deliverableCount < 1;
 
   useEffect(() => {
+    setCopiedPublicEventLink(false);
+    setCopiedTicketPublicId("");
+    setCopiedPromoterId("");
     if (!accessCode) {
       setDeliveryWarningAcknowledged(false);
       return;
@@ -432,6 +443,14 @@ export default function Dashboard() {
     const savedValue = localStorage.getItem(storageKey);
     setDeliveryWarningAcknowledged(savedValue === "1");
   }, [accessCode]);
+
+  useEffect(() => {
+    return () => {
+      if (copyResetTimersRef.current.publicEventLink) clearTimeout(copyResetTimersRef.current.publicEventLink);
+      if (copyResetTimersRef.current.ticketPublicId) clearTimeout(copyResetTimersRef.current.ticketPublicId);
+      if (copyResetTimersRef.current.promoterId) clearTimeout(copyResetTimersRef.current.promoterId);
+    };
+  }, []);
 
   useEffect(() => {
     if (ticketPage > totalTicketPages) setTicketPage(totalTicketPages);
@@ -565,6 +584,30 @@ export default function Dashboard() {
     await loadDashboard(trimmedCode);
   };
 
+  const markCopiedPublicEventLink = () => {
+    setCopiedPublicEventLink(true);
+    if (copyResetTimersRef.current.publicEventLink) clearTimeout(copyResetTimersRef.current.publicEventLink);
+    copyResetTimersRef.current.publicEventLink = setTimeout(() => {
+      setCopiedPublicEventLink(false);
+    }, 1800);
+  };
+
+  const markCopiedTicketPublicId = (ticketPublicId) => {
+    setCopiedTicketPublicId(String(ticketPublicId || ""));
+    if (copyResetTimersRef.current.ticketPublicId) clearTimeout(copyResetTimersRef.current.ticketPublicId);
+    copyResetTimersRef.current.ticketPublicId = setTimeout(() => {
+      setCopiedTicketPublicId("");
+    }, 1800);
+  };
+
+  const markCopiedPromoterId = (promoterId) => {
+    setCopiedPromoterId(String(promoterId || ""));
+    if (copyResetTimersRef.current.promoterId) clearTimeout(copyResetTimersRef.current.promoterId);
+    copyResetTimersRef.current.promoterId = setTimeout(() => {
+      setCopiedPromoterId("");
+    }, 1800);
+  };
+
   const copyTicketUrl = async (ticket, skipWarning = false) => {
     const method = resolveDeliveryMethodLabel(ticket);
     if (method !== "NOT_DELIVERED") {
@@ -581,10 +624,14 @@ export default function Dashboard() {
       openDeliveryWarningModal("copy-ticket-url", { ticketPublicId });
       return;
     }
-    const url = `${window.location.origin}/t/${ticketPublicId}`;
-    await navigator.clipboard.writeText(url);
-    setTicketCopyError({ ticketPublicId: "", message: "" });
-    setFeedback({ kind: "success", message: "Ticket URL copied." });
+    try {
+      const url = `${window.location.origin}/t/${ticketPublicId}`;
+      await navigator.clipboard.writeText(url);
+      setTicketCopyError({ ticketPublicId: "", message: "" });
+      markCopiedTicketPublicId(ticketPublicId);
+    } catch {
+      setFeedback({ kind: "error", message: "Could not copy ticket URL." });
+    }
   };
 
   const openEvidenceImage = (dataUrl) => {
@@ -968,9 +1015,13 @@ export default function Dashboard() {
       if (pendingTicket) {
         await copyTicketUrl(pendingTicket, true);
       } else if (pendingTicketPublicId) {
-        await navigator.clipboard.writeText(`${window.location.origin}/t/${pendingTicketPublicId}`);
-        setTicketCopyError({ ticketPublicId: "", message: "" });
-        setFeedback({ kind: "success", message: "Ticket URL copied." });
+        try {
+          await navigator.clipboard.writeText(`${window.location.origin}/t/${pendingTicketPublicId}`);
+          setTicketCopyError({ ticketPublicId: "", message: "" });
+          markCopiedTicketPublicId(pendingTicketPublicId);
+        } catch {
+          setFeedback({ kind: "error", message: "Could not copy ticket URL." });
+        }
       }
       return;
     }
@@ -983,7 +1034,7 @@ export default function Dashboard() {
       return;
     }
     if (action === "copy-promoter-link") {
-      await copyPromoterLink(payload?.promoterLink, true);
+      await copyPromoterLink(payload?.promoterLink, payload?.promoterId, true);
     }
   };
 
@@ -1181,14 +1232,18 @@ export default function Dashboard() {
     });
   };
 
-  const copyPromoterLink = async (promoterLink, skipWarning = false) => {
+  const copyPromoterLink = async (promoterLink, promoterId = "", skipWarning = false) => {
     if (!promoterLink) return;
     if (!deliveryWarningAcknowledged && skipWarning !== true) {
-      openDeliveryWarningModal("copy-promoter-link", { promoterLink });
+      openDeliveryWarningModal("copy-promoter-link", { promoterLink, promoterId });
       return;
     }
-    await navigator.clipboard.writeText(promoterLink);
-    setFeedback({ kind: "success", message: "Promoter link copied." });
+    try {
+      await navigator.clipboard.writeText(promoterLink);
+      markCopiedPromoterId(promoterId);
+    } catch {
+      setFeedback({ kind: "error", message: "Could not copy promoter link." });
+    }
   };
 
   const copyPublicEventLink = async (skipWarning = false) => {
@@ -1207,8 +1262,12 @@ export default function Dashboard() {
       openDeliveryWarningModal("copy-public-event-link");
       return;
     }
-    await navigator.clipboard.writeText(`${window.location.origin}/e/${summary.event.slug}`);
-    setFeedback({ kind: "success", message: "Public event link copied." });
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/e/${summary.event.slug}`);
+      markCopiedPublicEventLink();
+    } catch {
+      setFeedback({ kind: "error", message: "Could not copy public event link." });
+    }
   };
 
   return (
@@ -1342,7 +1401,7 @@ export default function Dashboard() {
                         void copyPublicEventLink();
                       }}
                     >
-                      Copy
+                      {copiedPublicEventLink ? "Copied" : "Copy"}
                     </button>
                   ) : null}
                 </div>
@@ -1513,7 +1572,7 @@ export default function Dashboard() {
                       title={resolveDeliveryMethodLabel(ticket) !== "NOT_DELIVERED" ? `cant copy! ticket already delivered through ${resolveDeliveryMethodErrorLabel(resolveDeliveryMethodLabel(ticket))}.` : "Copy ticket URL"}
                       onClick={() => copyTicketUrl(ticket)}
                     >
-                      Copy
+                      {copiedTicketPublicId === ticket.ticketPublicId ? "Copied" : "Copy"}
                     </button>
                     {ticketCopyError.ticketPublicId === ticket.ticketPublicId && ticketCopyError.message ? (
                       <p className="mt-1 text-xs text-red-600">{ticketCopyError.message}</p>
@@ -1564,7 +1623,7 @@ export default function Dashboard() {
                             title={resolveDeliveryMethodLabel(ticket) !== "NOT_DELIVERED" ? `cant copy! ticket already delivered through ${resolveDeliveryMethodErrorLabel(resolveDeliveryMethodLabel(ticket))}.` : "Copy ticket URL"}
                             onClick={() => copyTicketUrl(ticket)}
                           >
-                            Copy
+                            {copiedTicketPublicId === ticket.ticketPublicId ? "Copied" : "Copy"}
                           </button>
                           {ticketCopyError.ticketPublicId === ticket.ticketPublicId && ticketCopyError.message ? (
                             <p className="mt-1 text-xs text-red-600">{ticketCopyError.message}</p>
@@ -1700,7 +1759,7 @@ export default function Dashboard() {
                     onClick={() => void copyPublicEventLink()}
                     disabled={!summary?.event?.slug || noDeliverableTickets}
                   >
-                    Copy Public Event Link
+                    {copiedPublicEventLink ? "Copied" : "Copy Public Event Link"}
                   </AppButton>
                   {noDeliverableTickets ? (
                     <p className="mt-2 text-xs text-amber-700">
@@ -1870,7 +1929,7 @@ export default function Dashboard() {
                     <p className="mt-1 break-all text-xs">{promoter.link}</p>
                     <p className="mt-1 text-xs">Requests: {promoter.requestCount} | Approved: {promoter.approvedTickets} | Scanned: {promoter.scannedEntries}</p>
                     <div className="mt-2 flex flex-wrap gap-2">
-                      <button className="rounded border px-2 py-1 text-xs" onClick={() => void copyPromoterLink(promoter.link)}>Copy Link</button>
+                      <button className="rounded border px-2 py-1 text-xs" onClick={() => void copyPromoterLink(promoter.link, promoter.id)}>{copiedPromoterId === promoter.id ? "Copied" : "Copy Link"}</button>
                       <button className="rounded border px-2 py-1 text-xs" onClick={() => deletePromoter(promoter.id)}>Delete</button>
                     </div>
                   </article>
