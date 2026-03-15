@@ -1,5 +1,9 @@
 # Data Model
 
+Source of truth:
+- This file is the canonical persisted data/schema memory summary.
+- Final authority for actual schema/enums is `backend/prisma/schema.prisma`.
+
 ## UserEvent
 - `accessCode` (6-char alphanumeric, unique)
 - `slug` (public event slug, unique when present)
@@ -32,7 +36,8 @@
 
 ## TicketDelivery
 - links ticket delivery attempts to a `Ticket`
-- `method`: currently `EMAIL_LINK`
+- `method`: `EMAIL_LINK` | `PDF_DOWNLOAD` (Prisma `DeliveryMethod` enum)
+- `PUBLIC_EVENT_PAGE` is an API-level/computed delivery channel, not a persisted `TicketDelivery.method` enum value.
 - `status`: `SENT` | `FAILED`
 - `email`, `errorMessage`, `sentAt`
 
@@ -45,7 +50,8 @@
 ## TicketRequest
 - created from public event page requests
 - fields: `eventId`, `name`, `phone`, `email`, `ticketType`, `ticketPrice`, `totalPrice`, `quantity`, `promoterId`
-- `status`: `PENDING_PAYMENT` | `APPROVED` | `REJECTED`
+- `status`: `PENDING_PAYMENT` | `APPROVED` | `REJECTED` | `CANCELLED`
+- `CANCELLED` is used when organizer cancels the request/ticket flow and cancellation metadata is captured.
 - approved requests generate tickets linked by `ticketRequestId`
 
 ## TicketViewLog

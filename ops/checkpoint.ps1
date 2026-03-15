@@ -58,6 +58,35 @@ function Next-DecisionId([string]$path) {
   return ("DEC-{0:D3}" -f $next)
 }
 
+function Get-BlockAfterMarker([string]$text, [string]$marker) {
+  $idx = $text.IndexOf($marker)
+  if ($idx -lt 0) { return "" }
+  $start = $idx + $marker.Length
+  $rest = $text.Substring($start)
+  $m = [regex]::Match($rest, "(\r?\n){2,}")
+  if ($m.Success) {
+    return $rest.Substring(0, $m.Index)
+  }
+  return $rest
+}
+
+function Get-SectionByHeading([string]$text, [string]$heading) {
+  $pattern = "(?ms)^##\s+$([regex]::Escape($heading))\s*$\r?\n(.*?)(?=^##\s+|\z)"
+  $m = [regex]::Match($text, $pattern)
+  if ($m.Success) { return $m.Groups[1].Value }
+  return ""
+}
+
+function Get-BacktickedTokens([string]$text) {
+  if ([string]::IsNullOrWhiteSpace($text)) { return @() }
+  $matches = [regex]::Matches($text, "`"([A-Z_]+)`"")
+  $tokens = @()
+  foreach ($m in $matches) {
+    $tokens += $m.Groups[1].Value
+  }
+  return $tokens | Select-Object -Unique
+}
+
 Ensure-FileExists $sessionNotesPath "# Session Notes`r`n"
 Ensure-FileExists $decisionsPath "# Decisions Log`r`n"
 Ensure-FileExists $apiPath "# API Contract`r`n"
@@ -92,6 +121,23 @@ if (
 - Decision: $Decision
 - Consequence: $DecisionConsequence
 "@
+}
+
+$apiRaw = Get-Content -Raw -Path $apiPath
+$dataRaw = Get-Content -Raw -Path $dataModelPath
+
+$apiStatusBlock = Get-BlockAfterMarker -text $apiRaw -marker "Ticket request statuses:"
+$dataTicketRequestSection = Get-SectionByHeading -text $dataRaw -heading "TicketRequest"
+$dataStatusLine = [regex]::Match($dataTicketRequestSection, "(?m)^- `status`:\s+.*$").Value
+
+$apiStatuses = Get-BacktickedTokens -text $apiStatusBlock
+$dataStatuses = Get-BacktickedTokens -text $dataStatusLine
+
+$apiMissingStatuses = @($dataStatuses | Where-Object { $_ -notin $apiStatuses })
+$dataMissingStatuses = @($apiStatuses | Where-Object { $_ -notin $dataStatuses })
+
+if ($apiMissingStatuses.Count -gt 0 -or $dataMissingStatuses.Count -gt 0) {
+  Write-Warning ("Doc enum mismatch for TicketRequest statuses. API-only: [{0}] DataModel-only: [{1}]" -f (($dataMissingStatuses -join ", ")), (($apiMissingStatuses -join ", ")))
 }
 
 Write-Host "Checkpoint completed."

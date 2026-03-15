@@ -1,5 +1,9 @@
 ﻿# QR Tickets Architecture
 
+Source of truth:
+- This file is the canonical system/routing architecture summary for QR Tickets.
+- Route registration in `frontend/src/App.jsx` is the implementation authority when this summary lags.
+
 ## Isolation Rules
 - QR Tickets is a standalone product with no shared runtime code with Connsura.
 - Separate git repository, backend, frontend, database, containers, AWS resources.
@@ -20,4 +24,4 @@
 - Organizer onboarding is dashboard-first with events-first pre-load mode.
 - Organizer code is generated during first event save; full dashboard menu unlocks after organizer-code context is loaded.
 - Active end-user routes include `/dashboard`, `/scanner`, `/e/:eventSlug`, `/e/:eventSlug/confirm`, `/client/:clientAccessToken`, `/t/:ticketPublicId`, and `/admin/*`.
-- Legacy page files may still exist in `frontend/src/pages`, but homepage/how-it-works/demo are intentionally not routed in the app shell.
+- As of 2026-03-14 (`b873f71`), homepage/how-it-works/demo routes are removed from the app shell, and the corresponding `frontend/src/pages` files were deleted.

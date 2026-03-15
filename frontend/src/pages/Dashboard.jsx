@@ -106,6 +106,10 @@ function getSelectedEventStorageKey(accessCode) {
   return `qr-dashboard:selected-event:${String(accessCode || "").trim()}`;
 }
 
+function getDeliveryWarningAckStorageKey(accessCode) {
+  return `qr-dashboard:delivery-warning-ack:${String(accessCode || "").trim()}`;
+}
+
 function parseRecipientEmails(rawValue) {
   return String(rawValue || "")
     .split(/[\n,]+/)
@@ -284,6 +288,7 @@ export default function Dashboard() {
     code: "",
     copied: false,
   });
+  const [deliveryWarningAcknowledged, setDeliveryWarningAcknowledged] = useState(false);
   const [deliveryWarningModal, setDeliveryWarningModal] = useState({
     open: false,
     action: "",
@@ -417,6 +422,17 @@ export default function Dashboard() {
     [tickets],
   );
   const noDeliverableTickets = tickets.length > 0 && deliverableCount < 1;
+
+  useEffect(() => {
+    if (!accessCode) {
+      setDeliveryWarningAcknowledged(false);
+      return;
+    }
+    const storageKey = getDeliveryWarningAckStorageKey(accessCode);
+    const savedValue = localStorage.getItem(storageKey);
+    setDeliveryWarningAcknowledged(savedValue === "1");
+  }, [accessCode]);
+
   useEffect(() => {
     if (ticketPage > totalTicketPages) setTicketPage(totalTicketPages);
   }, [ticketPage, totalTicketPages]);
@@ -549,7 +565,7 @@ export default function Dashboard() {
     await loadDashboard(trimmedCode);
   };
 
-  const copyTicketUrl = async (ticket) => {
+  const copyTicketUrl = async (ticket, skipWarning = false) => {
     const method = resolveDeliveryMethodLabel(ticket);
     if (method !== "NOT_DELIVERED") {
       const inlineMessage = `cant copy! ticket already delivered through ${resolveDeliveryMethodErrorLabel(method)}.`;
@@ -561,6 +577,10 @@ export default function Dashboard() {
     }
     const ticketPublicId = ticket?.ticketPublicId;
     if (!ticketPublicId) return;
+    if (!deliveryWarningAcknowledged && skipWarning !== true) {
+      openDeliveryWarningModal("copy-ticket-url", { ticketPublicId });
+      return;
+    }
     const url = `${window.location.origin}/t/${ticketPublicId}`;
     await navigator.clipboard.writeText(url);
     setTicketCopyError({ ticketPublicId: "", message: "" });
@@ -801,7 +821,7 @@ export default function Dashboard() {
       setFeedback({ kind: "error", message: "You downloaded all your tickets. Please generate more tickets." });
       return;
     }
-    if (!skipWarning) {
+    if (!deliveryWarningAcknowledged && skipWarning !== true) {
       openDeliveryWarningModal("download-pdf");
       return;
     }
@@ -864,7 +884,7 @@ export default function Dashboard() {
       setFeedback({ kind: "error", message: "Email subject and body cannot be empty." });
       return;
     }
-    if (!skipWarning) {
+    if (!deliveryWarningAcknowledged && skipWarning !== true) {
       openDeliveryWarningModal("send-ticket-links");
       return;
     }
@@ -933,9 +953,25 @@ export default function Dashboard() {
   const confirmDeliveryWarningModal = async () => {
     const { action, payload } = deliveryWarningModal;
     closeDeliveryWarningModal();
+    if (accessCode) {
+      localStorage.setItem(getDeliveryWarningAckStorageKey(accessCode), "1");
+    }
+    setDeliveryWarningAcknowledged(true);
 
     if (action === "copy-public-event-link") {
       await copyPublicEventLink(true);
+      return;
+    }
+    if (action === "copy-ticket-url") {
+      const pendingTicketPublicId = String(payload?.ticketPublicId || "").trim();
+      const pendingTicket = tickets.find((ticket) => ticket.ticketPublicId === pendingTicketPublicId);
+      if (pendingTicket) {
+        await copyTicketUrl(pendingTicket, true);
+      } else if (pendingTicketPublicId) {
+        await navigator.clipboard.writeText(`${window.location.origin}/t/${pendingTicketPublicId}`);
+        setTicketCopyError({ ticketPublicId: "", message: "" });
+        setFeedback({ kind: "success", message: "Ticket URL copied." });
+      }
       return;
     }
     if (action === "download-pdf") {
@@ -1127,6 +1163,52 @@ export default function Dashboard() {
     } finally {
       setSavingTicketDraft(false);
     }
+  };
+
+  const openDeliveryWarningModal = (action, payload = null) => {
+    setDeliveryWarningModal({
+      open: true,
+      action,
+      payload,
+    });
+  };
+
+  const closeDeliveryWarningModal = () => {
+    setDeliveryWarningModal({
+      open: false,
+      action: "",
+      payload: null,
+    });
+  };
+
+  const copyPromoterLink = async (promoterLink, skipWarning = false) => {
+    if (!promoterLink) return;
+    if (!deliveryWarningAcknowledged && skipWarning !== true) {
+      openDeliveryWarningModal("copy-promoter-link", { promoterLink });
+      return;
+    }
+    await navigator.clipboard.writeText(promoterLink);
+    setFeedback({ kind: "success", message: "Promoter link copied." });
+  };
+
+  const copyPublicEventLink = async (skipWarning = false) => {
+    if (!summary?.event?.slug) return;
+    if (noDeliverableTickets) {
+      setFeedback({
+        kind: "error",
+        message:
+          pendingRequestedCount > 0
+            ? "You have no free tickets to deliver right now because pending public requests reserved them."
+            : "You have no more tickets to deliver and downloaded all tickets. Generate more before sharing public link.",
+      });
+      return;
+    }
+    if (!deliveryWarningAcknowledged && skipWarning !== true) {
+      openDeliveryWarningModal("copy-public-event-link");
+      return;
+    }
+    await navigator.clipboard.writeText(`${window.location.origin}/e/${summary.event.slug}`);
+    setFeedback({ kind: "success", message: "Public event link copied." });
   };
 
   return (
@@ -1562,7 +1644,7 @@ export default function Dashboard() {
                   <select className="w-full rounded border p-2 text-sm sm:w-44" value={pdfTicketsPerPage} onChange={(event) => setPdfTicketsPerPage(Number.parseInt(event.target.value, 10) || 2)} disabled={downloading}>
                     {PDF_TICKETS_PER_PAGE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
                   </select>
-                  <AppButton className="mt-3" variant="secondary" onClick={downloadPdf} loading={downloading} loadingText="Downloading...">Download Tickets PDF</AppButton>
+                  <AppButton className="mt-3" variant="secondary" onClick={() => void downloadPdf()} loading={downloading} loadingText="Downloading...">Download Tickets PDF</AppButton>
                 </div>
               ) : null}
 
@@ -1600,7 +1682,7 @@ export default function Dashboard() {
                     ) : null}
                   </div>
 
-                  <AppButton className="mt-3" variant="indigo" onClick={sendTicketLinks} loading={sending} loadingText="Sending...">Send tickets</AppButton>
+                  <AppButton className="mt-3" variant="indigo" onClick={() => void sendTicketLinks()} loading={sending} loadingText="Sending...">Send tickets</AppButton>
                 </div>
               ) : null}
 
@@ -2082,48 +2164,3 @@ export default function Dashboard() {
     </main>
   );
 }
-  const openDeliveryWarningModal = (action, payload = null) => {
-    setDeliveryWarningModal({
-      open: true,
-      action,
-      payload,
-    });
-  };
-
-  const closeDeliveryWarningModal = () => {
-    setDeliveryWarningModal({
-      open: false,
-      action: "",
-      payload: null,
-    });
-  };
-
-  const copyPromoterLink = async (promoterLink, skipWarning = false) => {
-    if (!promoterLink) return;
-    if (!skipWarning) {
-      openDeliveryWarningModal("copy-promoter-link", { promoterLink });
-      return;
-    }
-    await navigator.clipboard.writeText(promoterLink);
-    setFeedback({ kind: "success", message: "Promoter link copied." });
-  };
-
-  const copyPublicEventLink = async (skipWarning = false) => {
-    if (!summary?.event?.slug) return;
-    if (noDeliverableTickets) {
-      setFeedback({
-        kind: "error",
-        message:
-          pendingRequestedCount > 0
-            ? "You have no free tickets to deliver right now because pending public requests reserved them."
-            : "You have no more tickets to deliver and downloaded all tickets. Generate more before sharing public link.",
-      });
-      return;
-    }
-    if (!skipWarning) {
-      openDeliveryWarningModal("copy-public-event-link");
-      return;
-    }
-    await navigator.clipboard.writeText(`${window.location.origin}/e/${summary.event.slug}`);
-    setFeedback({ kind: "success", message: "Public event link copied." });
-  };
