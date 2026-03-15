@@ -20,6 +20,8 @@ import AdminOrganizersPage from "./pages/admin/AdminOrganizersPage";
 import AdminSettingsPage from "./pages/admin/AdminSettingsPage";
 import AdminAuditLogPage from "./pages/admin/AdminAuditLogPage";
 import AdminClientDashTokensPage from "./pages/admin/AdminClientDashTokensPage";
+import HelpPage from "./pages/HelpPage";
+import AdminSupportPage from "./pages/admin/AdminSupportPage";
 
 export default function App() {
   const location = useLocation();
@@ -72,6 +74,7 @@ export default function App() {
           <ul className="flex flex-wrap items-center gap-3 text-sm font-semibold">
             <li><Link to="/dashboard">Dashboard</Link></li>
             <li><Link to="/scanner">Scanner</Link></li>
+            <li><Link to="/help">Help</Link></li>
             <li><Link to="/admin/dashboard">Admin</Link></li>
           </ul>
         </nav>
@@ -83,6 +86,7 @@ export default function App() {
         <Route path="/dashboard/promoters" element={<DashboardPromotersPage />} />
         <Route path="/dashboard/promoters/:id" element={<DashboardPromoterDetailPage />} />
         <Route path="/scanner" element={<Scanner />} />
+        <Route path="/help" element={<HelpPage />} />
         <Route path="/e/:eventSlug" element={<PublicEventPage />} />
         <Route path="/e/:eventSlug/confirm" element={<PublicEventConfirmPage />} />
         <Route path="/client" element={<ClientDashboardPage />} />
@@ -99,6 +103,7 @@ export default function App() {
           <Route path="scans" element={<AdminScansPage />} />
           <Route path="organizers" element={<AdminOrganizersPage />} />
           <Route path="client-dash-tokens" element={<AdminClientDashTokensPage />} />
+          <Route path="support" element={<AdminSupportPage />} />
           <Route path="settings" element={<AdminSettingsPage />} />
           <Route path="audit-log" element={<AdminAuditLogPage />} />
         </Route>

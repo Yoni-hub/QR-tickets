@@ -97,3 +97,6 @@
 
 ## 2026-03-15 (Checkpoint)
 - [2026-03-15 00:15:40 -04:00] Implemented one-time organizer delivery warning gate across all delivery methods, fixed delivery action event-arg bypass, and reconciled architecture/API/data-model memory docs.
+
+## 2026-03-15 (Checkpoint)
+- [2026-03-15 18:20:28 -04:00] Added Help FAQ accordion, restored visitor support chat, implemented admin support inbox/badge, and fixed free-event evidence requirement plus support API stability

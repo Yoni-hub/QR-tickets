@@ -32,6 +32,7 @@ model UserEvent {
   auditLogs   AdminAuditLog[]
   ticketRequests TicketRequest[]
   promoters   Promoter[]
+  supportConversations SupportConversation[]
 
   @@index([organizerAccessCode])
 }
@@ -233,4 +234,47 @@ model AdminAuditLog {
   @@index([createdAt])
   @@index([targetType, targetId])
   @@index([eventId])
+}
+
+model SupportConversation {
+  id                String                 @id @default(cuid())
+  conversationToken String                 @unique
+  eventId           String?
+  displayName       String?
+  email             String?
+  accessCode        String?
+  status            SupportConversationStatus @default(OPEN)
+  lastMessageAt     DateTime               @default(now())
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  event             UserEvent?             @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  messages          SupportMessage[]
+
+  @@index([status, lastMessageAt])
+  @@index([eventId])
+  @@index([accessCode])
+}
+
+model SupportMessage {
+  id                  String               @id @default(cuid())
+  conversationId      String
+  senderType          SupportMessageSender
+  message             String
+  evidenceImageDataUrl String?
+  readAt              DateTime?
+  createdAt           DateTime             @default(now())
+  conversation        SupportConversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@index([conversationId, readAt])
+}
+
+enum SupportConversationStatus {
+  OPEN
+  CLOSED
+}
+
+enum SupportMessageSender {
+  VISITOR
+  ADMIN
 }

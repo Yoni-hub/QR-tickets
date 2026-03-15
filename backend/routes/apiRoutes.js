@@ -21,6 +21,11 @@ const {
   createClientRequestMessageByToken,
 } = require("../controllers/publicController");
 const {
+  createSupportConversation,
+  getSupportConversationMessages,
+  sendSupportConversationMessage,
+} = require("../controllers/supportController");
+const {
   getOrganizerTicketRequests,
   approveTicketRequest,
   rejectTicketRequest,
@@ -56,6 +61,9 @@ router.post("/public/ticket-request", createPublicTicketRequest);
 router.get("/public/client-dashboard/:clientAccessToken", getClientDashboardByToken);
 router.get("/public/client-dashboard/:clientAccessToken/messages", getClientRequestMessagesByToken);
 router.post("/public/client-dashboard/:clientAccessToken/messages", createClientRequestMessageByToken);
+router.post("/public/support/conversations", createSupportConversation);
+router.get("/public/support/conversations/:conversationToken/messages", getSupportConversationMessages);
+router.post("/public/support/conversations/:conversationToken/messages", sendSupportConversationMessage);
 
 router.get("/events/by-code/:accessCode/ticket-requests", getOrganizerTicketRequests);
 router.post("/ticket-requests/:id/approve", approveTicketRequest);
