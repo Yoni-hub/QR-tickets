@@ -10,12 +10,13 @@ const NAV_ITEMS = [
   { to: "/admin/deliveries", label: "Deliveries" },
   { to: "/admin/scans", label: "Scans" },
   { to: "/admin/organizers", label: "Organizers" },
+  { to: "/admin/support", label: "Support" },
   { to: "/admin/client-dash-tokens", label: "Client Dash Tokens" },
   { to: "/admin/settings", label: "Settings" },
   { to: "/admin/audit-log", label: "Audit Log" },
 ];
 
-function NavItems({ onNavigate }) {
+function NavItems({ onNavigate, unreadSupportCount = 0 }) {
   return (
     <nav className="space-y-1">
       {NAV_ITEMS.map((item) => (
@@ -27,7 +28,12 @@ function NavItems({ onNavigate }) {
             `block rounded px-3 py-2 text-sm font-medium ${isActive ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-100"}`
           }
         >
-          {item.label}
+          <span>{item.label}</span>
+          {item.to === "/admin/support" && unreadSupportCount > 0 ? (
+            <span className="ml-2 inline-flex min-w-5 items-center justify-center rounded-full bg-rose-600 px-1.5 py-0.5 text-[11px] font-semibold leading-none text-white">
+              {unreadSupportCount > 99 ? "99+" : unreadSupportCount}
+            </span>
+          ) : null}
         </NavLink>
       ))}
     </nav>
@@ -42,6 +48,7 @@ export default function AdminLayout() {
   const [authReady, setAuthReady] = useState(false);
   const [authError, setAuthError] = useState("");
   const [keyInput, setKeyInput] = useState(getAdminKey());
+  const [unreadSupportCount, setUnreadSupportCount] = useState(0);
 
   const pageTitle = useMemo(() => {
     const item = NAV_ITEMS.find((entry) => location.pathname.startsWith(entry.to));
@@ -88,6 +95,33 @@ export default function AdminLayout() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!authReady) {
+      setUnreadSupportCount(0);
+      return undefined;
+    }
+
+    let alive = true;
+    const loadUnreadSupportCount = async () => {
+      try {
+        const response = await adminApi.get("/support/conversations", { params: { status: "OPEN" } });
+        if (!alive) return;
+        const items = Array.isArray(response.data?.items) ? response.data.items : [];
+        const totalUnread = items.reduce((sum, item) => sum + Number(item?.unreadVisitorMessages || 0), 0);
+        setUnreadSupportCount(totalUnread);
+      } catch {
+        if (alive) setUnreadSupportCount(0);
+      }
+    };
+
+    loadUnreadSupportCount();
+    const interval = setInterval(loadUnreadSupportCount, 10000);
+    return () => {
+      alive = false;
+      clearInterval(interval);
+    };
+  }, [authReady]);
+
   if (authChecking) {
     return <main className="mx-auto max-w-4xl px-4 py-6">Checking admin access...</main>;
   }
@@ -127,7 +161,7 @@ export default function AdminLayout() {
           <Link to="/admin/dashboard" className="text-lg font-bold">System Admin</Link>
           <p className="mt-1 text-xs text-slate-500">QR Tickets Internal Panel</p>
           <div className="mt-4">
-            <NavItems />
+            <NavItems unreadSupportCount={unreadSupportCount} />
           </div>
           <AppButton
             className="mt-6"
@@ -155,7 +189,7 @@ export default function AdminLayout() {
             </div>
             {drawerOpen ? (
               <div className="mt-3 rounded border bg-white p-2">
-                <NavItems onNavigate={() => setDrawerOpen(false)} />
+                <NavItems onNavigate={() => setDrawerOpen(false)} unreadSupportCount={unreadSupportCount} />
               </div>
             ) : null}
           </header>

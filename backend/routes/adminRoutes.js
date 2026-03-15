@@ -30,6 +30,12 @@ const {
   updatePromoter,
   deletePromoter,
 } = require("../controllers/organizerController");
+const {
+  listAdminSupportConversations,
+  getAdminSupportConversationMessages,
+  sendAdminSupportMessage,
+  updateAdminSupportConversationStatus,
+} = require("../controllers/supportController");
 
 const router = express.Router();
 
@@ -67,5 +73,9 @@ router.post("/promoters", createPromoter);
 router.get("/promoters", listPromoters);
 router.patch("/promoters/:id", updatePromoter);
 router.delete("/promoters/:id", deletePromoter);
+router.get("/support/conversations", listAdminSupportConversations);
+router.get("/support/conversations/:id/messages", getAdminSupportConversationMessages);
+router.post("/support/conversations/:id/messages", sendAdminSupportMessage);
+router.patch("/support/conversations/:id/status", updateAdminSupportConversationStatus);
 
 module.exports = router;

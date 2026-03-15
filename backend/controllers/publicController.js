@@ -339,10 +339,6 @@ async function createPublicTicketRequest(req, res) {
     res.status(400).json({ error: evidenceValidation.error });
     return;
   }
-  if (!evidenceValidation.value) {
-    res.status(400).json({ error: "Payment evidence is required." });
-    return;
-  }
 
   const event = await prisma.userEvent.findUnique({
     where: { slug: eventSlug },
@@ -391,6 +387,11 @@ async function createPublicTicketRequest(req, res) {
       unitPrice,
       lineTotal,
     });
+  }
+
+  if (totalPrice > 0 && !evidenceValidation.value) {
+    res.status(400).json({ error: "Payment evidence is required." });
+    return;
   }
 
   let promoter = null;
