@@ -94,3 +94,6 @@
 
 ## 2026-03-14 (Checkpoint)
 - [2026-03-14 16:47:52 -04:00] Dashboard UX updates: onboarding guidance, delivery warning modal, promoter flow simplification, and public event link delivery option
+
+## 2026-03-15 (Checkpoint)
+- [2026-03-15 00:15:40 -04:00] Implemented one-time organizer delivery warning gate across all delivery methods, fixed delivery action event-arg bypass, and reconciled architecture/API/data-model memory docs.

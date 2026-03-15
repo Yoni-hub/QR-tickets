@@ -1,5 +1,9 @@
 ﻿# API Contract
 
+Source of truth:
+- This file is the canonical API behavior contract for routes, payloads, and response semantics.
+- Prisma schema remains the source of truth for persisted enum/storage definitions.
+
 ## Event APIs
 - `POST /api/events`
 - `POST /api/demo/events`
@@ -50,6 +54,7 @@ Ticket request statuses:
 - `APPROVED`
 - `REJECTED`
 - `CANCELLED`
+  - Used when organizer cancels a public-event request/ticket flow and records cancellation metadata/message evidence.
 
 Send-links request body:
 - `emails: string[]` (required)
@@ -59,6 +64,8 @@ Send-links request body:
 
 Delivery behavior:
 - `POST /api/orders/:accessCode/send-links` now resolves `{{ticketType}}` from each assigned ticket first, then falls back to event-level `ticketType`.
+- Ticket list APIs may expose computed delivery channel values such as `PUBLIC_EVENT_PAGE` for organizer/client UX.
+- Persisted delivery records (`TicketDelivery.method`) are currently enum-backed by Prisma as `EMAIL_LINK | PDF_DOWNLOAD`.
 
 ## Scan API
 - `POST /api/scans`
