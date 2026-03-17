@@ -103,3 +103,6 @@
 
 ## 2026-03-17 (Checkpoint)
 - [2026-03-17 00:17:58 -04:00] Implemented dashboard hero/home nav flow, scanner stop-camera stability fix, support chat reliability fixes, and ticket-request status rename to PENDING_VERIFICATION.
+
+## 2026-03-17 (Checkpoint)
+- [2026-03-17 15:30:39 -04:00] Reconciled memory docs for TicketRequest status rename to PENDING_VERIFICATION

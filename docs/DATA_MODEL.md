@@ -50,7 +50,7 @@ Source of truth:
 ## TicketRequest
 - created from public event page requests
 - fields: `eventId`, `name`, `phone`, `email`, `ticketType`, `ticketPrice`, `totalPrice`, `quantity`, `promoterId`
-- `status`: `PENDING_PAYMENT` | `APPROVED` | `REJECTED` | `CANCELLED`
+- `status`: `PENDING_VERIFICATION` | `APPROVED` | `REJECTED` | `CANCELLED`
 - `CANCELLED` is used when organizer cancels the request/ticket flow and cancellation metadata is captured.
 - approved requests generate tickets linked by `ticketRequestId`
 
@@ -74,4 +74,4 @@ Source of truth:
 
 - 2026-03-15: Added SupportConversation and SupportMessage models with status/sender enums and migration for support chat persistence.
 
-- 2026-03-17: TicketRequestStatus enum/default migrated to use PENDING_VERIFICATION instead of PENDING_PAYMENT.
+- 2026-03-17: TicketRequestStatus enum/default renamed from PENDING_PAYMENT to PENDING_VERIFICATION.
