@@ -32,7 +32,8 @@
 
 ## DEC-007 (2026-03-08)
 - Context: Club/nightlife workflows require manual payment confirmation before ticket issuance.
-- Decision: Introduce `TicketRequest` lifecycle (`PENDING_PAYMENT`, `APPROVED`, `REJECTED`) and issue tickets only on organizer approval.
+- Decision: Introduce `TicketRequest` lifecycle (`PENDING_VERIFICATION`, `APPROVED`, `REJECTED`) and issue tickets only on organizer approval.
+- Migration note: Renamed from `PENDING_PAYMENT` to `PENDING_VERIFICATION` on 2026-03-17.
 - Consequence: Payment remains off-platform while ticket issuance is controlled and auditable.
 
 ## DEC-008 (2026-03-08)
