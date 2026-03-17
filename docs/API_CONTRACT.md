@@ -127,3 +127,5 @@ Admin action APIs:
 - 2026-03-13: Added organizer ticket cancellation API route and expanded ticket/client-dashboard payloads with cancellation metadata and message evidence fields.
 
 - 2026-03-15: Added support conversation APIs for public and admin flows; adjusted public ticket-request evidence requirement so free requests do not require evidence.
+
+- 2026-03-17: Renamed ticket-request status from PENDING_PAYMENT to PENDING_VERIFICATION and updated related frontend/backend handling.

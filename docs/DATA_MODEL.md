@@ -73,3 +73,5 @@ Source of truth:
 - 2026-03-13: Added ticket/request cancellation fields, request CANCELLED status, and evidenceImageDataUrl on ticket request messages.
 
 - 2026-03-15: Added SupportConversation and SupportMessage models with status/sender enums and migration for support chat persistence.
+
+- 2026-03-17: TicketRequestStatus enum/default migrated to use PENDING_VERIFICATION instead of PENDING_PAYMENT.
