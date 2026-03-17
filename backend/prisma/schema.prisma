@@ -168,7 +168,7 @@ model TicketRequest {
   cancellationEvidenceImageDataUrl String?
   quantity   Int
   promoterId String?
-  status     TicketRequestStatus @default(PENDING_PAYMENT)
+  status     TicketRequestStatus @default(PENDING_VERIFICATION)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
   event      UserEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
@@ -196,7 +196,7 @@ model TicketRequestMessage {
 }
 
 enum TicketRequestStatus {
-  PENDING_PAYMENT
+  PENDING_VERIFICATION
   APPROVED
   REJECTED
   CANCELLED
@@ -278,3 +278,4 @@ enum SupportMessageSender {
   VISITOR
   ADMIN
 }
+

@@ -261,7 +261,6 @@ export default function Scanner() {
 
     try {
       await withMinDelay(scannerRef.current.stop());
-      await scannerRef.current.clear();
       setCameraOn(false);
       setFeedback({ kind: "info", message: "Camera stopped." });
     } catch {
@@ -273,11 +272,19 @@ export default function Scanner() {
 
   useEffect(() => {
     return () => {
-      if (scannerRef.current && cameraOn) {
-        scannerRef.current.stop().catch(() => {});
-      }
+      const scanner = scannerRef.current;
+      if (!scanner) return;
+      scannerRef.current = null;
+      void (async () => {
+        try {
+          await scanner.stop();
+        } catch {}
+        try {
+          await scanner.clear();
+        } catch {}
+      })();
     };
-  }, [cameraOn]);
+  }, []);
 
   const scanManual = async () => {
     if (!scannerUnlocked || !selectedEventId) {

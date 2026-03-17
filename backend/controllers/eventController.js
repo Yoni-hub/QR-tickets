@@ -313,7 +313,7 @@ async function getEventTickets(req, res) {
       },
     }),
     prisma.ticketRequest.findMany({
-      where: { eventId, status: "PENDING_PAYMENT" },
+      where: { eventId, status: "PENDING_VERIFICATION" },
       orderBy: { createdAt: "asc" },
       select: { ticketType: true, quantity: true, ticketSelections: true },
     }),
@@ -879,7 +879,7 @@ async function getTicketsPdf(req, res) {
         },
       }),
       prisma.ticketRequest.findMany({
-        where: { eventId, status: "PENDING_PAYMENT" },
+        where: { eventId, status: "PENDING_VERIFICATION" },
         orderBy: { createdAt: "asc" },
         select: { ticketType: true, quantity: true, ticketSelections: true },
       }),
@@ -971,3 +971,4 @@ module.exports = {
   getTicketsPdf,
   updateEventInline,
 };
+

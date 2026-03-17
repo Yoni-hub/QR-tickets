@@ -181,7 +181,7 @@ async function buildTicketTypeStats(event) {
       _count: { _all: true },
     }),
     prisma.ticketRequest.findMany({
-      where: { eventId: event.id, status: "PENDING_PAYMENT" },
+      where: { eventId: event.id, status: "PENDING_VERIFICATION" },
       select: { ticketType: true, quantity: true, ticketSelections: true },
     }),
   ]);
@@ -420,7 +420,7 @@ async function createPublicTicketRequest(req, res) {
       evidenceImageDataUrl: evidenceValidation.value,
       quantity: totalQuantity,
       promoterId: promoter?.id || null,
-      status: "PENDING_PAYMENT",
+      status: "PENDING_VERIFICATION",
     },
     select: {
       id: true,
@@ -629,3 +629,4 @@ module.exports = {
   getClientRequestMessagesByToken,
   createClientRequestMessageByToken,
 };
+

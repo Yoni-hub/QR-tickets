@@ -6,6 +6,15 @@ import { MAX_EVIDENCE_INPUT_BYTES, optimizeEvidenceDataUrl } from "../lib/eviden
 
 const HELP_CHAT_TOKEN_KEY = "qr_tickets_help_chat_token";
 
+function resolveRequestErrorMessage(requestError, fallbackMessage) {
+  const status = Number(requestError?.response?.status || 0);
+  const serverMessage = String(requestError?.response?.data?.error || "").trim();
+  if (serverMessage) return serverMessage;
+  if (status === 413) return "Request is too large. Remove attachment or use a smaller image.";
+  if (!requestError?.response) return "Could not reach support server. Start backend API on http://localhost:4100 and try again.";
+  return fallbackMessage;
+}
+
 const FAQ_SECTIONS = [
   {
     title: "General",
@@ -197,7 +206,7 @@ export default function HelpPage() {
         setMessages([]);
       }
       if (!silent) {
-        setFeedback({ kind: "error", message: requestError.response?.data?.error || "Could not load support chat." });
+        setFeedback({ kind: "error", message: resolveRequestErrorMessage(requestError, "Could not load support chat.") });
       }
     } finally {
       if (!silent) setChatLoading(false);
@@ -268,7 +277,7 @@ export default function HelpPage() {
       }
       setFeedback({ kind: "success", message: "Support conversation started." });
     } catch (requestError) {
-      setFeedback({ kind: "error", message: requestError.response?.data?.error || "Could not start support conversation." });
+      setFeedback({ kind: "error", message: resolveRequestErrorMessage(requestError, "Could not start support conversation.") });
     } finally {
       setSubmitting(false);
     }
@@ -293,7 +302,7 @@ export default function HelpPage() {
       setPendingImageDataUrl("");
       await loadConversation(token, { silent: true });
     } catch (requestError) {
-      setFeedback({ kind: "error", message: requestError.response?.data?.error || "Could not send message." });
+      setFeedback({ kind: "error", message: resolveRequestErrorMessage(requestError, "Could not send message.") });
     } finally {
       setSending(false);
     }

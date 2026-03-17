@@ -145,7 +145,7 @@ async function sendOrderTicketLinks(req, res) {
       },
     }),
     prisma.ticketRequest.findMany({
-      where: { eventId: event.id, status: "PENDING_PAYMENT" },
+      where: { eventId: event.id, status: "PENDING_VERIFICATION" },
       orderBy: { createdAt: "asc" },
       select: { ticketType: true, quantity: true, ticketSelections: true },
     }),
@@ -274,3 +274,4 @@ async function sendOrderTicketLinks(req, res) {
 module.exports = {
   sendOrderTicketLinks,
 };
+

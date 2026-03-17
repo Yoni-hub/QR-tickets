@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import Dashboard from "./pages/Dashboard";
 import Scanner from "./pages/Scanner";
@@ -27,6 +27,12 @@ export default function App() {
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
   const isEmbedPreview = searchParams.get("embed") === "1" && location.pathname.startsWith("/e/");
+  const [hasLoadedDashboard, setHasLoadedDashboard] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("qr-dashboard:loaded-once") === "1";
+  });
+  const dashboardNavLabel = hasLoadedDashboard ? "Dashboard" : "Home";
+  const dashboardNavHref = hasLoadedDashboard ? "/dashboard" : "/dashboard?home=1";
 
   useEffect(() => {
     const timerByElement = new WeakMap();
@@ -67,12 +73,25 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    const refreshDashboardLoadedState = () => {
+      setHasLoadedDashboard(window.localStorage.getItem("qr-dashboard:loaded-once") === "1");
+    };
+
+    window.addEventListener("storage", refreshDashboardLoadedState);
+    window.addEventListener("qr-dashboard-nav-updated", refreshDashboardLoadedState);
+    return () => {
+      window.removeEventListener("storage", refreshDashboardLoadedState);
+      window.removeEventListener("qr-dashboard-nav-updated", refreshDashboardLoadedState);
+    };
+  }, []);
+
   return (
       <div className="min-h-screen w-full overflow-x-clip bg-slate-50 text-slate-900">
       {!isEmbedPreview ? (
         <nav className="border-b bg-white px-4 py-3">
           <ul className="flex flex-wrap items-center gap-3 text-sm font-semibold">
-            <li><Link to="/dashboard">Dashboard</Link></li>
+            <li><Link to={dashboardNavHref}>{dashboardNavLabel}</Link></li>
             <li><Link to="/scanner">Scanner</Link></li>
             <li><Link to="/help">Help</Link></li>
             <li><Link to="/admin/dashboard">Admin</Link></li>

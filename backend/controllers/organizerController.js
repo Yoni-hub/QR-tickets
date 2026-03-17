@@ -448,7 +448,7 @@ async function messageTicketRequest(req, res) {
   const updatedRequest = await prisma.ticketRequest.update({
     where: { id: request.id },
     data: {
-      status: "PENDING_PAYMENT",
+      status: "PENDING_VERIFICATION",
       organizerMessage,
     },
     select: {
@@ -550,7 +550,7 @@ async function sendTicketRequestMessage(req, res) {
   await prisma.ticketRequest.update({
     where: { id: request.id },
     data: {
-      status: "PENDING_PAYMENT",
+      status: "PENDING_VERIFICATION",
       organizerMessage: message,
     },
   });
@@ -890,7 +890,7 @@ async function createGuestAndApprove(req, res) {
       email,
       quantity,
       promoterId,
-      status: "PENDING_PAYMENT",
+      status: "PENDING_VERIFICATION",
     },
   });
 
@@ -940,7 +940,7 @@ async function bulkGuestImport(req, res) {
         email,
         quantity,
         promoterId: promoter?.id || null,
-        status: "PENDING_PAYMENT",
+        status: "PENDING_VERIFICATION",
       },
     });
 
@@ -968,4 +968,5 @@ module.exports = {
   createGuestAndApprove,
   bulkGuestImport,
 };
+
 

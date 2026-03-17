@@ -227,6 +227,7 @@ export default function Dashboard() {
   const [params, setParams] = useSearchParams();
   const [activeMenu, setActiveMenu] = useState("events");
   const [code, setCode] = useState(params.get("code") || "");
+  const [showAccessCodeEntry, setShowAccessCodeEntry] = useState(Boolean(String(params.get("code") || "").trim()));
   const [showPublicPreview, setShowPublicPreview] = useState(false);
   const [ticketPage, setTicketPage] = useState(1);
   const [ticketTypeFilter, setTicketTypeFilter] = useState("ALL");
@@ -328,7 +329,9 @@ export default function Dashboard() {
       : renderEmailHtmlPreview(previewBody, sampleData.ticketUrl);
 
   const accessCode = useMemo(() => code.trim(), [code]);
+  const shouldOpenHomeMode = params.get("home") === "1";
   const isAccessCodeGenerationMode = !accessCode;
+  const showHeroSection = !summary && !accessCode && !showAccessCodeEntry;
   const eventPrimaryActionLabel = isAccessCodeGenerationMode ? "Generate Access Code" : "Save Event";
   const eventPrimaryLoadingLabel = isAccessCodeGenerationMode ? "Generating..." : "Saving...";
   const visibleMenus = summary ? DASHBOARD_MENUS_ALL : DASHBOARD_MENUS_PRELOAD;
@@ -430,6 +433,27 @@ export default function Dashboard() {
     [tickets],
   );
   const noDeliverableTickets = tickets.length > 0 && deliverableCount < 1;
+
+  useEffect(() => {
+    if (!shouldOpenHomeMode) return;
+    if (summary) return;
+    setCode("");
+    setShowAccessCodeEntry(false);
+    setFeedback({ kind: "", message: "" });
+    setSummary(null);
+    setEvents([]);
+    setSelectedEventId("");
+    setTickets([]);
+    setTicketDeliverySummary({ undeliveredTickets: 0, pendingRequestedTickets: 0, downloadableTickets: 0 });
+    setTicketRequests([]);
+    setPromoters([]);
+    setLeaderboard([]);
+    setActiveMenu("events");
+    setShowPublicPreview(false);
+    setEventEditMode(EVENT_EDIT_MODES.CREATE);
+    setEventDraft({ organizerName: "", eventName: "", eventDate: "", eventAddress: "", paymentInstructions: "" });
+    setParams({});
+  }, [shouldOpenHomeMode, summary, setParams]);
 
   useEffect(() => {
     setCopiedPublicEventLink(false);
@@ -558,6 +582,8 @@ export default function Dashboard() {
       await loadTicketsForEvent(summaryRes.data.event.id);
       await loadRequestsAndPromoters(trimmedCode, summaryRes.data.event.id);
       setFeedback({ kind: "success", message: "Dashboard loaded." });
+      window.localStorage.setItem("qr-dashboard:loaded-once", "1");
+      window.dispatchEvent(new Event("qr-dashboard-nav-updated"));
     } catch (requestError) {
       setFeedback({ kind: "error", message: requestError.response?.data?.error || "Unable to load dashboard." });
       setSummary(null);
@@ -581,6 +607,7 @@ export default function Dashboard() {
       setFeedback({ kind: "info", message: "New here? Fill in your event details to generate your access code." });
       return;
     }
+    setShowAccessCodeEntry(true);
     await loadDashboard(trimmedCode);
   };
 
@@ -1272,16 +1299,41 @@ export default function Dashboard() {
 
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-4 sm:px-6 sm:py-6">
-      <div className="flex flex-wrap items-center gap-2">
-        <h1 className="text-2xl font-bold sm:text-3xl">Dashboard</h1>
-        <span className="rounded border bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">
-          Organizer Code: <span className="font-mono">{accessCode || "-"}</span>
-        </span>
-      </div>
-      <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-        <input className="w-full rounded border p-2" value={code} onChange={(e) => setCode(e.target.value)} placeholder="Enter your organizer access code" />
-        <AppButton onClick={load} loading={loading} loadingText="Loading..." variant="primary">Load</AppButton>
-      </div>
+      {showHeroSection ? (
+        <section className="mt-4 rounded border p-4">
+          <h1 className="text-3xl font-black leading-tight sm:text-4xl">Stop Signing Up For Ticket Platforms</h1>
+          <p className="mt-4 text-base font-semibold text-slate-800 sm:text-lg">Create your event &rarr; Generate QR tickets &rarr; Scan at the door</p>
+          <div className="mt-4 space-y-1 text-sm font-semibold text-slate-900 sm:text-base">
+            <p>&#10004; No accounts.</p>
+            <p>&#10004; No passwords.</p>
+            <p>&#10004; No payment details.</p>
+          </div>
+          <div className="mt-5 flex flex-wrap items-center gap-2">
+            <p className="text-sm font-semibold text-slate-900 sm:text-base">Create your event below.</p>
+            <AppButton
+              type="button"
+              variant="secondary"
+              className="sm:w-auto"
+              onClick={() => setShowAccessCodeEntry(true)}
+            >
+              Already have Organizer access code?
+            </AppButton>
+          </div>
+        </section>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-2xl font-bold sm:text-3xl">Dashboard</h1>
+            <span className="rounded border bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">
+              Organizer Code: <span className="font-mono">{accessCode || "-"}</span>
+            </span>
+          </div>
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+            <input className="w-full rounded border p-2" value={code} onChange={(e) => setCode(e.target.value)} placeholder="Enter your organizer access code" />
+            <AppButton onClick={load} loading={loading} loadingText="Loading..." variant="primary">Load</AppButton>
+          </div>
+        </>
+      )}
 
       <div ref={feedbackRef}>
         <FeedbackBanner className="mt-3" kind={feedback.kind} message={feedback.message} />
@@ -1514,66 +1566,48 @@ export default function Dashboard() {
               <div className="mt-3 space-y-3 lg:hidden">
                 {pagedTickets.map((ticket) => (
                   <article key={ticket.ticketPublicId} className="rounded border bg-white p-3 text-sm">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="text-[11px] uppercase tracking-wide text-slate-500">Ticket ID</p>
-                        <p className="break-all font-mono text-xs">{ticket.ticketPublicId}</p>
-                      </div>
-                      <p className="rounded bg-slate-100 px-2 py-1 text-[11px] font-semibold uppercase text-slate-700">
-                        {ticket.status}
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <p><span className="font-semibold">Ticket ID:</span> <span className="break-all font-mono">{ticket.ticketPublicId}</span></p>
+                      <p><span className="font-semibold">Status:</span> {ticket.status}</p>
+                      <p><span className="font-semibold">Type:</span> {ticket.ticketType || summary.event.ticketType || "General"}</p>
+                      <p><span className="font-semibold">Sold:</span> {isTicketSold(ticket) ? "YES" : "NO"}</p>
+                      <p className="col-span-2"><span className="font-semibold">Buyer:</span> <span className="break-all">{ticket.buyer || "-"}</span></p>
+                      <p><span className="font-semibold">Delivery:</span> {resolveDeliveryMethodLabel(ticket)}</p>
+                      <p><span className="font-semibold">Scanned At:</span> {formatDate(ticket.scannedAt)}</p>
+                      <p className="col-span-2">
+                        <span className="font-semibold">Cancellation Reason:</span>{" "}
+                        {isTicketCancelled(ticket)
+                          ? resolveCancellationReasonLabel(ticket.cancellationReason, ticket.cancellationOtherReason)
+                          : "-"}
                       </p>
                     </div>
-                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                      <div className="rounded border bg-slate-50 p-2">
-                        <p className="text-[11px] uppercase tracking-wide text-slate-500">Ticket Type</p>
-                        <p className="mt-1 font-medium text-slate-900">{ticket.ticketType || summary.event.ticketType || "General"}</p>
-                      </div>
-                      <div className="rounded border bg-slate-50 p-2">
-                        <p className="text-[11px] uppercase tracking-wide text-slate-500">Sold</p>
-                        <p className="mt-1 font-medium text-slate-900">{isTicketSold(ticket) ? "YES" : "NO"}</p>
-                      </div>
-                      <div className="rounded border bg-slate-50 p-2">
-                        <p className="text-[11px] uppercase tracking-wide text-slate-500">Buyer</p>
-                        <p className="mt-1 break-all font-medium text-slate-900">{ticket.buyer || "-"}</p>
-                      </div>
-                      <div className="rounded border bg-slate-50 p-2">
-                        <p className="text-[11px] uppercase tracking-wide text-slate-500">Delivery</p>
-                        <p className="mt-1 font-medium text-slate-900">{resolveDeliveryMethodLabel(ticket)}</p>
-                      </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <AppButton
+                        type="button"
+                        className={`px-2 py-1 text-xs ${!isTicketSold(ticket) || isTicketCancelled(ticket) ? "opacity-70" : ""}`}
+                        variant={!isTicketSold(ticket) || isTicketCancelled(ticket) ? "secondary" : "danger"}
+                        onClick={() => openCancelTicketModal(ticket)}
+                        disabled={!isTicketSold(ticket)}
+                      >
+                        {!isTicketSold(ticket)
+                          ? "Not Sold"
+                          : isTicketCancelled(ticket)
+                            ? `Cancelled at ${formatDate(ticket.cancelledAt || ticket.invalidatedAt)}`
+                            : "Cancel Ticket"}
+                      </AppButton>
+                      <AppButton
+                        type="button"
+                        className={`px-2 py-1 text-xs ${resolveDeliveryMethodLabel(ticket) !== "NOT_DELIVERED" ? "opacity-70" : ""}`}
+                        variant="secondary"
+                        title={resolveDeliveryMethodLabel(ticket) !== "NOT_DELIVERED" ? `cant copy! ticket already delivered through ${resolveDeliveryMethodErrorLabel(resolveDeliveryMethodLabel(ticket))}.` : "Copy ticket URL"}
+                        onClick={() => copyTicketUrl(ticket)}
+                      >
+                        {copiedTicketPublicId === ticket.ticketPublicId ? "Copied" : "Copy"}
+                      </AppButton>
                     </div>
-                    <div className="mt-2 rounded border bg-slate-50 p-2 text-xs">
-                      <p className="text-[11px] uppercase tracking-wide text-slate-500">Scanned At</p>
-                      <p className="mt-1 font-medium text-slate-900">{formatDate(ticket.scannedAt)}</p>
-                    </div>
-                    <div className="mt-2 rounded border bg-slate-50 p-2 text-xs">
-                      <p className="text-[11px] uppercase tracking-wide text-slate-500">Cancellations</p>
-                      {isTicketSold(ticket) ? (
-                        <button
-                          type="button"
-                          className={`mt-1 rounded border px-2 py-1 text-xs ${isTicketCancelled(ticket) ? "opacity-60" : ""}`}
-                          onClick={() => openCancelTicketModal(ticket)}
-                        >
-                          {isTicketCancelled(ticket) ? `Cancelled at ${formatDate(ticket.cancelledAt || ticket.invalidatedAt)}` : "Cancel Ticket"}
-                        </button>
-                      ) : (
-                        <p className="mt-1 font-medium text-slate-900">-</p>
-                      )}
-                      {isTicketCancelled(ticket) ? (
-                        <p className="mt-1 text-[11px] text-slate-600">
-                          {resolveCancellationReasonLabel(ticket.cancellationReason, ticket.cancellationOtherReason)}
-                        </p>
-                      ) : null}
-                      {ticketCancelError.ticketPublicId === ticket.ticketPublicId && ticketCancelError.message ? (
-                        <p className="mt-1 text-xs text-red-600">{ticketCancelError.message}</p>
-                      ) : null}
-                    </div>
-                    <button
-                      className={`mt-2 rounded border px-2 py-1 text-xs ${resolveDeliveryMethodLabel(ticket) !== "NOT_DELIVERED" ? "opacity-60" : ""}`}
-                      title={resolveDeliveryMethodLabel(ticket) !== "NOT_DELIVERED" ? `cant copy! ticket already delivered through ${resolveDeliveryMethodErrorLabel(resolveDeliveryMethodLabel(ticket))}.` : "Copy ticket URL"}
-                      onClick={() => copyTicketUrl(ticket)}
-                    >
-                      {copiedTicketPublicId === ticket.ticketPublicId ? "Copied" : "Copy"}
-                    </button>
+                    {ticketCancelError.ticketPublicId === ticket.ticketPublicId && ticketCancelError.message ? (
+                      <p className="mt-1 text-xs text-red-600">{ticketCancelError.message}</p>
+                    ) : null}
                     {ticketCopyError.ticketPublicId === ticket.ticketPublicId && ticketCopyError.message ? (
                       <p className="mt-1 text-xs text-red-600">{ticketCopyError.message}</p>
                     ) : null}
@@ -2158,17 +2192,6 @@ export default function Dashboard() {
               value={eventDraft.eventAddress}
               onChange={(e) => setEventDraft((prev) => ({ ...prev, eventAddress: e.target.value }))}
             />
-            <p className="font-semibold">Payment:</p>
-            <div>
-              <textarea
-                className="w-full rounded border p-2 text-sm"
-                rows={3}
-                placeholder="How should clients pay? (e.g. CashApp $..., Zelle ..., bank transfer...)"
-                value={eventDraft.paymentInstructions}
-                onChange={(e) => setEventDraft((prev) => ({ ...prev, paymentInstructions: e.target.value }))}
-              />
-              <p className="mt-1 text-xs text-slate-500">Leave this blank for free events.</p>
-            </div>
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             <AppButton className="" onClick={saveEventInline} loading={savingEvent} loadingText={eventPrimaryLoadingLabel}>
