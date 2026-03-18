@@ -2,6 +2,12 @@ const prisma = require("../utils/prisma");
 const { getPublicBaseUrl } = require("../services/eventService");
 const { sendTicketLinksDigestEmail } = require("../utils/mailer");
 const { sendTicketSms } = require("../utils/sms");
+const {
+  CHAT_CONVERSATION_TYPE,
+  resolveActorFromOrganizer,
+  startConversationForActor,
+  sendMessageForActor,
+} = require("../services/chatService");
 
 const MAX_CHAT_MESSAGE_LENGTH = 1200;
 
@@ -649,7 +655,6 @@ async function cancelOrganizerTicket(req, res) {
     });
 
     let updatedRequest = null;
-    let createdMessage = null;
     if (ticket.ticketRequestId) {
       updatedRequest = await tx.ticketRequest.update({
         where: { id: ticket.ticketRequestId },
@@ -671,25 +676,35 @@ async function cancelOrganizerTicket(req, res) {
           cancellationEvidenceImageDataUrl: true,
         },
       });
-
-      createdMessage = await tx.ticketRequestMessage.create({
-        data: {
-          ticketRequestId: ticket.ticketRequestId,
-          senderType: "ORGANIZER",
-          message: organizerMessage,
-          evidenceImageDataUrl,
-        },
-        select: { id: true, senderType: true, message: true, evidenceImageDataUrl: true, createdAt: true, readAt: true },
-      });
     }
 
-    return { ticket: updatedTicket, request: updatedRequest, message: createdMessage };
+    return { ticket: updatedTicket, request: updatedRequest };
   });
+
+  let chatMessage = null;
+  if (ticket.ticketRequestId) {
+    try {
+      const organizerActor = await resolveActorFromOrganizer(accessCode);
+      if (organizerActor) {
+        const conversationId = await startConversationForActor(organizerActor, {
+          conversationType: CHAT_CONVERSATION_TYPE.ORGANIZER_CLIENT,
+          ticketRequestId: ticket.ticketRequestId,
+        });
+        chatMessage = await sendMessageForActor(organizerActor, conversationId, {
+          message: organizerMessage,
+          legacyDataUrl: evidenceImageDataUrl || "",
+        });
+      }
+    } catch {
+      // Keep cancellation successful even if chat sync fails.
+      chatMessage = null;
+    }
+  }
 
   res.json({
     ticket: updated.ticket,
     request: updated.request,
-    message: updated.message ? mapChatMessage(updated.message) : null,
+    message: chatMessage || null,
   });
 }
 

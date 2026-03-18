@@ -2,6 +2,11 @@ const prisma = require("../utils/prisma");
 const crypto = require("crypto");
 const sharp = require("sharp");
 const { getPublicBaseUrl } = require("../services/eventService");
+const {
+  CHAT_CONVERSATION_TYPE,
+  resolveActorFromClient,
+  startConversationForActor,
+} = require("../services/chatService");
 
 const MAX_EVIDENCE_INPUT_BYTES = 8 * 1024 * 1024;
 const MAX_EVIDENCE_OUTPUT_BYTES = 900 * 1024;
@@ -436,6 +441,18 @@ async function createPublicTicketRequest(req, res) {
       event: { select: { slug: true, paymentInstructions: true, eventName: true } },
     },
   });
+
+  const clientActor = resolveActorFromClient(request.clientAccessToken);
+  if (clientActor) {
+    try {
+      await startConversationForActor(clientActor, {
+        conversationType: CHAT_CONVERSATION_TYPE.ORGANIZER_CLIENT,
+        ticketRequestId: request.id,
+      });
+    } catch {
+      // Request creation should not fail if chat bootstrap fails.
+    }
+  }
 
   res.status(201).json({
     request,

@@ -31,11 +31,19 @@ const {
   deletePromoter,
 } = require("../controllers/organizerController");
 const {
+  adminListConversations,
+  adminStartConversation,
+  adminGetConversationMessages,
+  adminSendConversationMessage,
+  adminMarkConversationRead,
+  adminUpdateConversationStatus,
+  adminDownloadAttachment,
   listAdminSupportConversations,
   getAdminSupportConversationMessages,
   sendAdminSupportMessage,
   updateAdminSupportConversationStatus,
-} = require("../controllers/supportController");
+} = require("../controllers/chatController");
+const { chatAttachmentUpload } = require("../middleware/chatUpload");
 
 const router = express.Router();
 
@@ -73,9 +81,19 @@ router.post("/promoters", createPromoter);
 router.get("/promoters", listPromoters);
 router.patch("/promoters/:id", updatePromoter);
 router.delete("/promoters/:id", deletePromoter);
+
+router.get("/chat/conversations", adminListConversations);
+router.post("/chat/conversations", adminStartConversation);
+router.get("/chat/conversations/:conversationId/messages", adminGetConversationMessages);
+router.post("/chat/conversations/:conversationId/messages", chatAttachmentUpload, adminSendConversationMessage);
+router.post("/chat/conversations/:conversationId/read", adminMarkConversationRead);
+router.patch("/chat/conversations/:conversationId/status", adminUpdateConversationStatus);
+router.get("/chat/attachments/:attachmentId", adminDownloadAttachment);
+
+// Compatibility aliases for existing /admin/support UI/API usage.
 router.get("/support/conversations", listAdminSupportConversations);
 router.get("/support/conversations/:id/messages", getAdminSupportConversationMessages);
-router.post("/support/conversations/:id/messages", sendAdminSupportMessage);
+router.post("/support/conversations/:id/messages", chatAttachmentUpload, sendAdminSupportMessage);
 router.patch("/support/conversations/:id/status", updateAdminSupportConversationStatus);
 
 module.exports = router;

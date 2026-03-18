@@ -33,6 +33,7 @@ model UserEvent {
   ticketRequests TicketRequest[]
   promoters   Promoter[]
   supportConversations SupportConversation[]
+  chatConversations ChatConversation[]
 
   @@index([organizerAccessCode])
 }
@@ -175,6 +176,7 @@ model TicketRequest {
   promoter   Promoter? @relation(fields: [promoterId], references: [id], onDelete: SetNull)
   tickets    Ticket[]
   messages   TicketRequestMessage[]
+  chatConversations ChatConversation[]
 
   @@index([eventId])
   @@index([promoterId])
@@ -269,6 +271,69 @@ model SupportMessage {
   @@index([conversationId, readAt])
 }
 
+model ChatConversation {
+  id                         String                 @id @default(cuid())
+  conversationType           ChatConversationType
+  status                     ChatConversationStatus @default(OPEN)
+  subject                    String?
+  eventId                    String?
+  ticketRequestId            String?
+  legacySupportConversationToken String?
+  partyAType                 ChatActorType
+  partyAOrganizerAccessCode  String?
+  partyAClientAccessToken    String?
+  partyBType                 ChatActorType
+  partyBOrganizerAccessCode  String?
+  partyBClientAccessToken    String?
+  partyAReadAt               DateTime?
+  partyBReadAt               DateTime?
+  lastMessageAt              DateTime               @default(now())
+  createdAt                  DateTime               @default(now())
+  updatedAt                  DateTime               @updatedAt
+  event                      UserEvent?             @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  ticketRequest              TicketRequest?         @relation(fields: [ticketRequestId], references: [id], onDelete: SetNull)
+  messages                   ChatMessage[]
+
+  @@index([conversationType, status, lastMessageAt])
+  @@index([eventId])
+  @@index([ticketRequestId])
+  @@index([partyAType, partyAOrganizerAccessCode, partyAClientAccessToken])
+  @@index([partyBType, partyBOrganizerAccessCode, partyBClientAccessToken])
+  @@unique([ticketRequestId, conversationType])
+}
+
+model ChatMessage {
+  id                    String          @id @default(cuid())
+  conversationId        String
+  senderType            ChatActorType
+  senderOrganizerAccessCode String?
+  senderClientAccessToken String?
+  body                  String
+  messageType           ChatMessageType @default(TEXT)
+  createdAt             DateTime        @default(now())
+  conversation          ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  attachments           ChatAttachment[]
+
+  @@index([conversationId, createdAt])
+}
+
+model ChatAttachment {
+  id            String             @id @default(cuid())
+  messageId     String
+  kind          ChatAttachmentKind
+  storageType   ChatAttachmentStorageType @default(LOCAL_FILE)
+  mimeType      String
+  originalName  String
+  storageKey    String?
+  legacyDataUrl String?
+  sizeBytes     Int
+  createdAt     DateTime           @default(now())
+  message       ChatMessage        @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@index([storageKey])
+}
+
 enum SupportConversationStatus {
   OPEN
   CLOSED
@@ -277,5 +342,38 @@ enum SupportConversationStatus {
 enum SupportMessageSender {
   VISITOR
   ADMIN
+}
+
+enum ChatActorType {
+  ADMIN
+  ORGANIZER
+  CLIENT
+}
+
+enum ChatConversationType {
+  ORGANIZER_ADMIN
+  ORGANIZER_CLIENT
+  ADMIN_CLIENT
+}
+
+enum ChatConversationStatus {
+  OPEN
+  CLOSED
+}
+
+enum ChatMessageType {
+  TEXT
+  TEXT_WITH_ATTACHMENT
+  ATTACHMENT_ONLY
+}
+
+enum ChatAttachmentKind {
+  IMAGE
+  PDF
+}
+
+enum ChatAttachmentStorageType {
+  LOCAL_FILE
+  LEGACY_DATA_URL
 }
 

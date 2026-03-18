@@ -17,22 +17,13 @@ const {
   getPublicEventBySlug,
   createPublicTicketRequest,
   getClientDashboardByToken,
-  getClientRequestMessagesByToken,
-  createClientRequestMessageByToken,
 } = require("../controllers/publicController");
-const {
-  createSupportConversation,
-  getSupportConversationMessages,
-  sendSupportConversationMessage,
-} = require("../controllers/supportController");
 const {
   getOrganizerTicketRequests,
   approveTicketRequest,
   rejectTicketRequest,
   messageTicketRequest,
   cancelOrganizerTicket,
-  getTicketRequestMessages,
-  sendTicketRequestMessage,
   listPromoters,
   createPromoter,
   updatePromoter,
@@ -40,6 +31,28 @@ const {
   createGuestAndApprove,
   bulkGuestImport,
 } = require("../controllers/organizerController");
+const {
+  organizerListConversations,
+  organizerStartConversation,
+  organizerGetConversationMessages,
+  organizerSendConversationMessage,
+  organizerMarkConversationRead,
+  organizerDownloadAttachment,
+  clientListConversations,
+  clientStartConversation,
+  clientGetConversationMessages,
+  clientSendConversationMessage,
+  clientMarkConversationRead,
+  clientDownloadAttachment,
+  createSupportConversation,
+  getSupportConversationMessages,
+  sendSupportConversationMessage,
+  getTicketRequestMessages,
+  sendTicketRequestMessage,
+  getClientRequestMessagesByToken,
+  createClientRequestMessageByToken,
+} = require("../controllers/chatController");
+const { chatAttachmentUpload } = require("../middleware/chatUpload");
 
 const router = express.Router();
 
@@ -61,6 +74,16 @@ router.post("/public/ticket-request", createPublicTicketRequest);
 router.get("/public/client-dashboard/:clientAccessToken", getClientDashboardByToken);
 router.get("/public/client-dashboard/:clientAccessToken/messages", getClientRequestMessagesByToken);
 router.post("/public/client-dashboard/:clientAccessToken/messages", createClientRequestMessageByToken);
+router.get("/public/client-dashboard/:clientAccessToken/chat/conversations", clientListConversations);
+router.post("/public/client-dashboard/:clientAccessToken/chat/conversations", clientStartConversation);
+router.get("/public/client-dashboard/:clientAccessToken/chat/conversations/:conversationId/messages", clientGetConversationMessages);
+router.post(
+  "/public/client-dashboard/:clientAccessToken/chat/conversations/:conversationId/messages",
+  chatAttachmentUpload,
+  clientSendConversationMessage,
+);
+router.post("/public/client-dashboard/:clientAccessToken/chat/conversations/:conversationId/read", clientMarkConversationRead);
+router.get("/public/client-dashboard/:clientAccessToken/chat/attachments/:attachmentId", clientDownloadAttachment);
 router.post("/public/support/conversations", createSupportConversation);
 router.get("/public/support/conversations/:conversationToken/messages", getSupportConversationMessages);
 router.post("/public/support/conversations/:conversationToken/messages", sendSupportConversationMessage);
@@ -71,7 +94,17 @@ router.post("/ticket-requests/:id/reject", rejectTicketRequest);
 router.post("/ticket-requests/:id/message", messageTicketRequest);
 router.post("/tickets/:ticketPublicId/cancel", cancelOrganizerTicket);
 router.get("/ticket-requests/:id/messages", getTicketRequestMessages);
-router.post("/ticket-requests/:id/messages", sendTicketRequestMessage);
+router.post("/ticket-requests/:id/messages", chatAttachmentUpload, sendTicketRequestMessage);
+router.get("/events/by-code/:accessCode/chat/conversations", organizerListConversations);
+router.post("/events/by-code/:accessCode/chat/conversations", organizerStartConversation);
+router.get("/events/by-code/:accessCode/chat/conversations/:conversationId/messages", organizerGetConversationMessages);
+router.post(
+  "/events/by-code/:accessCode/chat/conversations/:conversationId/messages",
+  chatAttachmentUpload,
+  organizerSendConversationMessage,
+);
+router.post("/events/by-code/:accessCode/chat/conversations/:conversationId/read", organizerMarkConversationRead);
+router.get("/events/by-code/:accessCode/chat/attachments/:attachmentId", organizerDownloadAttachment);
 router.post("/events/by-code/:accessCode/guests", createGuestAndApprove);
 router.post("/events/by-code/:accessCode/guests/bulk", bulkGuestImport);
 

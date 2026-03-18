@@ -10,7 +10,7 @@ const NAV_ITEMS = [
   { to: "/admin/deliveries", label: "Deliveries" },
   { to: "/admin/scans", label: "Scans" },
   { to: "/admin/organizers", label: "Organizers" },
-  { to: "/admin/support", label: "Support" },
+  { to: "/admin/support", label: "Chat" },
   { to: "/admin/client-dash-tokens", label: "Client Dash Tokens" },
   { to: "/admin/settings", label: "Settings" },
   { to: "/admin/audit-log", label: "Audit Log" },
@@ -104,10 +104,10 @@ export default function AdminLayout() {
     let alive = true;
     const loadUnreadSupportCount = async () => {
       try {
-        const response = await adminApi.get("/support/conversations", { params: { status: "OPEN" } });
+        const response = await adminApi.get("/chat/conversations", { params: { status: "OPEN" } });
         if (!alive) return;
         const items = Array.isArray(response.data?.items) ? response.data.items : [];
-        const totalUnread = items.reduce((sum, item) => sum + Number(item?.unreadVisitorMessages || 0), 0);
+        const totalUnread = items.reduce((sum, item) => sum + Number(item?.unreadCount || 0), 0);
         setUnreadSupportCount(totalUnread);
       } catch {
         if (alive) setUnreadSupportCount(0);
