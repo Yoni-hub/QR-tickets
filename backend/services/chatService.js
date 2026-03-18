@@ -31,7 +31,7 @@ function normalizeText(value, maxLength = 1200) {
 }
 
 function normalizeAccessCode(value) {
-  return String(value || "").trim().toUpperCase();
+  return String(value || "").trim();
 }
 
 function normalizeClientAccessToken(value) {

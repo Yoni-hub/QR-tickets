@@ -31,8 +31,19 @@ export default function App() {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem("qr-dashboard:loaded-once") === "1";
   });
-  const dashboardNavLabel = hasLoadedDashboard ? "Dashboard" : "Home";
-  const dashboardNavHref = hasLoadedDashboard ? "/dashboard" : "/dashboard?home=1";
+  const [isDashboardEntry, setIsDashboardEntry] = useState(false);
+  const showDashboardNavItem = hasLoadedDashboard || isDashboardEntry;
+
+  useEffect(() => {
+    const handleCodeEntry = () => setIsDashboardEntry(true);
+    const handleHomeMode = () => setIsDashboardEntry(false);
+    window.addEventListener("qr-dashboard-code-entry", handleCodeEntry);
+    window.addEventListener("qr-dashboard-home-mode", handleHomeMode);
+    return () => {
+      window.removeEventListener("qr-dashboard-code-entry", handleCodeEntry);
+      window.removeEventListener("qr-dashboard-home-mode", handleHomeMode);
+    };
+  }, []);
 
   useEffect(() => {
     const timerByElement = new WeakMap();
@@ -91,7 +102,8 @@ export default function App() {
       {!isEmbedPreview ? (
         <nav className="border-b bg-white px-4 py-3">
           <ul className="flex flex-wrap items-center gap-3 text-sm font-semibold">
-            <li><Link to={dashboardNavHref}>{dashboardNavLabel}</Link></li>
+            <li><Link to="/dashboard?home=1">Home</Link></li>
+            {showDashboardNavItem ? <li><Link to="/dashboard">Dashboard</Link></li> : null}
             <li><Link to="/scanner">Scanner</Link></li>
             <li><Link to="/help">Help</Link></li>
             <li><Link to="/admin/dashboard">Admin</Link></li>

@@ -1,19 +1,6 @@
-import { useEffect, useState } from "react";
-import api from "../lib/api";
+import { useState } from "react";
+import { Link } from "react-router-dom";
 import AppButton from "../components/ui/AppButton";
-import FeedbackBanner from "../components/ui/FeedbackBanner";
-import { MAX_EVIDENCE_INPUT_BYTES, optimizeEvidenceDataUrl } from "../lib/evidenceImage";
-
-const HELP_CHAT_TOKEN_KEY = "qr_tickets_help_chat_token";
-
-function resolveRequestErrorMessage(requestError, fallbackMessage) {
-  const status = Number(requestError?.response?.status || 0);
-  const serverMessage = String(requestError?.response?.data?.error || "").trim();
-  if (serverMessage) return serverMessage;
-  if (status === 413) return "Request is too large. Remove attachment or use a smaller image.";
-  if (!requestError?.response) return "Could not reach support server. Start backend API on http://localhost:4100 and try again.";
-  return fallbackMessage;
-}
 
 const FAQ_SECTIONS = [
   {
@@ -174,149 +161,7 @@ const FAQ_SECTIONS = [
 export default function HelpPage() {
   const [activeTab, setActiveTab] = useState("faq");
   const [openItems, setOpenItems] = useState(() => new Set());
-  const [feedback, setFeedback] = useState({ kind: "", message: "" });
-  const [conversation, setConversation] = useState(null);
-  const [messages, setMessages] = useState([]);
-  const [chatLoading, setChatLoading] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [form, setForm] = useState({ name: "", email: "", accessCode: "", message: "" });
-  const [chatInput, setChatInput] = useState("");
-  const [pendingImageDataUrl, setPendingImageDataUrl] = useState("");
-
-  const formatDate = (value) => {
-    if (!value) return "-";
-    return new Date(value).toLocaleString();
-  };
-
-  const loadConversation = async (token, options = {}) => {
-    if (!token) return;
-    const silent = Boolean(options.silent);
-    if (!silent) setChatLoading(true);
-    try {
-      const response = await api.get(`/public/support/conversations/${encodeURIComponent(token)}/messages`);
-      setConversation(response.data.conversation || null);
-      setMessages(response.data.messages || []);
-      if (!silent) setFeedback({ kind: "", message: "" });
-    } catch (requestError) {
-      const status = Number(requestError?.response?.status || 0);
-      if (status === 404) {
-        window.localStorage.removeItem(HELP_CHAT_TOKEN_KEY);
-        setConversation(null);
-        setMessages([]);
-      }
-      if (!silent) {
-        setFeedback({ kind: "error", message: resolveRequestErrorMessage(requestError, "Could not load support chat.") });
-      }
-    } finally {
-      if (!silent) setChatLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    const token = String(window.localStorage.getItem(HELP_CHAT_TOKEN_KEY) || "").trim();
-    if (!token) return;
-    loadConversation(token);
-  }, []);
-
-  useEffect(() => {
-    if (!conversation?.conversationToken) return undefined;
-    const interval = setInterval(() => {
-      loadConversation(conversation.conversationToken, { silent: true });
-    }, 9000);
-    return () => clearInterval(interval);
-  }, [conversation?.conversationToken]);
-
-  const onAttachImage = async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    if (!String(file.type || "").startsWith("image/")) {
-      setFeedback({ kind: "error", message: "Attachment must be an image file." });
-      event.target.value = "";
-      return;
-    }
-    if (file.size > MAX_EVIDENCE_INPUT_BYTES) {
-      setFeedback({ kind: "error", message: "Image is too large. Maximum upload size is 8MB." });
-      event.target.value = "";
-      return;
-    }
-    try {
-      const dataUrl = await optimizeEvidenceDataUrl(file);
-      setPendingImageDataUrl(dataUrl);
-      setFeedback({ kind: "success", message: "Image attached." });
-    } catch {
-      setFeedback({ kind: "error", message: "Could not process image." });
-    }
-    event.target.value = "";
-  };
-
-  const createConversation = async () => {
-    const initialMessage = String(form.message || "").trim();
-    if (!initialMessage) {
-      setFeedback({ kind: "error", message: "Please write your support message." });
-      return;
-    }
-
-    setSubmitting(true);
-    setFeedback({ kind: "", message: "" });
-    try {
-      const response = await api.post("/public/support/conversations", {
-        name: form.name,
-        email: form.email,
-        accessCode: form.accessCode,
-        message: initialMessage,
-        evidenceImageDataUrl: pendingImageDataUrl || null,
-      });
-      const nextConversation = response.data.conversation || null;
-      setConversation(nextConversation);
-      setMessages(response.data.messages || []);
-      setForm((prev) => ({ ...prev, message: "" }));
-      setPendingImageDataUrl("");
-      if (nextConversation?.conversationToken) {
-        window.localStorage.setItem(HELP_CHAT_TOKEN_KEY, nextConversation.conversationToken);
-      }
-      setFeedback({ kind: "success", message: "Support conversation started." });
-    } catch (requestError) {
-      setFeedback({ kind: "error", message: resolveRequestErrorMessage(requestError, "Could not start support conversation.") });
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const sendMessage = async () => {
-    const token = conversation?.conversationToken;
-    const message = String(chatInput || "").trim();
-    if (!token) return;
-    if (!message) {
-      setFeedback({ kind: "error", message: "Message is required." });
-      return;
-    }
-    setSending(true);
-    setFeedback({ kind: "", message: "" });
-    try {
-      await api.post(`/public/support/conversations/${encodeURIComponent(token)}/messages`, {
-        message,
-        evidenceImageDataUrl: pendingImageDataUrl || null,
-      });
-      setChatInput("");
-      setPendingImageDataUrl("");
-      await loadConversation(token, { silent: true });
-    } catch (requestError) {
-      setFeedback({ kind: "error", message: resolveRequestErrorMessage(requestError, "Could not send message.") });
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const resetConversation = () => {
-    window.localStorage.removeItem(HELP_CHAT_TOKEN_KEY);
-    setConversation(null);
-    setMessages([]);
-    setForm({ name: "", email: "", accessCode: "", message: "" });
-    setChatInput("");
-    setPendingImageDataUrl("");
-    setFeedback({ kind: "info", message: "Started a new support draft." });
-  };
+  const [role, setRole] = useState(null); // null | "organizer" | "customer" | "visitor"
 
   const toggleItem = (itemId) => {
     setOpenItems((previous) => {
@@ -338,8 +183,6 @@ export default function HelpPage() {
           Support
         </AppButton>
       </div>
-      <FeedbackBanner className="mt-3" kind={feedback.kind} message={feedback.message} />
-
       {activeTab === "faq" ? (
         <div className="mt-5 space-y-6">
           {FAQ_SECTIONS.map((section) => (
@@ -374,110 +217,107 @@ export default function HelpPage() {
           ))}
         </div>
       ) : (
-        <section className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-[320px,1fr]">
-          <article className="rounded border bg-white p-4">
-            <h2 className="text-lg font-semibold">{conversation ? "Your Support Info" : "Start Support Chat"}</h2>
-            <p className="mt-1 text-sm text-slate-600">Share your info so admin can verify your request quickly.</p>
-
-            <div className="mt-3 space-y-2">
-              <input
-                className="w-full rounded border p-2"
-                placeholder="Your name"
-                value={form.name}
-                onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
-                disabled={Boolean(conversation)}
-              />
-              <input
-                className="w-full rounded border p-2"
-                placeholder="Email"
-                value={form.email}
-                onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))}
-                disabled={Boolean(conversation)}
-              />
-              <input
-                className="w-full rounded border p-2 uppercase"
-                placeholder="Access code (optional)"
-                value={form.accessCode}
-                onChange={(event) => setForm((prev) => ({ ...prev, accessCode: event.target.value.toUpperCase() }))}
-                disabled={Boolean(conversation)}
-              />
-              {!conversation ? (
-                <textarea
-                  className="min-h-[120px] w-full rounded border p-2"
-                  placeholder="Describe your issue..."
-                  value={form.message}
-                  onChange={(event) => setForm((prev) => ({ ...prev, message: event.target.value }))}
-                />
-              ) : null}
-              <input className="w-full rounded border p-2 text-sm" type="file" accept="image/png,image/jpeg,image/webp" onChange={onAttachImage} />
-              {pendingImageDataUrl ? <img src={pendingImageDataUrl} alt="Attachment preview" className="h-24 w-24 rounded border object-cover" /> : null}
+        <section className="mt-5 max-w-lg">
+          {role === null ? (
+            <div className="rounded border bg-white p-6">
+              <h2 className="text-lg font-semibold">Who are you?</h2>
+              <p className="mt-1 text-sm text-slate-600">Select your role so we can point you in the right direction.</p>
+              <div className="mt-5 flex flex-col gap-3">
+                <button
+                  type="button"
+                  className="rounded border-2 border-slate-200 bg-white px-4 py-4 text-left transition hover:border-slate-900 hover:bg-slate-50"
+                  onClick={() => setRole("organizer")}
+                >
+                  <p className="font-semibold">I am an organizer</p>
+                  <p className="mt-0.5 text-sm text-slate-500">I create and manage events using QR Tickets.</p>
+                </button>
+                <button
+                  type="button"
+                  className="rounded border-2 border-slate-200 bg-white px-4 py-4 text-left transition hover:border-slate-900 hover:bg-slate-50"
+                  onClick={() => setRole("customer")}
+                >
+                  <p className="font-semibold">I am a ticket buyer</p>
+                  <p className="mt-0.5 text-sm text-slate-500">I bought or requested a ticket for an event.</p>
+                </button>
+                <button
+                  type="button"
+                  className="rounded border-2 border-slate-200 bg-white px-4 py-4 text-left transition hover:border-slate-900 hover:bg-slate-50"
+                  onClick={() => setRole("visitor")}
+                >
+                  <p className="font-semibold">I am new here / just browsing</p>
+                  <p className="mt-0.5 text-sm text-slate-500">I have general questions about QR Tickets.</p>
+                </button>
+              </div>
             </div>
+          ) : null}
 
-            {!conversation ? (
-              <AppButton className="mt-3" onClick={createConversation} loading={submitting} loadingText="Starting...">
-                Start Chat
-              </AppButton>
-            ) : (
-              <AppButton className="mt-3" variant="secondary" onClick={resetConversation}>
-                Start New Conversation
-              </AppButton>
-            )}
-          </article>
-
-          <article className="rounded border bg-white p-4">
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="text-lg font-semibold">Support Chat</h2>
-              {conversation ? (
-                <span className={`rounded px-2 py-1 text-xs font-semibold ${conversation.status === "CLOSED" ? "bg-slate-200 text-slate-700" : "bg-emerald-100 text-emerald-700"}`}>
-                  {conversation.status}
-                </span>
-              ) : null}
+          {role === "organizer" ? (
+            <div className="rounded border bg-white p-6">
+              <h2 className="text-lg font-semibold">Go to your Organizer Dashboard</h2>
+              <p className="mt-2 text-sm text-slate-600">
+                As an organizer, support and chat with admin are available directly inside your dashboard.
+              </p>
+              <ol className="mt-4 list-decimal pl-5 space-y-1 text-sm text-slate-700">
+                <li>Open your <strong>Organizer Dashboard</strong></li>
+                <li>Enter your <strong>organizer access code</strong> to load your account</li>
+                <li>Go to the <strong>Chat</strong> menu to message admin directly</li>
+              </ol>
+              <Link to="/dashboard" className="mt-5 inline-block rounded bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-700">
+                Open Organizer Dashboard
+              </Link>
+              <div className="mt-4">
+                <button type="button" className="text-sm text-slate-500 underline hover:text-slate-800" onClick={() => setRole(null)}>
+                  Back
+                </button>
+              </div>
             </div>
+          ) : null}
 
-            {chatLoading ? <p className="mt-3 text-sm text-slate-500">Loading chat...</p> : null}
+          {role === "customer" ? (
+            <div className="rounded border bg-white p-6">
+              <h2 className="text-lg font-semibold">Go to your Client Dashboard</h2>
+              <p className="mt-2 text-sm text-slate-600">
+                As a ticket buyer, your dashboard is where you can view your tickets, check request status, and chat with the organizer or admin.
+              </p>
+              <ol className="mt-4 list-decimal pl-5 space-y-1 text-sm text-slate-700">
+                <li>Open your <strong>Client Dashboard</strong></li>
+                <li>Enter your <strong>client access token</strong> — it was sent to you when you requested a ticket</li>
+                <li>Go to the <strong>Chat</strong> menu to message the organizer or admin</li>
+              </ol>
+              <Link to="/client" className="mt-5 inline-block rounded bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-700">
+                Open Client Dashboard
+              </Link>
+              <div className="mt-4">
+                <button type="button" className="text-sm text-slate-500 underline hover:text-slate-800" onClick={() => setRole(null)}>
+                  Back
+                </button>
+              </div>
+            </div>
+          ) : null}
 
-            {!conversation ? (
-              <p className="mt-3 text-sm text-slate-500">Start a conversation to message admin support.</p>
-            ) : (
-              <>
-                <div className="mt-3 max-h-[360px] space-y-2 overflow-y-auto rounded border bg-slate-50 p-3">
-                  {messages.length ? (
-                    messages.map((item) => {
-                      const isVisitor = item.senderType === "VISITOR";
-                      return (
-                        <div key={item.id} className={`flex ${isVisitor ? "justify-end" : "justify-start"}`}>
-                          <div className={`max-w-[90%] rounded px-3 py-2 text-sm ${isVisitor ? "bg-slate-900 text-white" : "bg-white text-slate-900 border"}`}>
-                            <p>{item.message}</p>
-                            {item.evidenceImageDataUrl ? (
-                              <a className="mt-2 block" href={item.evidenceImageDataUrl} target="_blank" rel="noreferrer">
-                                <img src={item.evidenceImageDataUrl} alt="Attachment" className="h-20 w-20 rounded border object-cover" />
-                              </a>
-                            ) : null}
-                            <p className={`mt-1 text-[11px] ${isVisitor ? "text-slate-300" : "text-slate-500"}`}>{formatDate(item.createdAt)}</p>
-                          </div>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <p className="text-xs text-slate-500">No messages yet.</p>
-                  )}
-                </div>
-
-                <div className="mt-3 grid gap-2">
-                  <textarea
-                    className="min-h-[100px] w-full rounded border p-2"
-                    placeholder={conversation.status === "CLOSED" ? "This conversation is closed." : "Write a message to admin..."}
-                    value={chatInput}
-                    onChange={(event) => setChatInput(event.target.value)}
-                    disabled={conversation.status === "CLOSED"}
-                  />
-                  <AppButton onClick={sendMessage} loading={sending} loadingText="Sending..." disabled={conversation.status === "CLOSED"}>
-                    Send Message
-                  </AppButton>
-                </div>
-              </>
-            )}
-          </article>
+          {role === "visitor" ? (
+            <div className="rounded border bg-white p-6">
+              <h2 className="text-lg font-semibold">Check the FAQ</h2>
+              <p className="mt-2 text-sm text-slate-600">
+                For general questions about how QR Tickets works, our FAQ section covers the most common topics including getting started, how events work, and what ticket buyers can expect.
+              </p>
+              <p className="mt-3 text-sm text-slate-600">
+                Direct support chat is only available for registered organizers and ticket buyers with an active token.
+              </p>
+              <button
+                type="button"
+                className="mt-5 inline-block rounded bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-700"
+                onClick={() => setActiveTab("faq")}
+              >
+                Browse FAQ
+              </button>
+              <div className="mt-4">
+                <button type="button" className="text-sm text-slate-500 underline hover:text-slate-800" onClick={() => setRole(null)}>
+                  Back
+                </button>
+              </div>
+            </div>
+          ) : null}
         </section>
       )}
     </section>
