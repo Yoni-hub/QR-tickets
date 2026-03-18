@@ -31,6 +31,51 @@ Source of truth:
 - `GET /api/public/events/:eventSlug`
   - returns `event.ticketTypes[]` with `{ ticketType, price, ticketsRemaining }`
 - `POST /api/public/ticket-request`
+- `GET /api/public/client-dashboard/:clientAccessToken`
+- `GET /api/public/client-dashboard/:clientAccessToken/messages` (legacy organizer/client chat compatibility)
+- `POST /api/public/client-dashboard/:clientAccessToken/messages` (legacy organizer/client chat compatibility)
+
+## Unified Chat APIs (Pairwise Only)
+Conversation pairs are strictly limited to:
+- `ORGANIZER <-> ADMIN`
+- `ORGANIZER <-> CLIENT`
+- `ADMIN <-> CLIENT`
+
+Organizer-scoped:
+- `GET /api/events/by-code/:accessCode/chat/conversations`
+- `POST /api/events/by-code/:accessCode/chat/conversations`
+- `GET /api/events/by-code/:accessCode/chat/conversations/:conversationId/messages`
+- `POST /api/events/by-code/:accessCode/chat/conversations/:conversationId/messages` (supports multipart attachment upload: image/pdf)
+- `POST /api/events/by-code/:accessCode/chat/conversations/:conversationId/read`
+- `GET /api/events/by-code/:accessCode/chat/attachments/:attachmentId`
+
+Client-scoped:
+- `GET /api/public/client-dashboard/:clientAccessToken/chat/conversations`
+- `POST /api/public/client-dashboard/:clientAccessToken/chat/conversations`
+- `GET /api/public/client-dashboard/:clientAccessToken/chat/conversations/:conversationId/messages`
+- `POST /api/public/client-dashboard/:clientAccessToken/chat/conversations/:conversationId/messages` (supports multipart attachment upload: image/pdf)
+- `POST /api/public/client-dashboard/:clientAccessToken/chat/conversations/:conversationId/read`
+- `GET /api/public/client-dashboard/:clientAccessToken/chat/attachments/:attachmentId`
+
+Admin-scoped (`x-admin-key`):
+- `GET /api/admin/chat/conversations`
+- `POST /api/admin/chat/conversations`
+- `GET /api/admin/chat/conversations/:conversationId/messages`
+- `POST /api/admin/chat/conversations/:conversationId/messages` (supports multipart attachment upload: image/pdf)
+- `POST /api/admin/chat/conversations/:conversationId/read`
+- `PATCH /api/admin/chat/conversations/:conversationId/status`
+- `GET /api/admin/chat/attachments/:attachmentId`
+
+Legacy compatibility wrappers retained during transition:
+- `POST /api/public/support/conversations`
+- `GET /api/public/support/conversations/:conversationToken/messages`
+- `POST /api/public/support/conversations/:conversationToken/messages`
+- `GET /api/ticket-requests/:id/messages`
+- `POST /api/ticket-requests/:id/messages`
+- `GET /api/admin/support/conversations`
+- `GET /api/admin/support/conversations/:id/messages`
+- `POST /api/admin/support/conversations/:id/messages`
+- `PATCH /api/admin/support/conversations/:id/status`
 
 ## Organizer Request/Promoter APIs
 - `POST /api/ticket-requests/:id/approve`
@@ -43,14 +88,12 @@ Source of truth:
 Public ticket request body:
 - `eventSlug: string` (required)
 - `name: string` (required)
-- `email: string` (required)
-- `phone?: string`
-- `ticketType: string` (required)
-- `quantity: number` (>= 1)
+- `ticketSelections: { ticketType: string, quantity: number }[]` (required, at least one)
+- `evidenceImageDataUrl?: string` (required when total selected price > 0)
 - `promoterCode?: string`
 
 Ticket request statuses:
-- `PENDING_PAYMENT`
+- `PENDING_VERIFICATION`
 - `APPROVED`
 - `REJECTED`
 - `CANCELLED`
@@ -104,6 +147,10 @@ Scan request supports:
 - `POST /api/admin/promoters` (requires `accessCode`)
 - `PATCH /api/admin/promoters/:id` (requires `accessCode`)
 - `DELETE /api/admin/promoters/:id` (requires `accessCode`)
+- `GET /api/admin/support/conversations` (compat alias to unified admin chat inbox)
+- `GET /api/admin/support/conversations/:id/messages` (compat alias)
+- `POST /api/admin/support/conversations/:id/messages` (compat alias)
+- `PATCH /api/admin/support/conversations/:id/status` (compat alias)
 
 Admin action APIs:
 - `PATCH /api/admin/events/:eventId/disable`
@@ -129,3 +176,7 @@ Admin action APIs:
 - 2026-03-15: Added support conversation APIs for public and admin flows; adjusted public ticket-request evidence requirement so free requests do not require evidence.
 
 - 2026-03-17: Renamed ticket-request status from PENDING_PAYMENT to PENDING_VERIFICATION and updated related frontend/backend handling.
+
+- 2026-03-17: Added unified pairwise chat system (organizer/admin/client) with private image/PDF attachments, explicit mark-read endpoints, and compatibility wrappers for legacy chat routes.
+
+- 2026-03-17: Added unified chat endpoints for organizer/client/admin, explicit mark-read routes, private attachment routes, and compatibility wrappers for legacy support/ticket-request chat routes.

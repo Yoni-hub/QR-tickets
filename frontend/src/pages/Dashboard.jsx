@@ -6,6 +6,8 @@ import FeedbackBanner from "../components/ui/FeedbackBanner";
 import { withMinDelay } from "../lib/withMinDelay";
 import TicketEditor from "../components/ticket-editor/TicketEditor";
 import PublicEventExperience from "../components/public/PublicEventExperience";
+import ChatInboxLayout from "../features/chat/ChatInboxLayout";
+import { organizerChatApi } from "../features/chat/chatApi";
 
 const DELIVERY_METHODS = {
   PDF: "PDF",
@@ -18,6 +20,7 @@ const DASHBOARD_MENUS_ALL = [
   { id: "tickets", label: "Tickets" },
   { id: "delivery", label: "Delivery Method" },
   { id: "requests", label: "Ticket Requests" },
+  { id: "chat", label: "Chat" },
   { id: "promoters", label: "Promoters" },
 ];
 
@@ -225,7 +228,10 @@ function readFileAsDataUrl(file) {
 
 export default function Dashboard() {
   const [params, setParams] = useSearchParams();
-  const [activeMenu, setActiveMenu] = useState("events");
+  const [activeMenu, setActiveMenu] = useState(() => {
+    const initial = String(params.get("menu") || "events").trim().toLowerCase();
+    return ["events", "tickets", "delivery", "requests", "chat", "promoters"].includes(initial) ? initial : "events";
+  });
   const [code, setCode] = useState(params.get("code") || "");
   const [showAccessCodeEntry, setShowAccessCodeEntry] = useState(Boolean(String(params.get("code") || "").trim()));
   const [showPublicPreview, setShowPublicPreview] = useState(false);
@@ -329,6 +335,40 @@ export default function Dashboard() {
       : renderEmailHtmlPreview(previewBody, sampleData.ticketUrl);
 
   const accessCode = useMemo(() => code.trim(), [code]);
+  const organizerChatAccessCode = useMemo(() => {
+    const fromSummary =
+      String(summary?.event?.organizerAccessCode || "").trim()
+      || String(summary?.event?.accessCode || "").trim();
+    return String(accessCode || fromSummary || "").trim();
+  }, [accessCode, summary?.event?.organizerAccessCode, summary?.event?.accessCode]);
+  const organizerChatApiClient = useMemo(
+    () => ({
+      listConversations: (params = {}) => organizerChatApi.listConversations(organizerChatAccessCode, params),
+      startConversation: (data) => organizerChatApi.startConversation(organizerChatAccessCode, data),
+      listMessages: (conversationId) => organizerChatApi.listMessages(organizerChatAccessCode, conversationId),
+      sendMessage: (conversationId, payload) => organizerChatApi.sendMessage(organizerChatAccessCode, conversationId, payload),
+      markRead: (conversationId, data) => organizerChatApi.markRead(organizerChatAccessCode, conversationId, data),
+    }),
+    [organizerChatAccessCode],
+  );
+  const organizerChatQuickStarts = useMemo(
+    () =>
+      organizerChatAccessCode
+        ? [{
+            label: "Message Admin",
+            payload: {
+              conversationType: "ORGANIZER_ADMIN",
+              organizerAccessCode: organizerChatAccessCode,
+              eventId: summary?.event?.id || undefined,
+            },
+          }]
+        : [],
+    [organizerChatAccessCode, summary?.event?.id],
+  );
+  const organizerChatListParams = useMemo(
+    () => (summary?.event?.id ? { eventId: summary.event.id } : {}),
+    [summary?.event?.id],
+  );
   const shouldOpenHomeMode = params.get("home") === "1";
   const isAccessCodeGenerationMode = !accessCode;
   const showHeroSection = !summary && !accessCode && !showAccessCodeEntry;
@@ -1857,8 +1897,8 @@ export default function Dashboard() {
                         >
                           {isCancelled ? "Cancelled" : isApproved ? "Approved" : "Approve"}
                         </AppButton>
-                        <AppButton className="px-2 py-1 text-xs" variant="secondary" onClick={() => openRequestChat(item)}>
-                          Message buyer{item.unreadClientMessages ? ` (${item.unreadClientMessages})` : ""}
+                        <AppButton className="px-2 py-1 text-xs" variant="secondary" onClick={() => setActiveMenu("chat")}>
+                          Open chat inbox
                         </AppButton>
                       </div>
                     </article>
@@ -1923,8 +1963,8 @@ export default function Dashboard() {
                               >
                                 {isCancelled ? "Cancelled" : isApproved ? "Approved" : "Approve"}
                               </AppButton>
-                              <AppButton className="px-2 py-1 text-xs" variant="secondary" onClick={() => openRequestChat(item)}>
-                                Message buyer{item.unreadClientMessages ? ` (${item.unreadClientMessages})` : ""}
+                              <AppButton className="px-2 py-1 text-xs" variant="secondary" onClick={() => setActiveMenu("chat")}>
+                                Open chat inbox
                               </AppButton>
                             </div>
                           </td>
@@ -1983,6 +2023,24 @@ export default function Dashboard() {
                   {!leaderboard.length ? <p className="text-slate-500">No data yet.</p> : null}
                 </div>
               </div>
+            </section>
+          ) : null}
+
+          {activeMenu === "chat" ? (
+            <section className="mt-4">
+              {organizerChatAccessCode ? (
+                <ChatInboxLayout
+                  title="Organizer Chat"
+                  actorType="ORGANIZER"
+                  api={organizerChatApiClient}
+                  quickStarts={organizerChatQuickStarts}
+                  listParams={organizerChatListParams}
+                />
+              ) : (
+                <section className="rounded border bg-white p-4 text-sm text-slate-600">
+                  Enter your organizer access code to open chat.
+                </section>
+              )}
             </section>
           ) : null}
 

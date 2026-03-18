@@ -62,6 +62,35 @@ Source of truth:
 - internal audit log for admin actions
 - fields: `action`, `targetType`, `targetId`, `eventId`, `metadata`, `createdAt`
 
+## Unified Chat (Pairwise Only)
+
+## ChatConversation
+- strict pairwise conversation record (exactly 2 participants)
+- `conversationType`: `ORGANIZER_ADMIN` | `ORGANIZER_CLIENT` | `ADMIN_CLIENT`
+- `status`: `OPEN` | `CLOSED`
+- context fields: `eventId?`, `ticketRequestId?`, `subject?`, `legacySupportConversationToken?`
+- party A fields: `partyAType`, `partyAOrganizerAccessCode?`, `partyAClientAccessToken?`, `partyAReadAt?`
+- party B fields: `partyBType`, `partyBOrganizerAccessCode?`, `partyBClientAccessToken?`, `partyBReadAt?`
+- timestamps: `lastMessageAt`, `createdAt`, `updatedAt`
+- constraint intent: no 3-party threads; only allowed pair types above
+
+## ChatMessage
+- belongs to `ChatConversation`
+- sender identity fields: `senderType`, `senderOrganizerAccessCode?`, `senderClientAccessToken?`
+- content fields: `body`, `messageType` (`TEXT` | `TEXT_WITH_ATTACHMENT` | `ATTACHMENT_ONLY`)
+- timestamp: `createdAt`
+
+## ChatAttachment
+- belongs to `ChatMessage`
+- supports `kind`: `IMAGE` | `PDF`
+- supports `storageType`: `LOCAL_FILE` | `LEGACY_DATA_URL`
+- fields: `mimeType`, `originalName`, `storageKey?`, `legacyDataUrl?`, `sizeBytes`, `createdAt`
+- local-file attachments are private and served through authorization-checked chat attachment endpoints
+
+## Legacy Chat Tables (Transition)
+- `SupportConversation` / `SupportMessage` and `TicketRequestMessage` remain as legacy migration sources/compatibility records during cutover.
+- New chat reads/writes are routed through unified chat tables and service.
+
 ## Checkpoint Updates
 
 - 2026-03-09: Added TicketRequest.organizerMessage and new TicketRequestMessage model with sender/read tracking for chat.
@@ -75,3 +104,7 @@ Source of truth:
 - 2026-03-15: Added SupportConversation and SupportMessage models with status/sender enums and migration for support chat persistence.
 
 - 2026-03-17: TicketRequestStatus enum/default renamed from PENDING_PAYMENT to PENDING_VERIFICATION.
+
+- 2026-03-17: Added unified pairwise chat models (`ChatConversation`, `ChatMessage`, `ChatAttachment`) with explicit read markers and private attachment metadata.
+
+- 2026-03-17: Added ChatConversation/ChatMessage/ChatAttachment pairwise chat models with read markers and attachment storage metadata; kept legacy chat tables for migration compatibility.

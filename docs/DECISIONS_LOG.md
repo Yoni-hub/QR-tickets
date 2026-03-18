@@ -50,3 +50,8 @@
 - Context: Preview fidelity and post-sale cancellation now span shared frontend rendering, organizer dashboard actions, buyer client dashboard state, and backend ticket/request records.
 - Decision: Use one shared public-event renderer for live and preview views, and model cancellations as explicit ticket/request metadata with organizer-authored buyer messages for public-page sales.
 - Consequence: UI changes to the public event page now reflect in preview automatically, and cancelled public-page tickets can show reason/evidence consistently across organizer and buyer surfaces.
+
+## DEC-011 (2026-03-17)
+- Context: Needed one coherent messaging system without 3-party threads while preserving legacy flows.
+- Decision: Enforced strict pairwise chat model and routed all new reads/writes through unified chat service with compatibility aliases.
+- Consequence: Consistent chat UX across dashboards, controlled access by actor scope, and safer attachment handling with private authorization-checked retrieval.

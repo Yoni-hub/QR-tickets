@@ -31,12 +31,6 @@ export default function DashboardTicketRequestsPage() {
   const [guestForm, setGuestForm] = useState({ name: "", phone: "", email: "", quantity: 1, promoterId: "" });
   const [promoters, setPromoters] = useState([]);
   const [csvText, setCsvText] = useState("");
-  const [chatContext, setChatContext] = useState(null);
-  const [chatMessages, setChatMessages] = useState([]);
-  const [chatInput, setChatInput] = useState("");
-  const [chatLoading, setChatLoading] = useState(false);
-  const [chatSending, setChatSending] = useState(false);
-  const [evidencePreview, setEvidencePreview] = useState("");
   const [approvingRequestIds, setApprovingRequestIds] = useState(() => new Set());
 
   const load = async () => {
@@ -64,7 +58,7 @@ export default function DashboardTicketRequestsPage() {
   const approve = async (id) => {
     const requestItem = items.find((item) => item.id === id);
     if (requestItem?.status === "APPROVED") {
-      setFeedback({ kind: "info", message: "request already approved" });
+      setFeedback({ kind: "info", message: "Request already approved." });
       return;
     }
     if (approvingRequestIds.has(id)) return;
@@ -77,7 +71,7 @@ export default function DashboardTicketRequestsPage() {
 
     try {
       await api.post(`/ticket-requests/${encodeURIComponent(id)}/approve`, { accessCode });
-      setFeedback({ kind: "success", message: "Request approved and ticket Assigned to client." });
+      setFeedback({ kind: "success", message: "Request approved and tickets assigned." });
       await load();
     } catch (requestError) {
       setFeedback({ kind: "error", message: requestError.response?.data?.error || "Approve failed." });
@@ -89,60 +83,6 @@ export default function DashboardTicketRequestsPage() {
       });
     }
   };
-
-  const loadChatMessages = async (requestId, { silent = false } = {}) => {
-    if (!requestId || !accessCode) return;
-    if (!silent) setChatLoading(true);
-    try {
-      const response = await api.get(`/ticket-requests/${encodeURIComponent(requestId)}/messages`, {
-        params: { accessCode },
-      });
-      setChatMessages(response.data.messages || []);
-      setItems((prev) => prev.map((item) => (item.id === requestId ? { ...item, unreadClientMessages: 0 } : item)));
-    } catch (requestError) {
-      if (!silent) {
-        setFeedback({ kind: "error", message: requestError.response?.data?.error || "Could not load chat." });
-      }
-    } finally {
-      if (!silent) setChatLoading(false);
-    }
-  };
-
-  const openChat = async (item) => {
-    setChatContext(item);
-    setChatInput("");
-    await loadChatMessages(item.id);
-  };
-
-  const closeChat = () => {
-    setChatContext(null);
-    setChatInput("");
-    setChatMessages([]);
-  };
-
-  const sendChatMessage = async () => {
-    const requestId = chatContext?.id;
-    const message = String(chatInput || "").trim();
-    if (!requestId || !message || chatSending) return;
-
-    setChatSending(true);
-    try {
-      await api.post(`/ticket-requests/${encodeURIComponent(requestId)}/messages`, { accessCode, message });
-      setChatInput("");
-      await loadChatMessages(requestId, { silent: true });
-      await load();
-    } catch (requestError) {
-      setFeedback({ kind: "error", message: requestError.response?.data?.error || "Could not send message." });
-    } finally {
-      setChatSending(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!chatContext?.id || !accessCode) return undefined;
-    const interval = setInterval(() => loadChatMessages(chatContext.id, { silent: true }), 8000);
-    return () => clearInterval(interval);
-  }, [chatContext?.id, accessCode]);
 
   const addGuest = async () => {
     if (!guestForm.name.trim()) {
@@ -182,22 +122,21 @@ export default function DashboardTicketRequestsPage() {
     }
   };
 
-  const openEvidenceImage = (dataUrl) => {
-    const value = String(dataUrl || "").trim();
-    if (!value) return;
-    setEvidencePreview(value);
-  };
-
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-4 sm:px-6 sm:py-6">
       <h1 className="text-2xl font-bold sm:text-3xl">Ticket Requests</h1>
       <p className="mt-2 text-slate-600">Access code: <span className="font-mono">{accessCode || "(missing code)"}</span></p>
-      <p className="mt-1 text-sm"><Link className="text-blue-700" to={`/dashboard/promoters?code=${encodeURIComponent(accessCode)}`}>Go to Promoters</Link></p>
+      <p className="mt-1 text-sm">
+        <Link className="text-blue-700" to={`/dashboard?code=${encodeURIComponent(accessCode)}&menu=chat`}>Open Dashboard Chat</Link>
+        {" | "}
+        <Link className="text-blue-700" to={`/dashboard/promoters?code=${encodeURIComponent(accessCode)}`}>Go to Promoters</Link>
+      </p>
 
       <FeedbackBanner className="mt-3" kind={feedback.kind} message={feedback.message} />
 
       <section className="mt-4 rounded border bg-white p-4">
         <h2 className="text-lg font-semibold">Requests</h2>
+        <p className="mt-1 text-xs text-slate-500">Buyer messaging is now handled in Dashboard ? Chat.</p>
         <div className="mt-3 space-y-2">
           {items.map((item) => {
             const isApproved = item.status === "APPROVED";
@@ -208,14 +147,6 @@ export default function DashboardTicketRequestsPage() {
                 <p className="mt-1">Quantity: {item.quantity}</p>
                 <p className="mt-1">Promoter: {item.promoter?.name || "-"}</p>
                 <p className="mt-1">Status: {item.status}</p>
-                <p className="mt-1">
-                  Evidence:{" "}
-                  {item.evidenceImageDataUrl ? (
-                    <button className="text-blue-700 underline" onClick={() => openEvidenceImage(item.evidenceImageDataUrl)}>View</button>
-                  ) : (
-                    "-"
-                  )}
-                </p>
                 {item.organizerMessage ? <p className="mt-1 text-xs text-slate-600">Message: {item.organizerMessage}</p> : null}
                 <div className="mt-2 flex flex-wrap gap-2">
                   <AppButton
@@ -227,9 +158,9 @@ export default function DashboardTicketRequestsPage() {
                   >
                     {isApproved ? "Approved" : "Approve"}
                   </AppButton>
-                  <AppButton className="px-2 py-1 text-xs" variant="secondary" onClick={() => openChat(item)}>
-                    Message buyer{item.unreadClientMessages ? ` (${item.unreadClientMessages})` : ""}
-                  </AppButton>
+                  <Link className="rounded border px-2 py-1 text-xs" to={`/dashboard?code=${encodeURIComponent(accessCode)}&menu=chat`}>
+                    Open Chat Inbox
+                  </Link>
                 </div>
               </article>
             );
@@ -267,73 +198,6 @@ export default function DashboardTicketRequestsPage() {
           Import CSV
         </AppButton>
       </section>
-
-      {chatContext ? (
-        <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-3 sm:items-center">
-          <section className="w-full max-w-xl rounded border bg-white p-3 shadow-xl">
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <p className="text-sm font-semibold">Chat with {chatContext.name || "Buyer"}</p>
-                <p className="text-xs text-slate-500">{chatContext.email || "No email"}{chatContext.phone ? ` | ${chatContext.phone}` : ""}</p>
-              </div>
-              <AppButton type="button" variant="secondary" className="px-2 py-1 text-xs" onClick={closeChat}>Close</AppButton>
-            </div>
-
-            <div className="mt-3 h-72 overflow-y-auto rounded border bg-slate-50 p-2">
-              {chatLoading ? (
-                <p className="text-xs text-slate-500">Loading chat...</p>
-              ) : chatMessages.length ? (
-                <div className="space-y-2">
-                  {chatMessages.map((message) => {
-                    const isOrganizer = message.senderType === "ORGANIZER";
-                    return (
-                      <div key={message.id} className={`flex ${isOrganizer ? "justify-end" : "justify-start"}`}>
-                        <div className={`max-w-[85%] rounded px-2 py-1 text-xs ${isOrganizer ? "bg-indigo-600 text-white" : "bg-white text-slate-900 border"}`}>
-                          <p>{message.message}</p>
-                          <p className={`mt-1 text-[10px] ${isOrganizer ? "text-indigo-100" : "text-slate-500"}`}>
-                            {new Date(message.createdAt).toLocaleString()}
-                          </p>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-xs text-slate-500">No messages yet.</p>
-              )}
-            </div>
-
-            <div className="mt-3 flex gap-2">
-              <textarea
-                className="w-full rounded border p-2 text-sm"
-                rows={3}
-                value={chatInput}
-                onChange={(event) => setChatInput(event.target.value)}
-                placeholder="Type a message to buyer..."
-              />
-              <AppButton type="button" className="self-end" onClick={sendChatMessage} loading={chatSending} loadingText="Sending...">
-                Send
-              </AppButton>
-            </div>
-          </section>
-        </div>
-      ) : null}
-
-      {evidencePreview ? (
-        <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/70 p-3 sm:items-center">
-          <section className="w-full max-w-4xl rounded border bg-slate-900 p-3 shadow-xl">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <p className="text-sm font-semibold text-white">Payment Evidence</p>
-              <AppButton type="button" variant="secondary" className="px-2 py-1 text-xs" onClick={() => setEvidencePreview("")}>
-                Close
-              </AppButton>
-            </div>
-            <div className="flex max-h-[78vh] items-center justify-center overflow-auto rounded bg-black p-2">
-              <img src={evidencePreview} alt="Payment evidence" className="max-h-[74vh] w-auto rounded bg-white" />
-            </div>
-          </section>
-        </div>
-      ) : null}
     </main>
   );
 }

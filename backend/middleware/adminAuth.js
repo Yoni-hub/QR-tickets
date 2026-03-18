@@ -9,7 +9,7 @@ function requireAdminAccess(req, res, next) {
     return;
   }
 
-  const providedKey = String(req.header("x-admin-key") || "").trim();
+  const providedKey = String(req.header("x-admin-key") || req.query?.adminKey || "").trim();
   if (!providedKey || providedKey !== configuredKey) {
     res.status(401).json({ error: "Unauthorized admin access." });
     return;

@@ -106,3 +106,9 @@
 
 ## 2026-03-17 (Checkpoint)
 - [2026-03-17 15:30:39 -04:00] Reconciled memory docs for TicketRequest status rename to PENDING_VERIFICATION
+
+## 2026-03-17 (Checkpoint)
+- [2026-03-17 16:55:00 -04:00] Implemented unified pairwise chat across organizer/admin/client dashboards, added private image/PDF chat attachments with auth-checked download routes, introduced explicit mark-read endpoints (GET no longer mutates read state), and kept legacy support/request chat API aliases as compatibility wrappers.
+
+## 2026-03-17 (Checkpoint)
+- [2026-03-17 23:09:31 -04:00] Implemented unified pairwise organizer/admin/client chat with private image+PDF attachments, explicit read endpoints, organizer chat consolidation, and legacy compatibility route wrappers.
