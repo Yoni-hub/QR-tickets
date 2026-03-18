@@ -271,6 +271,7 @@ export default function Dashboard() {
   const [sendSummary, setSendSummary] = useState(null);
   const [feedback, setFeedback] = useState({ kind: "", message: "" });
   const [promoterForm, setPromoterForm] = useState({ name: "" });
+  const [chatUnreadTotal, setChatUnreadTotal] = useState(0);
   const [chatContext, setChatContext] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState("");
@@ -306,6 +307,7 @@ export default function Dashboard() {
   });
   const ticketEditorDraftRef = useRef(null);
   const feedbackRef = useRef(null);
+  const organizerNameRef = useRef(null);
   const copyResetTimersRef = useRef({
     publicEventLink: null,
     ticketPublicId: null,
@@ -473,6 +475,12 @@ export default function Dashboard() {
     [tickets],
   );
   const noDeliverableTickets = tickets.length > 0 && deliverableCount < 1;
+
+  useEffect(() => {
+    if (showHeroSection) {
+      window.dispatchEvent(new Event("qr-dashboard-home-mode"));
+    }
+  }, [showHeroSection]);
 
   useEffect(() => {
     if (!shouldOpenHomeMode) return;
@@ -1337,6 +1345,23 @@ export default function Dashboard() {
     }
   };
 
+  const handleGetStarted = () => {
+    if (organizerNameRef.current) {
+      organizerNameRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+      organizerNameRef.current.focus();
+    }
+  };
+
+  const handleAlreadyHaveCode = () => {
+    setShowAccessCodeEntry(true);
+    window.dispatchEvent(new Event("qr-dashboard-code-entry"));
+  };
+
+  const handleBackToHome = () => {
+    setShowAccessCodeEntry(false);
+    window.dispatchEvent(new Event("qr-dashboard-home-mode"));
+  };
+
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-4 sm:px-6 sm:py-6">
       {showHeroSection ? (
@@ -1348,18 +1373,47 @@ export default function Dashboard() {
             <p>&#10004; No passwords.</p>
             <p>&#10004; No payment details.</p>
           </div>
-          <div className="mt-5 flex flex-wrap items-center gap-2">
-            <p className="text-sm font-semibold text-slate-900 sm:text-base">Create your event below.</p>
+          <div className="mt-5 flex flex-wrap items-center gap-3">
+            <AppButton
+              type="button"
+              variant="primary"
+              className="sm:w-auto"
+              onClick={handleGetStarted}
+            >
+              Get started
+            </AppButton>
             <AppButton
               type="button"
               variant="secondary"
               className="sm:w-auto"
-              onClick={() => setShowAccessCodeEntry(true)}
+              onClick={handleAlreadyHaveCode}
             >
               Already have Organizer access code?
             </AppButton>
           </div>
         </section>
+      ) : showAccessCodeEntry && !accessCode && !summary ? (
+        <div className="mt-8 max-w-sm">
+          <h2 className="text-xl font-bold">Load your dashboard</h2>
+          <p className="mt-1 text-sm text-slate-500">Enter your organizer access code to continue.</p>
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+            <input
+              className="w-full rounded border p-2"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder="Enter your organizer access code"
+              autoFocus
+            />
+            <AppButton onClick={load} loading={loading} loadingText="Loading..." variant="primary">Load</AppButton>
+          </div>
+          <button
+            type="button"
+            className="mt-4 text-sm text-slate-500 underline hover:text-slate-800"
+            onClick={handleBackToHome}
+          >
+            Back to home
+          </button>
+        </div>
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-2">
@@ -1379,19 +1433,26 @@ export default function Dashboard() {
         <FeedbackBanner className="mt-3" kind={feedback.kind} message={feedback.message} />
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-2 text-sm font-semibold">
-        {visibleMenus.map((menu) => (
-          <button
-            key={menu.id}
-            type="button"
-            onClick={() => setActiveMenu(menu.id)}
-            className={`rounded border px-3 py-1.5 ${activeMenu === menu.id ? "bg-slate-900 text-white" : "bg-white text-slate-800"}`}
-          >
-            {menu.label}
-          </button>
-        ))}
-      </div>
-      {!summary ? (
+      {(!showAccessCodeEntry || summary) ? (
+        <div className="mt-4 flex flex-wrap items-center gap-2 text-sm font-semibold">
+          {visibleMenus.map((menu) => (
+            <button
+              key={menu.id}
+              type="button"
+              onClick={() => setActiveMenu(menu.id)}
+              className={`relative rounded border px-3 py-1.5 ${activeMenu === menu.id ? "bg-slate-900 text-white" : "bg-white text-slate-800"}`}
+            >
+              {menu.label}
+              {menu.id === "chat" && chatUnreadTotal > 0 ? (
+                <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-indigo-600 px-1 text-[10px] font-bold text-white">
+                  {chatUnreadTotal > 99 ? "99+" : chatUnreadTotal}
+                </span>
+              ) : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {!summary && !showAccessCodeEntry ? (
         <p className="mt-2 text-xs text-blue-700">
           Fill in your event details. You can update them anytime.
         </p>
@@ -2035,6 +2096,7 @@ export default function Dashboard() {
                   api={organizerChatApiClient}
                   quickStarts={organizerChatQuickStarts}
                   listParams={organizerChatListParams}
+                  onUnreadCountChange={setChatUnreadTotal}
                 />
               ) : (
                 <section className="rounded border bg-white p-4 text-sm text-slate-600">
@@ -2221,16 +2283,22 @@ export default function Dashboard() {
             </div>
           ) : null}
         </>
-      ) : (
+      ) : !showAccessCodeEntry ? (
         <section className="mt-4 rounded border p-4">
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-[100px_1fr] sm:items-center">
             <p className="font-semibold">Organizer:</p>
-            <input
-              className="w-full rounded border p-2 text-sm"
-              value={eventDraft.organizerName}
-              onChange={(e) => setEventDraft((prev) => ({ ...prev, organizerName: e.target.value }))}
-              placeholder="Organizer or brand name"
-            />
+            <div>
+              <input
+                ref={organizerNameRef}
+                className="w-full rounded border p-2 text-sm"
+                value={eventDraft.organizerName}
+                onChange={(e) => setEventDraft((prev) => ({ ...prev, organizerName: e.target.value }))}
+                placeholder="Organizer or brand name"
+              />
+              {isAccessCodeGenerationMode ? (
+                <p className="mt-1 text-xs text-indigo-600">Start here — enter your name or brand to generate your organizer access code.</p>
+              ) : null}
+            </div>
             <p className="font-semibold">Event Name:</p>
             <input
               className="w-full rounded border p-2 text-sm"
@@ -2262,7 +2330,7 @@ export default function Dashboard() {
             </p>
           ) : null}
         </section>
-      )}
+      ) : null}
 
       {generatedOrganizerCodeModal.open ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-3 sm:items-center">
