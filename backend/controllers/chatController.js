@@ -413,8 +413,6 @@ async function createSupportConversation(req, res) {
         ...payload.conversation,
         conversationToken,
         displayName,
-        email,
-        accessCode,
       },
       messages: payload.messages,
     });
