@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import AppButton from "../components/ui/AppButton";
 import api from "../lib/api";
 import { clientChatApi } from "../features/chat/chatApi";
+import { joinConversation, leaveConversation, onNewMessage } from "../lib/socket";
 
 const FAQ_SECTIONS = [
   {
@@ -232,12 +233,24 @@ export default function HelpPage() {
     }
   };
 
-  // poll messages while chat is open
+  // load messages and join WebSocket room when recovery chat opens
   useEffect(() => {
     if (!recoverySession || role !== "recovery") return;
     loadMessages(recoverySession);
-    const interval = setInterval(() => loadMessages(recoverySession), 8000);
-    return () => clearInterval(interval);
+
+    const { token, conversationId } = recoverySession;
+    joinConversation(conversationId, { clientAccessToken: token });
+    const unsub = onNewMessage((msg) => {
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === msg.id)) return prev;
+        return [...prev, msg];
+      });
+    });
+
+    return () => {
+      unsub();
+      leaveConversation(conversationId);
+    };
   }, [recoverySession, role, recoveryType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // scroll to bottom when new messages arrive

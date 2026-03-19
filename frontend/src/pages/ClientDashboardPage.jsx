@@ -68,10 +68,11 @@ export default function ClientDashboardPage() {
   }, [normalizedToken, tokenInput]);
 
   const quickStarts = useMemo(() => {
-    if (!requestData?.request?.id) return [{ label: "Message Admin", payload: { conversationType: "ADMIN_CLIENT" } }];
+    const eventId = requestData?.event?.id;
+    if (!requestData?.request?.id) return [{ label: "Message Admin", payload: { conversationType: "ADMIN_CLIENT", eventId } }];
     return [
-      { label: "Message Organizer", payload: { conversationType: "ORGANIZER_CLIENT", ticketRequestId: requestData.request.id } },
-      { label: "Message Admin", payload: { conversationType: "ADMIN_CLIENT", ticketRequestId: requestData.request.id } },
+      { label: "Message Organizer", payload: { conversationType: "ORGANIZER_CLIENT", ticketRequestId: requestData.request.id, eventId } },
+      { label: "Message Admin", payload: { conversationType: "ADMIN_CLIENT", ticketRequestId: requestData.request.id, eventId } },
     ];
   }, [requestData]);
 
@@ -143,6 +144,7 @@ export default function ClientDashboardPage() {
               actorType="CLIENT"
               api={chatApi}
               quickStarts={quickStarts}
+              socketCredentials={{ clientAccessToken: normalizedToken || tokenInput }}
             />
           </section>
         </>

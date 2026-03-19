@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import ChatInboxLayout from "../../features/chat/ChatInboxLayout";
 import { adminChatApi } from "../../features/chat/chatApi";
-import { adminApi } from "../../lib/adminApi";
+import { adminApi, getAdminKey } from "../../lib/adminApi";
 import AppButton from "../../components/ui/AppButton";
 
 export default function AdminSupportPage() {
@@ -165,6 +165,7 @@ export default function AdminSupportPage() {
         api={adminChatApi}
         listParams={listParams}
         quickStarts={quickStarts}
+        socketCredentials={{ adminKey: getAdminKey() }}
         showAdminStatusActions
       />
     </section>

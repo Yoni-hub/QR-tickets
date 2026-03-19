@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import AppButton from "../../components/ui/AppButton";
 import { normalizeChatAttachment } from "./chatAttachment";
 import { getAdminKey } from "../../lib/adminApi";
+import { joinConversation, leaveConversation, onNewMessage } from "../../lib/socket";
 
 function formatRelativeTime(value) {
   if (!value) return "";
@@ -89,7 +90,7 @@ export default function ChatInboxLayout({
   api,
   quickStarts = [],
   listParams = {},
-  pollMs = 9000,
+  socketCredentials = null,
   showAdminStatusActions = false,
   onUnreadCountChange,
 }) {
@@ -187,14 +188,25 @@ export default function ChatInboxLayout({
     loadMessages(selectedId);
   }, [selectedId]);
 
+  // WebSocket: join/leave room when selected conversation changes
   useEffect(() => {
-    if (!selectedId) return undefined;
-    const timer = setInterval(() => {
+    if (!selectedId || !socketCredentials) return undefined;
+
+    joinConversation(selectedId, socketCredentials);
+    const unsub = onNewMessage((msg) => {
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === msg.id)) return prev;
+        return [...prev, msg];
+      });
+      // Refresh conversation list to update unread counts + latest message
       loadConversations(true);
-      loadMessages(selectedId, true);
-    }, pollMs);
-    return () => clearInterval(timer);
-  }, [selectedId, pollMs]);
+    });
+
+    return () => {
+      unsub();
+      leaveConversation(selectedId);
+    };
+  }, [selectedId, socketCredentials]);
 
   const onPickAttachment = async (event) => {
     const file = event.target.files?.[0];
