@@ -726,6 +726,7 @@ async function listAdminOrganizers(req, res) {
     ...(search
       ? {
           OR: [
+            { organizerName: { contains: search, mode: "insensitive" } },
             { organizerAccessCode: { contains: search, mode: "insensitive" } },
             { eventName: { contains: search, mode: "insensitive" } },
             { accessCode: { contains: search, mode: "insensitive" } },

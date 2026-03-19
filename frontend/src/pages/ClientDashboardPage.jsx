@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import api from "../lib/api";
 import AppButton from "../components/ui/AppButton";
 import FeedbackBanner from "../components/ui/FeedbackBanner";
@@ -71,7 +71,7 @@ export default function ClientDashboardPage() {
     if (!requestData?.request?.id) return [{ label: "Message Admin", payload: { conversationType: "ADMIN_CLIENT" } }];
     return [
       { label: "Message Organizer", payload: { conversationType: "ORGANIZER_CLIENT", ticketRequestId: requestData.request.id } },
-      { label: "Message Admin", payload: { conversationType: "ADMIN_CLIENT" } },
+      { label: "Message Admin", payload: { conversationType: "ADMIN_CLIENT", ticketRequestId: requestData.request.id } },
     ];
   }, [requestData]);
 
@@ -90,6 +90,11 @@ export default function ClientDashboardPage() {
         <AppButton onClick={() => load(tokenInput)} loading={loading} loadingText="Loading...">
           Load
         </AppButton>
+      </div>
+
+      <div className="mt-2 flex flex-wrap gap-4">
+        <Link to="/" className="text-sm text-slate-500 underline hover:text-slate-800">Back to home</Link>
+        <Link to="/help?tab=support&role=customer" className="text-sm text-red-600 underline hover:text-red-800">Lost your access token?</Link>
       </div>
 
       <FeedbackBanner className="mt-3" kind={feedback.kind} message={feedback.message} />

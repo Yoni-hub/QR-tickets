@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import api from "../lib/api";
 import AppButton from "../components/ui/AppButton";
 import FeedbackBanner from "../components/ui/FeedbackBanner";
@@ -226,14 +226,91 @@ function readFileAsDataUrl(file) {
   });
 }
 
+function DateTimeInput({ value, onChange, className = "" }) {
+  const [datePart, timePart] = String(value || "").split("T");
+  const [hStr, mStr] = (timePart || "").split(":");
+  const h24 = parseInt(hStr || "", 10);
+  const m = parseInt(mStr || "", 10);
+  const isPm = !isNaN(h24) && h24 >= 12;
+  const h12 = isNaN(h24) ? null : (h24 % 12 || 12);
+
+  const [hourText, setHourText] = useState(() => h12 === null ? "" : String(h12));
+  const [minText, setMinText] = useState(() => isNaN(m) ? "" : String(m).padStart(2, "0"));
+
+  useEffect(() => {
+    setHourText(h12 === null ? "" : String(h12));
+    setMinText(isNaN(m) ? "" : String(m).padStart(2, "0"));
+  }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const emit = (d, newH24, newM) =>
+    onChange(`${d || ""}T${String(newH24 ?? 0).padStart(2, "0")}:${String(newM ?? 0).padStart(2, "0")}`);
+
+  const handleHourChange = (e) => {
+    const raw = e.target.value.replace(/\D/g, "").slice(0, 2);
+    setHourText(raw);
+    const n = parseInt(raw, 10);
+    if (n >= 1 && n <= 12) {
+      const newH24 = isPm ? (n === 12 ? 12 : n + 12) : (n === 12 ? 0 : n);
+      emit(datePart, newH24, isNaN(m) ? 0 : m);
+    }
+  };
+
+  const handleMinChange = (e) => {
+    const raw = e.target.value.replace(/\D/g, "").slice(0, 2);
+    setMinText(raw);
+    const n = parseInt(raw, 10);
+    if (raw.length === 2 && n >= 0 && n <= 59) emit(datePart, isNaN(h24) ? 0 : h24, n);
+  };
+
+  const toggleAmPm = () => {
+    if (isNaN(h24)) return;
+    emit(datePart, isPm ? h24 - 12 : h24 + 12, isNaN(m) ? 0 : m);
+  };
+
+  return (
+    <div className={`flex w-full items-center rounded border bg-white ${className}`}>
+      <input
+        type="date"
+        value={datePart || ""}
+        onChange={(e) => emit(e.target.value, isNaN(h24) ? 0 : h24, isNaN(m) ? 0 : m)}
+        className="flex-1 border-0 bg-transparent p-2 text-sm focus:outline-none"
+      />
+      <div className="flex items-center gap-1 border-l px-2 py-2">
+        <input
+          type="text"
+          inputMode="numeric"
+          placeholder="H"
+          value={hourText}
+          onChange={handleHourChange}
+          className="w-7 rounded border bg-slate-50 p-0.5 text-center text-sm font-mono focus:outline-none focus:ring-1 focus:ring-slate-300"
+        />
+        <span className="text-slate-400">:</span>
+        <input
+          type="text"
+          inputMode="numeric"
+          placeholder="MM"
+          value={minText}
+          onChange={handleMinChange}
+          className="w-8 rounded border bg-slate-50 p-0.5 text-center text-sm font-mono focus:outline-none focus:ring-1 focus:ring-slate-300"
+        />
+        <div className="ml-1 flex overflow-hidden rounded border text-xs font-semibold">
+          <button type="button" onClick={() => !isPm || toggleAmPm()} className={`px-2 py-0.5 ${!isPm ? "bg-slate-800 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}>AM</button>
+          <button type="button" onClick={() => isPm || toggleAmPm()} className={`px-2 py-0.5 ${isPm ? "bg-slate-800 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}>PM</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [params, setParams] = useSearchParams();
   const [activeMenu, setActiveMenu] = useState(() => {
     const initial = String(params.get("menu") || "events").trim().toLowerCase();
     return ["events", "tickets", "delivery", "requests", "chat", "promoters"].includes(initial) ? initial : "events";
   });
   const [code, setCode] = useState(params.get("code") || "");
-  const [showAccessCodeEntry, setShowAccessCodeEntry] = useState(Boolean(String(params.get("code") || "").trim()));
   const [showPublicPreview, setShowPublicPreview] = useState(false);
   const [ticketPage, setTicketPage] = useState(1);
   const [ticketTypeFilter, setTicketTypeFilter] = useState("ALL");
@@ -267,7 +344,7 @@ export default function Dashboard() {
   const [emailTemplatesByType, setEmailTemplatesByType] = useState({});
   const [emailSubject, setEmailSubject] = useState(DEFAULT_EMAIL_SUBJECT);
   const [emailBody, setEmailBody] = useState(DEFAULT_EMAIL_BODY);
-  const [showEmailPreview, setShowEmailPreview] = useState(true);
+  const [showEmailPreview, setShowEmailPreview] = useState(false);
   const [sendSummary, setSendSummary] = useState(null);
   const [feedback, setFeedback] = useState({ kind: "", message: "" });
   const [promoterForm, setPromoterForm] = useState({ name: "" });
@@ -371,9 +448,10 @@ export default function Dashboard() {
     () => (summary?.event?.id ? { eventId: summary.event.id } : {}),
     [summary?.event?.id],
   );
-  const shouldOpenHomeMode = params.get("home") === "1";
+  const shouldOpenHomeMode = location.pathname === "/";
   const isAccessCodeGenerationMode = !accessCode;
-  const showHeroSection = !summary && !accessCode && !showAccessCodeEntry;
+  const showHeroSection = shouldOpenHomeMode && !summary && !accessCode;
+  const showLoadDashboard = !shouldOpenHomeMode && !summary;
   const eventPrimaryActionLabel = isAccessCodeGenerationMode ? "Generate Access Code" : "Save Event";
   const eventPrimaryLoadingLabel = isAccessCodeGenerationMode ? "Generating..." : "Saving...";
   const visibleMenus = summary ? DASHBOARD_MENUS_ALL : DASHBOARD_MENUS_PRELOAD;
@@ -477,16 +555,8 @@ export default function Dashboard() {
   const noDeliverableTickets = tickets.length > 0 && deliverableCount < 1;
 
   useEffect(() => {
-    if (showHeroSection) {
-      window.dispatchEvent(new Event("qr-dashboard-home-mode"));
-    }
-  }, [showHeroSection]);
-
-  useEffect(() => {
     if (!shouldOpenHomeMode) return;
-    if (summary) return;
     setCode("");
-    setShowAccessCodeEntry(false);
     setFeedback({ kind: "", message: "" });
     setSummary(null);
     setEvents([]);
@@ -499,9 +569,8 @@ export default function Dashboard() {
     setActiveMenu("events");
     setShowPublicPreview(false);
     setEventEditMode(EVENT_EDIT_MODES.CREATE);
-    setEventDraft({ organizerName: "", eventName: "", eventDate: "", eventAddress: "", paymentInstructions: "" });
-    setParams({});
-  }, [shouldOpenHomeMode, summary, setParams]);
+    setEventDraft({ organizerName: "", eventName: "", eventDate: "", paymentInstructions: "" });
+  }, [shouldOpenHomeMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setCopiedPublicEventLink(false);
@@ -655,7 +724,6 @@ export default function Dashboard() {
       setFeedback({ kind: "info", message: "New here? Fill in your event details to generate your access code." });
       return;
     }
-    setShowAccessCodeEntry(true);
     await loadDashboard(trimmedCode);
   };
 
@@ -1353,13 +1421,11 @@ export default function Dashboard() {
   };
 
   const handleAlreadyHaveCode = () => {
-    setShowAccessCodeEntry(true);
-    window.dispatchEvent(new Event("qr-dashboard-code-entry"));
+    navigate("/dashboard");
   };
 
   const handleBackToHome = () => {
-    setShowAccessCodeEntry(false);
-    window.dispatchEvent(new Event("qr-dashboard-home-mode"));
+    navigate("/");
   };
 
   return (
@@ -1392,7 +1458,7 @@ export default function Dashboard() {
             </AppButton>
           </div>
         </section>
-      ) : showAccessCodeEntry && !accessCode && !summary ? (
+      ) : showLoadDashboard ? (
         <div className="mt-8 max-w-sm">
           <h2 className="text-xl font-bold">Load your dashboard</h2>
           <p className="mt-1 text-sm text-slate-500">Enter your organizer access code to continue.</p>
@@ -1406,13 +1472,18 @@ export default function Dashboard() {
             />
             <AppButton onClick={load} loading={loading} loadingText="Loading..." variant="primary">Load</AppButton>
           </div>
-          <button
-            type="button"
-            className="mt-4 text-sm text-slate-500 underline hover:text-slate-800"
-            onClick={handleBackToHome}
-          >
-            Back to home
-          </button>
+          <div className="mt-4 flex flex-wrap items-center gap-4">
+            <button
+              type="button"
+              className="text-sm text-slate-500 underline hover:text-slate-800"
+              onClick={handleBackToHome}
+            >
+              Back to home
+            </button>
+            <Link to="/help?recovery=1" className="text-sm text-red-600 underline hover:text-red-800">
+              Lost your access code?
+            </Link>
+          </div>
         </div>
       ) : (
         <>
@@ -1433,7 +1504,7 @@ export default function Dashboard() {
         <FeedbackBanner className="mt-3" kind={feedback.kind} message={feedback.message} />
       </div>
 
-      {(!showAccessCodeEntry || summary) ? (
+      {(!showLoadDashboard || summary) ? (
         <div className="mt-4 flex flex-wrap items-center gap-2 text-sm font-semibold">
           {visibleMenus.map((menu) => (
             <button
@@ -1452,7 +1523,7 @@ export default function Dashboard() {
           ))}
         </div>
       ) : null}
-      {!summary && !showAccessCodeEntry ? (
+      {shouldOpenHomeMode && !summary ? (
         <p className="mt-2 text-xs text-blue-700">
           Fill in your event details. You can update them anytime.
         </p>
@@ -1491,11 +1562,9 @@ export default function Dashboard() {
                     onChange={(e) => setEventDraft((prev) => ({ ...prev, eventName: e.target.value }))}
                   />
                   <p className="font-semibold">Date:</p>
-                  <input
-                    type="datetime-local"
-                    className="w-full rounded border p-2 text-sm"
+                  <DateTimeInput
                     value={eventDraft.eventDate}
-                    onChange={(e) => setEventDraft((prev) => ({ ...prev, eventDate: e.target.value }))}
+                    onChange={(v) => setEventDraft((prev) => ({ ...prev, eventDate: v }))}
                   />
                   <p className="font-semibold">Location:</p>
                   <input
@@ -2283,7 +2352,7 @@ export default function Dashboard() {
             </div>
           ) : null}
         </>
-      ) : !showAccessCodeEntry ? (
+      ) : shouldOpenHomeMode ? (
         <section className="mt-4 rounded border p-4">
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-[100px_1fr] sm:items-center">
             <p className="font-semibold">Organizer:</p>
@@ -2306,11 +2375,9 @@ export default function Dashboard() {
               onChange={(e) => setEventDraft((prev) => ({ ...prev, eventName: e.target.value }))}
             />
             <p className="font-semibold">Date:</p>
-            <input
-              type="datetime-local"
-              className="w-full rounded border p-2 text-sm"
+            <DateTimeInput
               value={eventDraft.eventDate}
-              onChange={(e) => setEventDraft((prev) => ({ ...prev, eventDate: e.target.value }))}
+              onChange={(v) => setEventDraft((prev) => ({ ...prev, eventDate: v }))}
             />
             <p className="font-semibold">Location:</p>
             <input
