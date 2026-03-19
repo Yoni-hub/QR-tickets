@@ -26,18 +26,50 @@ function formatMessageTime(value) {
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+function recoveryInfo(item) {
+  const s = String(item.subject || "");
+  // Subject-based detection (works after server restart picks up chatController fix)
+  if (s.startsWith("Organizer Recovery:")) {
+    const name = s.replace(/^Organizer Recovery:\s*/, "").trim();
+    return { name: name || "Organizer", role: "Organizer Recovery" };
+  }
+  if (s.startsWith("Client Recovery:")) {
+    const name = s.replace(/^Client Recovery:\s*/, "").trim();
+    return { name: name || "Buyer", role: "Buyer Recovery" };
+  }
+  // Message-based fallback — works for existing conversations where subject wasn't set correctly
+  const msg = String(item.latestMessage?.message || "");
+  if (msg.startsWith("ORGANIZER ACCESS CODE RECOVERY REQUEST")) {
+    const nameMatch = msg.match(/Organizer name:\s*(.+)/);
+    return { name: nameMatch?.[1]?.trim() || "Organizer", role: "Organizer Recovery" };
+  }
+  if (msg.startsWith("CLIENT ACCESS TOKEN RECOVERY REQUEST")) {
+    const nameMatch = msg.match(/Buyer name:\s*(.+)/);
+    return { name: nameMatch?.[1]?.trim() || "Buyer", role: "Buyer Recovery" };
+  }
+  return null;
+}
+
 function counterpartName(item) {
   if (item.counterpart?.type === "ADMIN") return "Support Admin";
   if (item.counterpart?.type === "ORGANIZER")
-    return `Organizer${item.counterpart.organizerAccessCode ? ` · ${item.counterpart.organizerAccessCode}` : ""}`;
-  if (item.counterpart?.type === "CLIENT") return "Buyer";
+    return item.event?.organizerName || item.event?.eventName || "Organizer";
+  if (item.counterpart?.type === "CLIENT") {
+    const rec = recoveryInfo(item);
+    if (rec) return rec.name;
+    return item.ticketRequest?.name || "Buyer";
+  }
   return "Conversation";
 }
 
 function counterpartRoleLabel(item) {
   if (item.counterpart?.type === "ADMIN") return "Admin";
   if (item.counterpart?.type === "ORGANIZER") return "Organizer";
-  if (item.counterpart?.type === "CLIENT") return "Buyer";
+  if (item.counterpart?.type === "CLIENT") {
+    const rec = recoveryInfo(item);
+    if (rec) return rec.role;
+    return "Buyer";
+  }
   return "";
 }
 

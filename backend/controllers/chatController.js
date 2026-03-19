@@ -377,11 +377,12 @@ async function createSupportConversation(req, res) {
   }
 
   try {
+    const subject = String(req.body?.subject || "").trim() || `Support (${displayName || email || "visitor"})`;
     const conversation = await ensureLegacySupportConversation({
       displayName,
       email,
       accessCodeRaw: accessCode,
-      subject: "Support conversation",
+      subject,
     });
 
     const actor =

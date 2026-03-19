@@ -113,6 +113,43 @@
 ## 2026-03-17 (Checkpoint)
 - [2026-03-17 23:09:31 -04:00] Implemented unified pairwise organizer/admin/client chat with private image+PDF attachments, explicit read endpoints, organizer chat consolidation, and legacy compatibility route wrappers.
 
+## 2026-03-19 (Access code recovery, nav rework, chat fixes, UX polish)
+
+### Nav rework (`frontend/src/App.jsx`)
+- Nav links changed: Home → `/`, Organizer → `/dashboard`, Customer → `/client`, Scanner, Help. Admin link removed from nav (admin still accessible at `/admin/*`).
+- Home link now goes to `/` directly. Dashboard component detects home mode via `location.pathname === "/"` (not `?home=1` param — that logic was updated in Dashboard.jsx).
+
+### Access code / token recovery system (`frontend/src/pages/HelpPage.jsx`, `backend/controllers/chatController.js`, `backend/services/chatService.js`)
+- Added "I lost my access code" link on the organizer support panel and "I lost my client access token" on the buyer support panel.
+- Recovery creates an anonymous `ADMIN_CLIENT` conversation (reusing existing chat infrastructure). A unique recovery token is generated and shown to the requester — this IS the `clientAccessToken`.
+- Type-specific localStorage keys: `qr-recovery:organizer:token` / `qr-recovery:organizer:conversationId` and equivalent `client:` keys so a user can hold both sessions simultaneously.
+- Recovery form labels are type-aware (organizer name vs buyer name, event created vs event bought a ticket for).
+- Message prefix sent to admin: `ORGANIZER ACCESS CODE RECOVERY REQUEST` or `CLIENT ACCESS TOKEN RECOVERY REQUEST` with name + event.
+- Subject stored on conversation: `"Organizer Recovery: {name}"` or `"Client Recovery: {name}"` (requires backend restart to take effect for new requests).
+- Admin inbox detects recovery conversations via subject prefix OR message content fallback (for pre-fix conversations). Shows name from subject/message, role badge "Organizer Recovery" / "Buyer Recovery".
+- `chatController.js` `createSupportConversation`: reads `req.body.subject` instead of hardcoding `"Support conversation"`.
+- Recovery requestors can upload image files in the chat thread (attach button, preview before send, images shown inline).
+- `HelpPage` reads `?role=customer` URL param to jump directly to client recovery form (used by Client Dashboard "Lost your access token?" link).
+
+### Client dashboard UX (`frontend/src/pages/ClientDashboardPage.jsx`)
+- Added "Back to home" → `/` and "Lost your access token?" → `/help?tab=support&role=customer` links below the token input.
+
+### Chat: client name fix in admin inbox (`frontend/src/pages/ClientDashboardPage.jsx`, `backend/services/chatService.js`)
+- Root cause: "Message Admin" payload from ClientDashboardPage did not include `ticketRequestId`, so `ADMIN_CLIENT` conversations had no `ticketRequest` association → name showed as "Buyer".
+- Fix: ClientDashboardPage now includes `ticketRequestId` in the ADMIN_CLIENT payload.
+- `startConversationForActor` now forwards `ticketRequestId` to `ensureAdminClientConversation`.
+- `ensureAdminClientConversation` accepts and stores `ticketRequestId` on new conversations, and backfills it on existing conversations that were missing it (on next interaction).
+
+### Dashboard DateTimeInput (`frontend/src/pages/Dashboard.jsx`)
+- Replaced both `datetime-local` inputs with a custom `DateTimeInput` component: native date picker + H / MM text inputs (digits only, max 2 chars) + AM / PM segmented radio toggle (both options always visible, selected = dark filled).
+- Email preview section now starts collapsed by default (`showEmailPreview = false`).
+
+### Public event page (`frontend/src/components/public/PublicEventExperience.jsx`)
+- Shortened label from "Upload Payment Evidence (required, image, optimized before upload)" to "Upload Payment Evidence".
+
+### Backend restart note
+- `chatController.js` and `chatService.js` changes require backend restart. Backend uses `node index.js` (no nodemon). The recovery subject fix and `ticketRequestId` backfill both depend on the server picking up the new code.
+
 ## 2026-03-18 (Chat bug fix + Help page rework + Dashboard home rework)
 - **Bug fix** (`backend/services/chatService.js`): `normalizeAccessCode()` was calling `.toUpperCase()` before DB lookup. Since `organizerAccessCode` is stored mixed-case in Postgres (case-sensitive), the lookup always failed → "Organizer scope not found." for organizers trying to send/read chat messages. Fixed by removing `.toUpperCase()` — now just `.trim()`. `listConversations` had previously worked only because it passed `?eventId=` triggering a secondary fallback in `requireOrganizerActor`.
 - **Help page** (`frontend/src/pages/HelpPage.jsx`): Replaced the name/email/access-code support form with a role-selection flow. Three roles: organizer → redirected to `/dashboard`, ticket buyer → redirected to `/client`, visitor → redirected to FAQ tab. Each result panel has a Back button. Removed all legacy API calls, localStorage token logic, and `FeedbackBanner`.

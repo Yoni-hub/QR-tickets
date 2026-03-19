@@ -227,14 +227,12 @@ function mapConversation(conversation, options = {}) {
     updatedAt: conversation.updatedAt,
     counterpart: {
       type: counterpartType,
-      organizerAccessCode: conversation[`${counterpartPrefix}OrganizerAccessCode`] || null,
-      clientAccessToken: conversation[`${counterpartPrefix}ClientAccessToken`] || null,
     },
     event: conversation.event
       ? {
           id: conversation.event.id,
           eventName: conversation.event.eventName,
-          organizerAccessCode: conversation.event.organizerAccessCode || conversation.event.accessCode,
+          organizerName: conversation.event.organizerName || null,
         }
       : null,
     ticketRequest: conversation.ticketRequest
@@ -242,7 +240,6 @@ function mapConversation(conversation, options = {}) {
           id: conversation.ticketRequest.id,
           status: conversation.ticketRequest.status,
           name: conversation.ticketRequest.name,
-          clientAccessToken: conversation.ticketRequest.clientAccessToken,
         }
       : null,
     unreadCount,
@@ -279,7 +276,7 @@ async function findConversationForActor(conversationIdRaw, actor) {
   const conversation = await prisma.chatConversation.findUnique({
     where: { id: conversationId },
     include: {
-      event: { select: { id: true, eventName: true, organizerAccessCode: true, accessCode: true } },
+      event: { select: { id: true, eventName: true, organizerName: true, organizerAccessCode: true, accessCode: true } },
       ticketRequest: { select: { id: true, status: true, name: true, clientAccessToken: true } },
       messages: {
         take: 1,
@@ -363,7 +360,7 @@ async function ensureOrganizerAdminConversation({ organizerAccessCode, eventId, 
   return created.id;
 }
 
-async function ensureAdminClientConversation({ clientAccessToken, subject, eventId, legacySupportConversationToken }) {
+async function ensureAdminClientConversation({ clientAccessToken, subject, eventId, legacySupportConversationToken, ticketRequestId }) {
   const existing = await prisma.chatConversation.findFirst({
     where: {
       conversationType: CHAT_CONVERSATION_TYPE.ADMIN_CLIENT,
@@ -374,9 +371,14 @@ async function ensureAdminClientConversation({ clientAccessToken, subject, event
       ],
     },
     orderBy: { updatedAt: "desc" },
-    select: { id: true },
+    select: { id: true, ticketRequestId: true },
   });
-  if (existing) return existing.id;
+  if (existing) {
+    if (ticketRequestId && !existing.ticketRequestId) {
+      await prisma.chatConversation.update({ where: { id: existing.id }, data: { ticketRequestId } });
+    }
+    return existing.id;
+  }
 
   const created = await prisma.chatConversation.create({
     data: {
@@ -384,6 +386,7 @@ async function ensureAdminClientConversation({ clientAccessToken, subject, event
       status: CHAT_CONVERSATION_STATUS.OPEN,
       subject: normalizeText(subject || "Client support", 180),
       eventId: eventId || null,
+      ticketRequestId: ticketRequestId || null,
       legacySupportConversationToken: legacySupportConversationToken || null,
       partyAType: CHAT_ACTOR.ADMIN,
       partyBType: CHAT_ACTOR.CLIENT,
@@ -459,6 +462,7 @@ async function startConversationForActor(actor, payload = {}) {
       eventId: payload.eventId,
       subject: payload.subject,
       legacySupportConversationToken: payload.legacySupportConversationToken,
+      ticketRequestId: payload.ticketRequestId || null,
     });
   }
 
@@ -489,7 +493,7 @@ async function listConversationsForActor(actor, options = {}) {
     orderBy: [{ lastMessageAt: "desc" }],
     take: 200,
     include: {
-      event: { select: { id: true, eventName: true, organizerAccessCode: true, accessCode: true } },
+      event: { select: { id: true, eventName: true, organizerName: true, organizerAccessCode: true, accessCode: true } },
       ticketRequest: { select: { id: true, status: true, name: true, clientAccessToken: true } },
       messages: {
         take: 1,
@@ -704,7 +708,7 @@ async function updateConversationStatusForAdmin(conversationIdRaw, statusRaw) {
     where: { id: conversationId },
     data: { status },
     include: {
-      event: { select: { id: true, eventName: true, organizerAccessCode: true, accessCode: true } },
+      event: { select: { id: true, eventName: true, organizerName: true, organizerAccessCode: true, accessCode: true } },
       ticketRequest: { select: { id: true, status: true, name: true, clientAccessToken: true } },
       messages: {
         take: 1,
@@ -746,7 +750,7 @@ async function getLegacySupportConversationByToken(tokenRaw) {
   return prisma.chatConversation.findFirst({
     where: { legacySupportConversationToken: token },
     include: {
-      event: { select: { id: true, eventName: true, organizerAccessCode: true, accessCode: true } },
+      event: { select: { id: true, eventName: true, organizerName: true, organizerAccessCode: true, accessCode: true } },
       ticketRequest: { select: { id: true, status: true, name: true, clientAccessToken: true } },
       messages: {
         take: 1,

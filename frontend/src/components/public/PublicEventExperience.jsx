@@ -269,7 +269,7 @@ export default function PublicEventExperience({
 
         {!isFreeSelection ? (
           <div className="mt-3 rounded border bg-slate-50 p-3 text-sm">
-            <p className="font-semibold">Upload Payment Evidence (required, image, optimized before upload)</p>
+            <p className="font-semibold">Upload Payment Evidence</p>
             <input className="mt-2 w-full rounded border p-2" type="file" accept="image/png,image/jpeg,image/webp" onChange={onEvidenceFileChange} />
             {evidenceImageDataUrl ? (
               <div className="mt-2">
