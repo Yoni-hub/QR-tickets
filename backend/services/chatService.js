@@ -221,7 +221,9 @@ function mapConversation(conversation, options = {}) {
     subject: conversation.subject || "",
     eventId: conversation.eventId || null,
     ticketRequestId: conversation.ticketRequestId || null,
-    legacySupportConversationToken: conversation.legacySupportConversationToken || null,
+    legacySupportConversationToken: (options.actor?.type === CHAT_ACTOR.ADMIN || options.actor?.type === CHAT_ACTOR.CLIENT)
+      ? (conversation.legacySupportConversationToken || null)
+      : null,
     lastMessageAt: conversation.lastMessageAt,
     createdAt: conversation.createdAt,
     updatedAt: conversation.updatedAt,
@@ -276,8 +278,8 @@ async function findConversationForActor(conversationIdRaw, actor) {
   const conversation = await prisma.chatConversation.findUnique({
     where: { id: conversationId },
     include: {
-      event: { select: { id: true, eventName: true, organizerName: true, organizerAccessCode: true, accessCode: true } },
-      ticketRequest: { select: { id: true, status: true, name: true, clientAccessToken: true } },
+      event: { select: { id: true, eventName: true, organizerName: true } },
+      ticketRequest: { select: { id: true, status: true, name: true } },
       messages: {
         take: 1,
         orderBy: { createdAt: "desc" },
@@ -493,8 +495,8 @@ async function listConversationsForActor(actor, options = {}) {
     orderBy: [{ lastMessageAt: "desc" }],
     take: 200,
     include: {
-      event: { select: { id: true, eventName: true, organizerName: true, organizerAccessCode: true, accessCode: true } },
-      ticketRequest: { select: { id: true, status: true, name: true, clientAccessToken: true } },
+      event: { select: { id: true, eventName: true, organizerName: true } },
+      ticketRequest: { select: { id: true, status: true, name: true } },
       messages: {
         take: 1,
         orderBy: { createdAt: "desc" },
@@ -508,12 +510,8 @@ async function listConversationsForActor(actor, options = {}) {
         const haystack = [
           item.subject,
           item.event?.eventName,
+          item.event?.organizerName,
           item.ticketRequest?.name,
-          item.partyAOrganizerAccessCode,
-          item.partyBOrganizerAccessCode,
-          item.partyAClientAccessToken,
-          item.partyBClientAccessToken,
-          item.legacySupportConversationToken,
         ]
           .filter(Boolean)
           .join(" ")
@@ -708,8 +706,8 @@ async function updateConversationStatusForAdmin(conversationIdRaw, statusRaw) {
     where: { id: conversationId },
     data: { status },
     include: {
-      event: { select: { id: true, eventName: true, organizerName: true, organizerAccessCode: true, accessCode: true } },
-      ticketRequest: { select: { id: true, status: true, name: true, clientAccessToken: true } },
+      event: { select: { id: true, eventName: true, organizerName: true } },
+      ticketRequest: { select: { id: true, status: true, name: true } },
       messages: {
         take: 1,
         orderBy: { createdAt: "desc" },
@@ -750,8 +748,8 @@ async function getLegacySupportConversationByToken(tokenRaw) {
   return prisma.chatConversation.findFirst({
     where: { legacySupportConversationToken: token },
     include: {
-      event: { select: { id: true, eventName: true, organizerName: true, organizerAccessCode: true, accessCode: true } },
-      ticketRequest: { select: { id: true, status: true, name: true, clientAccessToken: true } },
+      event: { select: { id: true, eventName: true, organizerName: true } },
+      ticketRequest: { select: { id: true, status: true, name: true } },
       messages: {
         take: 1,
         orderBy: { createdAt: "desc" },
