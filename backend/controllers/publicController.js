@@ -496,6 +496,7 @@ async function getClientDashboardByToken(req, res) {
       updatedAt: true,
       event: {
         select: {
+          id: true,
           eventName: true,
           eventDate: true,
           eventAddress: true,

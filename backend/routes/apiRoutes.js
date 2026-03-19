@@ -28,8 +28,6 @@ const {
   createPromoter,
   updatePromoter,
   deletePromoter,
-  createGuestAndApprove,
-  bulkGuestImport,
 } = require("../controllers/organizerController");
 const {
   organizerListConversations,
@@ -105,8 +103,6 @@ router.post(
 );
 router.post("/events/by-code/:accessCode/chat/conversations/:conversationId/read", organizerMarkConversationRead);
 router.get("/events/by-code/:accessCode/chat/attachments/:attachmentId", organizerDownloadAttachment);
-router.post("/events/by-code/:accessCode/guests", createGuestAndApprove);
-router.post("/events/by-code/:accessCode/guests/bulk", bulkGuestImport);
 
 router.get("/events/by-code/:accessCode/promoters", listPromoters);
 router.post("/promoters", createPromoter);

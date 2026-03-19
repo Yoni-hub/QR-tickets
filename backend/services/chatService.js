@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const prisma = require("../utils/prisma");
 const { saveChatAttachment, resolveAttachmentAbsolutePath } = require("./chatAttachmentService");
+const socketManager = require("../socket/socketManager");
 
 const CHAT_ACTOR = {
   ADMIN: "ADMIN",
@@ -363,10 +364,12 @@ async function ensureOrganizerAdminConversation({ organizerAccessCode, eventId, 
 }
 
 async function ensureAdminClientConversation({ clientAccessToken, subject, eventId, legacySupportConversationToken, ticketRequestId }) {
+  const normalizedEventId = eventId ? String(eventId).trim() : null;
   const existing = await prisma.chatConversation.findFirst({
     where: {
       conversationType: CHAT_CONVERSATION_TYPE.ADMIN_CLIENT,
       status: CHAT_CONVERSATION_STATUS.OPEN,
+      ...(normalizedEventId ? { eventId: normalizedEventId } : {}),
       OR: [
         { partyAType: CHAT_ACTOR.CLIENT, partyAClientAccessToken: clientAccessToken },
         { partyBType: CHAT_ACTOR.CLIENT, partyBClientAccessToken: clientAccessToken },
@@ -650,11 +653,19 @@ async function sendMessageForActor(actor, conversationIdRaw, payload = {}) {
     };
   });
 
-  return mapMessage(created, {
+  const mappedMessage = mapMessage(created, {
     actorType: actor.type,
     accessCode: actor.organizerAccessCode,
     clientAccessToken: actor.clientAccessToken,
   });
+
+  // Emit real-time event to all sockets in the conversation room
+  const io = socketManager.getIo();
+  if (io) {
+    io.to(`conv:${resolved.conversation.id}`).emit("new_message", mappedMessage);
+  }
+
+  return mappedMessage;
 }
 
 async function markConversationReadForActor(actor, conversationIdRaw, readThroughMessageIdRaw = "") {

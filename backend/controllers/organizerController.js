@@ -1,7 +1,5 @@
 const prisma = require("../utils/prisma");
 const { getPublicBaseUrl } = require("../services/eventService");
-const { sendTicketLinksDigestEmail } = require("../utils/mailer");
-const { sendTicketSms } = require("../utils/sms");
 const {
   CHAT_CONVERSATION_TYPE,
   resolveActorFromOrganizer,
@@ -262,57 +260,6 @@ async function createTicketsForRequest({ event, request }) {
   return assigned;
 }
 
-async function deliverApprovedTickets({ event, request, tickets }) {
-  const ticketLinks = tickets.map((ticket) => ({
-    ticketType: ticket.ticketType || event.ticketType || "General",
-    ticketUrl: ticket.qrPayload || `${getPublicBaseUrl()}/t/${ticket.ticketPublicId || ""}`,
-  }));
-  const firstTicketUrl = ticketLinks[0]?.ticketUrl || `${getPublicBaseUrl()}/t/${tickets[0]?.ticketPublicId || ""}`;
-
-  if (request.email) {
-    try {
-      await sendTicketLinksDigestEmail({
-        to: request.email,
-        eventName: event.eventName,
-        eventDate: event.eventDate,
-        eventAddress: event.eventAddress,
-        ticketLinks,
-      });
-
-      for (const ticket of tickets) {
-        await prisma.ticketDelivery.create({
-          data: {
-            ticketId: ticket.id,
-            email: request.email,
-            method: "EMAIL_LINK",
-            status: "SENT",
-          },
-        });
-      }
-    } catch (error) {
-      const errorMessage = error?.message || "Email delivery failed.";
-      for (const ticket of tickets) {
-        await prisma.ticketDelivery.create({
-          data: {
-            ticketId: ticket.id,
-            email: request.email,
-            method: "EMAIL_LINK",
-            status: "FAILED",
-            errorMessage,
-          },
-        });
-      }
-    }
-  }
-
-  if (request.phone) {
-    await sendTicketSms({
-      to: request.phone,
-      eventName: event.eventName,
-      ticketUrl: firstTicketUrl,
-    });
-  }
-}
 
 async function approveTicketRequest(req, res) {
   const requestId = String(req.params.id || "").trim();
@@ -367,13 +314,9 @@ async function approveTicketRequest(req, res) {
       totalPrice: true,
       ticketSelections: true,
       name: true,
-      phone: true,
-      email: true,
       promoter: { select: { name: true, code: true } },
     },
   });
-
-  await deliverApprovedTickets({ event, request, tickets });
 
   res.json({
     request: updatedRequest,
@@ -878,95 +821,6 @@ async function deletePromoter(req, res) {
   res.json({ deleted: true });
 }
 
-async function createGuestAndApprove(req, res) {
-  const accessCode = parseAccessCode(req.body?.accessCode);
-  const name = String(req.body?.name || "").trim();
-  const phone = String(req.body?.phone || "").trim() || null;
-  const email = String(req.body?.email || "").trim().toLowerCase() || null;
-  const quantity = Math.max(1, Number.parseInt(String(req.body?.quantity || "1"), 10) || 1);
-  const promoterId = String(req.body?.promoterId || "").trim() || null;
-
-  if (!accessCode || !name) {
-    res.status(400).json({ error: "accessCode and guest name are required." });
-    return;
-  }
-
-  const event = await findEventByAccessCode(accessCode, parseEventId(req.body?.eventId || req.query?.eventId));
-  if (!event) {
-    res.status(404).json({ error: "Event not found." });
-    return;
-  }
-
-  const request = await prisma.ticketRequest.create({
-    data: {
-      eventId: event.id,
-      name,
-      phone,
-      email,
-      quantity,
-      promoterId,
-      status: "PENDING_VERIFICATION",
-    },
-  });
-
-  req.params.id = request.id;
-  req.body.accessCode = accessCode;
-  await approveTicketRequest(req, res);
-}
-
-async function bulkGuestImport(req, res) {
-  const accessCode = parseAccessCode(req.body?.accessCode);
-  const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
-
-  if (!accessCode || !rows.length) {
-    res.status(400).json({ error: "accessCode and rows are required." });
-    return;
-  }
-
-  const event = await findEventByAccessCode(accessCode, parseEventId(req.body?.eventId || req.query?.eventId));
-  if (!event) {
-    res.status(404).json({ error: "Event not found." });
-    return;
-  }
-
-  let created = 0;
-  let failed = 0;
-
-  for (const row of rows) {
-    const name = String(row.name || "").trim();
-    if (!name) {
-      failed += 1;
-      continue;
-    }
-
-    const quantity = Math.max(1, Number.parseInt(String(row.tickets || row.quantity || "1"), 10) || 1);
-    const email = String(row.email || "").trim().toLowerCase() || null;
-    const phone = String(row.phone || "").trim() || null;
-    const promoterCode = normalizePromoterCode(row.promoter || "");
-    const promoter = promoterCode
-      ? await prisma.promoter.findFirst({ where: { eventId: event.id, code: promoterCode } })
-      : null;
-
-    const request = await prisma.ticketRequest.create({
-      data: {
-        eventId: event.id,
-        name,
-        phone,
-        email,
-        quantity,
-        promoterId: promoter?.id || null,
-        status: "PENDING_VERIFICATION",
-      },
-    });
-
-    const tickets = await createTicketsForRequest({ event, request });
-    await prisma.ticketRequest.update({ where: { id: request.id }, data: { status: "APPROVED" } });
-    await deliverApprovedTickets({ event, request, tickets });
-    created += 1;
-  }
-
-  res.json({ created, failed, totalRows: rows.length });
-}
 
 module.exports = {
   getOrganizerTicketRequests,
@@ -980,8 +834,6 @@ module.exports = {
   createPromoter,
   updatePromoter,
   deletePromoter,
-  createGuestAndApprove,
-  bulkGuestImport,
 };
 
 

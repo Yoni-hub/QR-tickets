@@ -2165,6 +2165,7 @@ export default function Dashboard() {
                   api={organizerChatApiClient}
                   quickStarts={organizerChatQuickStarts}
                   listParams={organizerChatListParams}
+                  socketCredentials={{ accessCode: organizerChatAccessCode }}
                   onUnreadCountChange={setChatUnreadTotal}
                 />
               ) : (

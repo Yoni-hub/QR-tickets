@@ -15,6 +15,7 @@
   "description": "",
   "dependencies": {
     "@prisma/client": "^6.16.2",
+    "axios": "^1.13.6",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "express": "^4.21.2",
@@ -26,6 +27,8 @@
     "puppeteer": "^24.17.1",
     "qrcode": "^1.5.4",
     "sharp": "^0.34.5",
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3",
     "uuid": "^13.0.0"
   }
 }
