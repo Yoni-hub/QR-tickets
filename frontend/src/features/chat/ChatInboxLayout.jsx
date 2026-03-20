@@ -426,56 +426,80 @@ export default function ChatInboxLayout({
             ) : (
               <div className="space-y-3">
                 {messages.map((item) => {
+                  // SYSTEM messages: centered pill
+                  if (item.messageType === "SYSTEM") {
+                    return (
+                      <div key={item.id} className="flex flex-col items-center gap-0.5">
+                        <div className="rounded-full bg-slate-100 px-4 py-1.5 text-xs text-slate-500 text-center max-w-[80%]">
+                          {item.message}
+                        </div>
+                        {item.emailStatus === "SENT" ? (
+                          <p className="text-[10px] text-emerald-600">✓ Email sent</p>
+                        ) : item.emailStatus === "FAILED" ? (
+                          <p className="text-[10px] text-red-500">✗ Email failed</p>
+                        ) : null}
+                      </div>
+                    );
+                  }
+
                   const mine = item.senderType === actorType;
                   const attachmentHref = resolveAttachmentHref(item.attachment, actorType);
                   return (
                     <div key={item.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
-                      <div
-                        className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm shadow-sm ${
-                          mine
-                            ? "rounded-br-sm bg-slate-900 text-white"
-                            : "rounded-bl-sm border bg-white text-slate-900"
-                        }`}
-                      >
-                        {item.message ? (
-                          <p className="whitespace-pre-wrap break-words">{item.message}</p>
-                        ) : null}
-                        {item.attachment?.kind === "IMAGE" ? (
-                          item.attachment.legacyDataUrl ? (
-                            <a className="mt-2 block" href={item.attachment.legacyDataUrl} target="_blank" rel="noreferrer">
-                              <img
-                                src={item.attachment.legacyDataUrl}
-                                alt="Attachment"
-                                className="max-h-48 rounded-lg border object-contain"
-                              />
+                      <div className={`flex flex-col ${mine ? "items-end" : "items-start"}`}>
+                        <div
+                          className={`max-w-full rounded-2xl px-4 py-2.5 text-sm shadow-sm ${
+                            mine
+                              ? "rounded-br-sm bg-slate-900 text-white"
+                              : "rounded-bl-sm border bg-white text-slate-900"
+                          }`}
+                          style={{ maxWidth: "min(75%, 500px)" }}
+                        >
+                          {item.message ? (
+                            <p className="whitespace-pre-wrap break-words">{item.message}</p>
+                          ) : null}
+                          {item.attachment?.kind === "IMAGE" ? (
+                            item.attachment.legacyDataUrl ? (
+                              <a className="mt-2 block" href={item.attachment.legacyDataUrl} target="_blank" rel="noreferrer">
+                                <img
+                                  src={item.attachment.legacyDataUrl}
+                                  alt="Attachment"
+                                  className="max-h-48 rounded-lg border object-contain"
+                                />
+                              </a>
+                            ) : (
+                              <a className="mt-2 block" href={attachmentHref} target="_blank" rel="noreferrer">
+                                <img
+                                  src={attachmentHref}
+                                  alt="Attachment"
+                                  className="max-h-48 rounded-lg border object-contain"
+                                />
+                              </a>
+                            )
+                          ) : null}
+                          {item.attachment?.kind === "PDF" ? (
+                            <a
+                              className={`mt-2 flex items-center gap-1.5 rounded border px-3 py-2 text-xs ${
+                                mine
+                                  ? "border-slate-700 text-slate-200 hover:bg-slate-800"
+                                  : "border-slate-200 text-blue-700 hover:bg-slate-50"
+                              }`}
+                              href={attachmentHref}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              📄 {item.attachment.originalName}
                             </a>
-                          ) : (
-                            <a className="mt-2 block" href={attachmentHref} target="_blank" rel="noreferrer">
-                              <img
-                                src={attachmentHref}
-                                alt="Attachment"
-                                className="max-h-48 rounded-lg border object-contain"
-                              />
-                            </a>
-                          )
+                          ) : null}
+                          <p className="mt-1 text-[10px] text-slate-400">
+                            {formatMessageTime(item.createdAt)}
+                          </p>
+                        </div>
+                        {mine ? (
+                          <p className={`mt-0.5 text-[10px] ${item.emailStatus === "SENT" ? "text-emerald-600" : item.emailStatus === "FAILED" ? "text-red-500" : "text-slate-400"}`}>
+                            {item.emailStatus === "SENT" ? "✓ Email sent" : item.emailStatus === "FAILED" ? "✗ Email failed" : "✓ Sent"}
+                          </p>
                         ) : null}
-                        {item.attachment?.kind === "PDF" ? (
-                          <a
-                            className={`mt-2 flex items-center gap-1.5 rounded border px-3 py-2 text-xs ${
-                              mine
-                                ? "border-slate-700 text-slate-200 hover:bg-slate-800"
-                                : "border-slate-200 text-blue-700 hover:bg-slate-50"
-                            }`}
-                            href={attachmentHref}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            📄 {item.attachment.originalName}
-                          </a>
-                        ) : null}
-                        <p className={`mt-1 text-[10px] ${mine ? "text-slate-400" : "text-slate-400"}`}>
-                          {formatMessageTime(item.createdAt)}
-                        </p>
                       </div>
                     </div>
                   );

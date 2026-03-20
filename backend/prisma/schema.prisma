@@ -311,6 +311,7 @@ model ChatMessage {
   senderClientAccessToken String?
   body                  String
   messageType           ChatMessageType @default(TEXT)
+  emailStatus           ChatMessageEmailStatus?
   createdAt             DateTime        @default(now())
   conversation          ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   attachments           ChatAttachment[]
@@ -366,6 +367,13 @@ enum ChatMessageType {
   TEXT
   TEXT_WITH_ATTACHMENT
   ATTACHMENT_ONLY
+  SYSTEM
+}
+
+enum ChatMessageEmailStatus {
+  SENT
+  FAILED
+  NO_EMAIL
 }
 
 enum ChatAttachmentKind {
