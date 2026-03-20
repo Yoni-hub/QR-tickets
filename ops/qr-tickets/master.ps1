@@ -1,4 +1,4 @@
-# QR Tickets — Deployment Orchestrator
+# QR Tickets - Deployment Orchestrator
 # Usage: .\master.ps1 [-SkipDns] [-SkipProvision] [-SkipDeploy]
 param(
   [switch]$SkipDns,
@@ -9,10 +9,10 @@ param(
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-# ─── Load .env ────────────────────────────────────────────────────────────────
+# Load .env
 $EnvFile = Join-Path $ScriptDir ".env"
 if (-not (Test-Path $EnvFile)) {
-  Write-Error "Missing $EnvFile — copy from .env.example and fill in values."
+  Write-Error "Missing $EnvFile"
   exit 1
 }
 
@@ -23,70 +23,73 @@ Get-Content $EnvFile | ForEach-Object {
     $parts = $line -split "=", 2
     if ($parts.Length -eq 2) {
       $key = $parts[0].Trim()
-      $val = $parts[1].Trim().Trim('"')
+      $val = $parts[1].Trim().Trim([char]34)
       $envVars[$key] = $val
       [System.Environment]::SetEnvironmentVariable($key, $val, "Process")
     }
   }
 }
 
-$SSH_HOST  = $envVars["SSH_HOST"]
-$SSH_PORT  = $envVars["SSH_PORT"]
-$SSH_USER  = $envVars["SSH_USER"]
-$SSH_KEY   = $envVars["SSH_KEY_PATH"]
-$DOMAIN    = $envVars["DOMAIN"]
-$ROOT_DOMAIN = $envVars["ROOT_DOMAIN"]
-$PUBLIC_IP = $envVars["PUBLIC_IP"]
+$SSH_HOST    = $envVars["SSH_HOST"]
+$SSH_PORT    = $envVars["SSH_PORT"]
+$SSH_USER    = $envVars["SSH_USER"]
+$SSH_KEY     = $envVars["SSH_KEY_PATH"]
+$DOMAIN      = $envVars["DOMAIN"]
+$PUBLIC_IP   = $envVars["PUBLIC_IP"]
 
 $SshTarget = "${SSH_USER}@${SSH_HOST}"
 $SshOpts   = "-i `"$SSH_KEY`" -p $SSH_PORT -o StrictHostKeyChecking=no -o BatchMode=yes"
 
 function Invoke-Ssh($cmd) {
-  $full = "ssh $SshOpts $SshTarget `"$cmd`""
   Write-Host "[ssh] $cmd"
-  Invoke-Expression $full
+  $result = & ssh -i $SSH_KEY -p $SSH_PORT -o StrictHostKeyChecking=no -o BatchMode=yes $SshTarget $cmd
   if ($LASTEXITCODE -ne 0) { throw "SSH command failed: $cmd" }
+  return $result
 }
 
 function Send-File($local, $remote) {
-  $full = "scp $SshOpts `"$local`" `"${SshTarget}:${remote}`""
   Write-Host "[scp] $local -> $remote"
-  Invoke-Expression $full
+  & scp -i $SSH_KEY -P $SSH_PORT -o StrictHostKeyChecking=no $local "${SshTarget}:${remote}"
   if ($LASTEXITCODE -ne 0) { throw "SCP failed: $local" }
 }
 
-# ─── DNS ──────────────────────────────────────────────────────────────────────
+# DNS
 if (-not $SkipDns) {
-  Write-Host "[dns] Adding A record $DOMAIN -> $PUBLIC_IP in Squarespace..."
   $DnsScript = Join-Path $ScriptDir "dns_squarespace.js"
   if (Test-Path $DnsScript) {
-    node $DnsScript --host "qr-tickets" --ip $PUBLIC_IP
-    Write-Host "[dns] Waiting 30s for DNS propagation..."
-    Start-Sleep -Seconds 30
+    Write-Host "[dns] Installing Playwright if needed..."
+    Push-Location $ScriptDir
+    npm install --silent
+    Write-Host "[dns] Adding A record $DOMAIN -> $PUBLIC_IP in Squarespace..."
+    npx playwright install chromium --with-deps 2>$null
+    node dns_squarespace.js
+    Pop-Location
+    Write-Host "[dns] Waiting 60s for DNS propagation..."
+    Start-Sleep -Seconds 60
   } else {
-    Write-Host "[dns] dns_squarespace.js not found — add A record manually: qr-tickets -> $PUBLIC_IP"
-    Write-Host "[dns] Press Enter once the DNS record is saved..."
+    Write-Host "[dns] Add A record manually in Squarespace: qr-tickets -> $PUBLIC_IP"
+    Write-Host "[dns] Press Enter once done..."
     Read-Host
   }
 }
 
-# ─── Upload env ───────────────────────────────────────────────────────────────
-Write-Host "[env] Uploading automation env to server..."
+# Upload env to server
+Write-Host "[env] Uploading env to server..."
 Send-File $EnvFile "/tmp/qr_tickets.env"
 Invoke-Ssh "chmod 600 /tmp/qr_tickets.env"
 
-# ─── Provision (first-time only) ─────────────────────────────────────────────
+# Provision (first-time: nginx vhost + TLS cert)
 if (-not $SkipProvision) {
   Write-Host "[provision] Running provision script..."
   Send-File (Join-Path $ScriptDir "provision.sh") "/tmp/qr_provision.sh"
-  Invoke-Ssh "chmod +x /tmp/qr_provision.sh && /tmp/qr_provision.sh"
+  Invoke-Ssh "chmod +x /tmp/qr_provision.sh && bash /tmp/qr_provision.sh"
 }
 
-# ─── Deploy ───────────────────────────────────────────────────────────────────
+# Deploy
 if (-not $SkipDeploy) {
   Write-Host "[deploy] Running deploy script..."
   Send-File (Join-Path $ScriptDir "deploy.sh") "/tmp/qr_deploy.sh"
-  Invoke-Ssh "chmod +x /tmp/qr_deploy.sh && /tmp/qr_deploy.sh"
+  Invoke-Ssh "chmod +x /tmp/qr_deploy.sh && bash /tmp/qr_deploy.sh"
 }
 
 Write-Host ""
