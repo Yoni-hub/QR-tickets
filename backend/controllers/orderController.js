@@ -1,9 +1,5 @@
 const prisma = require("../utils/prisma");
-const {
-  sendTicketLinkEmail,
-  DEFAULT_SUBJECT_TEMPLATE,
-  DEFAULT_BODY_TEMPLATE,
-} = require("../utils/mailer");
+const { sendTicketLinksDigestEmail } = require("../utils/mailer");
 const {
   DEFAULT_TICKET_TYPE,
   normalizeTicketType,
@@ -12,40 +8,13 @@ const {
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-function normalizeEmailList(rawEmails) {
-  if (!Array.isArray(rawEmails)) return [];
-  const seen = new Set();
-  const normalized = [];
-  for (const value of rawEmails) {
-    const email = String(value || "").trim().toLowerCase();
-    if (!email) continue;
-    if (!EMAIL_PATTERN.test(email)) continue;
-    if (seen.has(email)) continue;
-    seen.add(email);
-    normalized.push(email);
-  }
-  return normalized;
+function normalizeEmail(raw) {
+  return String(raw || "").trim().toLowerCase();
 }
 
 function getBaseUrl(rawBaseUrl) {
   const fallback = process.env.PUBLIC_BASE_URL || "http://localhost:5174";
   return String(rawBaseUrl || fallback).trim().replace(/\/$/, "");
-}
-
-function parseTemplateField(rawValue, fallbackValue, maxLength, fieldName) {
-  if (rawValue === undefined || rawValue === null) return fallbackValue;
-  const value = String(rawValue);
-  if (!value.trim()) {
-    const error = new Error(`${fieldName} cannot be empty.`);
-    error.statusCode = 400;
-    throw error;
-  }
-  if (value.length > maxLength) {
-    const error = new Error(`${fieldName} is too long.`);
-    error.statusCode = 400;
-    throw error;
-  }
-  return value;
 }
 
 async function resolveEventForAccessCode(accessCode, eventIdRaw) {
@@ -54,7 +23,8 @@ async function resolveEventForAccessCode(accessCode, eventIdRaw) {
     where: { accessCode },
     select: { id: true, organizerAccessCode: true, accessCode: true },
   });
-  const organizerAccessCode = directEvent?.organizerAccessCode || directEvent?.accessCode || accessCode;
+  const organizerAccessCode =
+    directEvent?.organizerAccessCode || directEvent?.accessCode || accessCode;
 
   const events = await prisma.userEvent.findMany({
     where: {
@@ -80,9 +50,54 @@ async function resolveEventForAccessCode(accessCode, eventIdRaw) {
     const selected = events.find((item) => item.id === eventId);
     if (selected) return selected;
   }
-
   const exactAccessEvent = events.find((item) => item.accessCode === accessCode);
   return exactAccessEvent || events[0];
+}
+
+/**
+ * Parses the recipients from the request body.
+ *
+ * Accepts two formats:
+ *   New format: recipients = [{email, selections: [{ticketType, quantity}]}]
+ *   Legacy format: emails = [string], ticketType = string   (1 ticket per email, 1 type)
+ *
+ * Always returns the new format.
+ */
+function parseRecipients(body) {
+  if (Array.isArray(body?.recipients) && body.recipients.length) {
+    const result = [];
+    for (const r of body.recipients) {
+      const email = normalizeEmail(r?.email);
+      if (!EMAIL_PATTERN.test(email)) continue;
+      const selections = [];
+      if (Array.isArray(r?.selections)) {
+        for (const s of r.selections) {
+          const qty = Math.max(0, parseInt(s?.quantity || 0, 10));
+          const type = String(s?.ticketType || "").trim();
+          if (qty > 0 && type) selections.push({ ticketType: type, quantity: qty });
+        }
+      }
+      if (selections.length) result.push({ email, selections });
+    }
+    return { recipients: result, error: null };
+  }
+
+  // Legacy: emails[] + ticketType
+  if (Array.isArray(body?.emails) && body.emails.length) {
+    const ticketType = String(body?.ticketType || "").trim();
+    if (!ticketType) return { recipients: [], error: "ticketType is required." };
+    const seen = new Set();
+    const result = [];
+    for (const raw of body.emails) {
+      const email = normalizeEmail(raw);
+      if (!EMAIL_PATTERN.test(email) || seen.has(email)) continue;
+      seen.add(email);
+      result.push({ email, selections: [{ ticketType, quantity: 1 }] });
+    }
+    return { recipients: result, error: null };
+  }
+
+  return { recipients: [], error: "Provide at least one recipient." };
 }
 
 async function sendOrderTicketLinks(req, res) {
@@ -92,38 +107,28 @@ async function sendOrderTicketLinks(req, res) {
     return;
   }
 
-  const emails = normalizeEmailList(req.body?.emails);
-  if (!emails.length) {
-    res.status(400).json({ error: "Provide at least one valid recipient email." });
+  const { recipients, error: parseError } = parseRecipients(req.body);
+  if (parseError) {
+    res.status(400).json({ error: parseError });
     return;
   }
-  const selectedTicketTypeRaw = String(req.body?.ticketType || "").trim();
-  if (!selectedTicketTypeRaw) {
-    res.status(400).json({ error: "ticketType is required." });
-    return;
-  }
-  const selectedTicketType = normalizeTicketType(selectedTicketTypeRaw, selectedTicketTypeRaw);
-  const allowPartial = Boolean(req.body?.allowPartial);
-
-  let subjectTemplate;
-  let bodyTemplate;
-  try {
-    subjectTemplate = parseTemplateField(req.body?.emailSubject, DEFAULT_SUBJECT_TEMPLATE, 300, "Email subject");
-    bodyTemplate = parseTemplateField(req.body?.emailBody, DEFAULT_BODY_TEMPLATE, 8000, "Email body");
-  } catch (error) {
-    res.status(error.statusCode || 400).json({ error: error.message || "Invalid email template." });
+  if (!recipients.length) {
+    res.status(400).json({ error: "Provide at least one valid recipient." });
     return;
   }
 
   const baseUrl = getBaseUrl(req.body?.baseUrl);
-  const event = await resolveEventForAccessCode(accessCode, req.body?.eventId || req.query?.eventId);
-
+  const event = await resolveEventForAccessCode(
+    accessCode,
+    req.body?.eventId || req.query?.eventId,
+  );
   if (!event) {
     res.status(404).json({ error: "Event not found." });
     return;
   }
 
-  const [tickets, pendingRequests] = await Promise.all([
+  // Load all available tickets for this event (unassigned, unused, not invalidated)
+  const [allTickets, pendingRequests] = await Promise.all([
     prisma.ticket.findMany({
       where: {
         eventId: event.id,
@@ -138,7 +143,6 @@ async function sendOrderTicketLinks(req, res) {
         ticketType: true,
         deliveries: {
           where: { status: "SENT" },
-          orderBy: { sentAt: "desc" },
           take: 1,
           select: { method: true },
         },
@@ -151,127 +155,126 @@ async function sendOrderTicketLinks(req, res) {
     }),
   ]);
 
-  const undeliveredTickets = tickets.filter((ticket) => !ticket.deliveries?.length);
-  const reservedPendingTicketIds = reservePendingTicketIds({
-    availableTickets: undeliveredTickets,
+  const undelivered = allTickets.filter((t) => !t.deliveries?.length);
+  const reservedIds = reservePendingTicketIds({
+    availableTickets: undelivered,
     pendingRequests,
     fallbackTicketType: event.ticketType || DEFAULT_TICKET_TYPE,
   });
 
-  const matchingTickets = tickets.filter(
-    (ticket) => normalizeTicketType(ticket.ticketType, event.ticketType || DEFAULT_TICKET_TYPE) === selectedTicketType,
-  );
-  const availableTickets = matchingTickets.filter(
-    (ticket) => !ticket.deliveries?.length && !reservedPendingTicketIds.has(ticket.id),
-  );
-  const reservedForPendingCount = matchingTickets.filter((ticket) => reservedPendingTicketIds.has(ticket.id)).length;
-  const downloadedCount = matchingTickets.filter((ticket) => ticket.deliveries?.[0]?.method === "PDF_DOWNLOAD").length;
-  const emailedCount = matchingTickets.filter((ticket) => ticket.deliveries?.[0]?.method === "EMAIL_LINK").length;
+  // Build a pool of available tickets per normalized type (excluding reserved)
+  const availableByType = new Map();
+  for (const ticket of undelivered) {
+    if (reservedIds.has(ticket.id)) continue;
+    const type = normalizeTicketType(
+      ticket.ticketType,
+      event.ticketType || DEFAULT_TICKET_TYPE,
+    );
+    if (!availableByType.has(type)) availableByType.set(type, []);
+    availableByType.get(type).push(ticket);
+  }
 
-  if (emails.length > availableTickets.length && !allowPartial) {
-    if (availableTickets.length < 1 && downloadedCount > 0) {
+  // Pre-flight: check we have enough tickets for all recipients combined
+  const totalNeededByType = new Map();
+  for (const r of recipients) {
+    for (const s of r.selections) {
+      const type = normalizeTicketType(s.ticketType, event.ticketType || DEFAULT_TICKET_TYPE);
+      totalNeededByType.set(type, (totalNeededByType.get(type) || 0) + s.quantity);
+    }
+  }
+
+  for (const [type, needed] of totalNeededByType.entries()) {
+    const available = availableByType.get(type)?.length || 0;
+    if (needed > available) {
       res.status(400).json({
         code: "INSUFFICIENT_TICKETS",
-        error:
-          "You downloaded all your tickets and have no tickets left to send by email. Generate more tickets first.",
-        ticketType: selectedTicketType,
-        availableTickets: 0,
-        requestedEmails: emails.length,
-        downloadedCount,
-        emailedCount,
-        reservedForPendingCount,
+        error: `Not enough ${type} tickets. Need ${needed}, have ${available} available.`,
+        ticketType: type,
+        needed,
+        available,
       });
       return;
     }
-    res.status(400).json({
-      code: "INSUFFICIENT_TICKETS",
-      error: `Not enough ${selectedTicketType} tickets. You have ${availableTickets.length} available, but tried to send ${emails.length} emails. Generate more tickets.`,
-      ticketType: selectedTicketType,
-      availableTickets: availableTickets.length,
-      requestedEmails: emails.length,
-      downloadedCount,
-      emailedCount,
-      reservedForPendingCount,
-    });
-    return;
   }
 
-  const targetEmails = allowPartial && emails.length > availableTickets.length
-    ? emails.slice(0, availableTickets.length)
-    : emails;
-  if (!targetEmails.length) {
-    res.status(400).json({
-      code: "INSUFFICIENT_TICKETS",
-      error: `No ${selectedTicketType} tickets are available to send by email. Generate more tickets first.`,
-      ticketType: selectedTicketType,
-      availableTickets: 0,
-      requestedEmails: emails.length,
-      downloadedCount,
-      emailedCount,
-      reservedForPendingCount,
-    });
-    return;
-  }
-
+  // Send — one digest email per recipient
+  const results = [];
+  let totalSent = 0;
   const failed = [];
-  let sent = 0;
 
-  for (let index = 0; index < targetEmails.length; index += 1) {
-    const email = targetEmails[index];
-    const ticket = availableTickets[index];
-    const ticketUrl = `${baseUrl}/t/${ticket.ticketPublicId}`;
+  for (const recipient of recipients) {
+    const assignedTickets = [];
+
+    // Assign tickets from the pool
+    for (const s of recipient.selections) {
+      const type = normalizeTicketType(s.ticketType, event.ticketType || DEFAULT_TICKET_TYPE);
+      const pool = availableByType.get(type) || [];
+      const batch = pool.splice(0, s.quantity); // removes from pool so they can't be reused
+      for (const ticket of batch) {
+        assignedTickets.push({ ticket, ticketType: type });
+      }
+    }
+
+    if (!assignedTickets.length) continue;
+
+    const ticketLinks = assignedTickets.map(({ ticket, ticketType }) => ({
+      ticketType,
+      ticketUrl: `${baseUrl}/t/${ticket.ticketPublicId}`,
+    }));
+
     try {
-      await sendTicketLinkEmail({
-        to: email,
-        organizerName: event.organizerName,
+      await sendTicketLinksDigestEmail({
+        to: recipient.email,
         eventName: event.eventName,
         eventDate: event.eventDate,
         eventAddress: event.eventAddress,
-        ticketType: ticket.ticketType || event.ticketType || DEFAULT_TICKET_TYPE,
-        ticketUrl,
-        subjectTemplate,
-        bodyTemplate,
+        ticketLinks,
       });
-      sent += 1;
-      await prisma.ticketDelivery.create({
-        data: {
-          ticketId: ticket.id,
-          email,
-          method: "EMAIL_LINK",
-          status: "SENT",
-        },
-      });
-      await prisma.ticket.update({
-        where: { id: ticket.id },
-        data: { attendeeEmail: email },
-      });
-    } catch (error) {
-      const errorMessage = error?.message || "Unknown email error.";
-      failed.push({ email, ticketPublicId: ticket.ticketPublicId, error: errorMessage });
-      await prisma.ticketDelivery.create({
-        data: {
-          ticketId: ticket.id,
-          email,
-          method: "EMAIL_LINK",
-          status: "FAILED",
-          errorMessage,
-        },
-      });
+
+      // Record deliveries and stamp attendee email
+      for (const { ticket } of assignedTickets) {
+        await prisma.ticketDelivery.create({
+          data: {
+            ticketId: ticket.id,
+            email: recipient.email,
+            method: "EMAIL_LINK",
+            status: "SENT",
+          },
+        });
+        await prisma.ticket.update({
+          where: { id: ticket.id },
+          data: { attendeeEmail: recipient.email },
+        });
+      }
+
+      totalSent += assignedTickets.length;
+      results.push({ email: recipient.email, sent: assignedTickets.length, status: "sent" });
+    } catch (err) {
+      const errorMessage = err?.message || "Unknown email error.";
+      for (const { ticket } of assignedTickets) {
+        await prisma.ticketDelivery.create({
+          data: {
+            ticketId: ticket.id,
+            email: recipient.email,
+            method: "EMAIL_LINK",
+            status: "FAILED",
+            errorMessage,
+          },
+        });
+      }
+      failed.push({ email: recipient.email, tickets: assignedTickets.length, error: errorMessage });
+      results.push({ email: recipient.email, sent: 0, status: "failed", error: errorMessage });
     }
   }
 
   res.json({
-    sent,
+    totalSent,
     failed,
-    ticketType: selectedTicketType,
-    availableTicketsBeforeSend: availableTickets.length,
-    requestedEmails: emails.length,
-    attemptedEmails: targetEmails.length,
-    partialApplied: targetEmails.length < emails.length,
+    results,
+    recipients: recipients.length,
   });
 }
 
 module.exports = {
   sendOrderTicketLinks,
 };
-
