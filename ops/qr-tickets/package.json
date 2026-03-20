@@ -1,0 +1,13 @@
+{
+  "name": "qr-tickets-automation",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dns": "node dns_squarespace.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "playwright": "^1.47.2"
+  }
+}
