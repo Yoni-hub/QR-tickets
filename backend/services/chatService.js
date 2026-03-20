@@ -27,6 +27,13 @@ const CHAT_MESSAGE_TYPE = {
   TEXT: "TEXT",
   TEXT_WITH_ATTACHMENT: "TEXT_WITH_ATTACHMENT",
   ATTACHMENT_ONLY: "ATTACHMENT_ONLY",
+  SYSTEM: "SYSTEM",
+};
+
+const CHAT_MESSAGE_EMAIL_STATUS = {
+  SENT: "SENT",
+  FAILED: "FAILED",
+  NO_EMAIL: "NO_EMAIL",
 };
 
 function normalizeText(value, maxLength = 1200) {
@@ -202,6 +209,7 @@ function mapMessage(message, options = {}) {
     senderType: message.senderType,
     message: message.body,
     messageType: message.messageType,
+    emailStatus: message.emailStatus || null,
     createdAt: message.createdAt,
     attachment: attachmentView,
     evidenceImageDataUrl:
@@ -655,7 +663,45 @@ async function sendMessageForActor(actor, conversationIdRaw, payload = {}) {
     };
   });
 
-  const mappedMessage = mapMessage(created, {
+  let finalMessage = created;
+
+  // Email notification: when organizer sends a message to a client, notify by email
+  // Track status synchronously so we can store and expose it.
+  if (
+    actor.type === CHAT_ACTOR.ORGANIZER &&
+    resolved.conversation.conversationType === CHAT_CONVERSATION_TYPE.ORGANIZER_CLIENT &&
+    resolved.conversation.ticketRequestId
+  ) {
+    let emailStatus = CHAT_MESSAGE_EMAIL_STATUS.NO_EMAIL;
+    try {
+      const ticketRequest = await prisma.ticketRequest.findUnique({
+        where: { id: resolved.conversation.ticketRequestId },
+        select: { email: true, clientAccessToken: true, event: { select: { eventName: true } } },
+      });
+      if (ticketRequest?.email && ticketRequest?.clientAccessToken) {
+        const dashboardUrl = `${getPublicBaseUrl()}/client/${ticketRequest.clientAccessToken}`;
+        try {
+          await sendNewChatMessageEmail({
+            to: ticketRequest.email,
+            eventName: ticketRequest.event?.eventName || "",
+            dashboardUrl,
+          });
+          emailStatus = CHAT_MESSAGE_EMAIL_STATUS.SENT;
+        } catch {
+          emailStatus = CHAT_MESSAGE_EMAIL_STATUS.FAILED;
+        }
+      }
+    } catch {
+      emailStatus = CHAT_MESSAGE_EMAIL_STATUS.FAILED;
+    }
+    finalMessage = await prisma.chatMessage.update({
+      where: { id: created.id },
+      data: { emailStatus },
+      include: { attachments: true },
+    });
+  }
+
+  const mappedMessage = mapMessage(finalMessage, {
     actorType: actor.type,
     accessCode: actor.organizerAccessCode,
     clientAccessToken: actor.clientAccessToken,
@@ -665,27 +711,6 @@ async function sendMessageForActor(actor, conversationIdRaw, payload = {}) {
   const io = socketManager.getIo();
   if (io) {
     io.to(`conv:${resolved.conversation.id}`).emit("new_message", mappedMessage);
-  }
-
-  // Email notification: when organizer sends a message to a client, notify by email
-  if (
-    actor.type === CHAT_ACTOR.ORGANIZER &&
-    resolved.conversation.conversationType === CHAT_CONVERSATION_TYPE.ORGANIZER_CLIENT &&
-    resolved.conversation.ticketRequestId
-  ) {
-    prisma.ticketRequest.findUnique({
-      where: { id: resolved.conversation.ticketRequestId },
-      select: { email: true, clientAccessToken: true, event: { select: { eventName: true } } },
-    }).then((ticketRequest) => {
-      if (ticketRequest?.email && ticketRequest?.clientAccessToken) {
-        const dashboardUrl = `${getPublicBaseUrl()}/client/${ticketRequest.clientAccessToken}`;
-        sendNewChatMessageEmail({
-          to: ticketRequest.email,
-          eventName: ticketRequest.event?.eventName || "",
-          dashboardUrl,
-        }).catch(() => {});
-      }
-    }).catch(() => {});
   }
 
   return mappedMessage;
@@ -776,6 +801,79 @@ async function findAttachmentForActor(actor, attachmentIdRaw) {
   return attachment;
 }
 
+/**
+ * Send a SYSTEM message to the ORGANIZER_CLIENT conversation for a ticket request,
+ * optionally send an email, and track delivery status on the message.
+ *
+ * @param {object} opts
+ * @param {string} opts.ticketRequestId
+ * @param {string} opts.body - Text of the system message
+ * @param {string} [opts.emailFn] - Async function ({ to, eventName, ... }) => Promise, or null
+ * @param {object} [opts.emailArgs] - Extra args merged into email call (to, eventName, dashboardUrl, etc.)
+ * @returns {Promise<object|null>} mapped message or null on failure
+ */
+async function sendSystemMessageForTicketRequest({ ticketRequestId, body, emailFn = null, emailArgs = {} }) {
+  try {
+    const context = await resolveTicketRequestContext(ticketRequestId);
+    if (!context) return null;
+
+    const conversationId = await ensureOrganizerClientConversationByRequestId(ticketRequestId);
+
+    // Determine email status before creating the message
+    let emailStatus = CHAT_MESSAGE_EMAIL_STATUS.NO_EMAIL;
+    const ticketRequest = await prisma.ticketRequest.findUnique({
+      where: { id: ticketRequestId },
+      select: { email: true, clientAccessToken: true, event: { select: { eventName: true } } },
+    });
+
+    if (emailFn && ticketRequest?.email && ticketRequest?.clientAccessToken) {
+      const dashboardUrl = emailArgs.dashboardUrl || `${getPublicBaseUrl()}/client/${ticketRequest.clientAccessToken}`;
+      try {
+        await emailFn({
+          to: ticketRequest.email,
+          eventName: ticketRequest.event?.eventName || "",
+          dashboardUrl,
+          ...emailArgs,
+        });
+        emailStatus = CHAT_MESSAGE_EMAIL_STATUS.SENT;
+      } catch {
+        emailStatus = CHAT_MESSAGE_EMAIL_STATUS.FAILED;
+      }
+    }
+
+    const message = await prisma.chatMessage.create({
+      data: {
+        conversationId,
+        senderType: CHAT_ACTOR.ORGANIZER,
+        senderOrganizerAccessCode: context.organizerAccessCode,
+        body: String(body || "").trim(),
+        messageType: CHAT_MESSAGE_TYPE.SYSTEM,
+        emailStatus,
+      },
+      include: { attachments: true },
+    });
+
+    await prisma.chatConversation.update({
+      where: { id: conversationId },
+      data: { lastMessageAt: message.createdAt, status: CHAT_CONVERSATION_STATUS.OPEN },
+    });
+
+    const mappedMessage = mapMessage(message, {
+      actorType: CHAT_ACTOR.ORGANIZER,
+      accessCode: context.organizerAccessCode,
+    });
+
+    const io = socketManager.getIo();
+    if (io) {
+      io.to(`conv:${conversationId}`).emit("new_message", mappedMessage);
+    }
+
+    return mappedMessage;
+  } catch {
+    return null;
+  }
+}
+
 async function getLegacySupportConversationByToken(tokenRaw) {
   const token = normalizeText(tokenRaw, 120);
   if (!token) return null;
@@ -828,7 +926,10 @@ module.exports = {
   CHAT_ACTOR,
   CHAT_CONVERSATION_TYPE,
   CHAT_CONVERSATION_STATUS,
+  CHAT_MESSAGE_TYPE,
+  CHAT_MESSAGE_EMAIL_STATUS,
   resolveActorFromOrganizer,
+  sendSystemMessageForTicketRequest,
   resolveActorFromClient,
   resolvePartyForActor,
   mapConversation,

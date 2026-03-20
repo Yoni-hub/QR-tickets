@@ -6,6 +6,7 @@ const {
   CHAT_CONVERSATION_TYPE,
   resolveActorFromClient,
   startConversationForActor,
+  sendSystemMessageForTicketRequest,
 } = require("../services/chatService");
 const { sendTicketApprovedEmail } = require("../utils/mailer");
 const { createTicketsForRequest } = require("./organizerController");
@@ -467,22 +468,21 @@ async function createPublicTicketRequest(req, res) {
   // Auto-approve: immediately assign tickets and notify buyer
   if (event.autoApprove) {
     try {
-      await createTicketsForRequest({ event, request });
+      const assignedTickets = await createTicketsForRequest({ event, request });
       await prisma.ticketRequest.update({
         where: { id: request.id },
         data: { status: "APPROVED" },
       });
 
-      if (email) {
-        const dashboardUrl = `${getPublicBaseUrl()}/client/${clientAccessToken}`;
-        sendTicketApprovedEmail({
-          to: email,
-          eventName: event.eventName,
+      sendSystemMessageForTicketRequest({
+        ticketRequestId: request.id,
+        body: `Your ticket request has been automatically approved. ${assignedTickets.length} ticket(s) are ready in your dashboard.`,
+        emailFn: sendTicketApprovedEmail,
+        emailArgs: {
           eventDate: event.eventDate,
           eventAddress: event.eventAddress,
-          dashboardUrl,
-        }).catch(() => {});
-      }
+        },
+      }).catch(() => {});
 
       res.status(201).json({
         request: { ...request, status: "APPROVED" },

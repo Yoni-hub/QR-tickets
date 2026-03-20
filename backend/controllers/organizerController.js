@@ -5,6 +5,7 @@ const {
   resolveActorFromOrganizer,
   startConversationForActor,
   sendMessageForActor,
+  sendSystemMessageForTicketRequest,
 } = require("../services/chatService");
 const {
   sendTicketApprovedEmail,
@@ -324,16 +325,16 @@ async function approveTicketRequest(req, res) {
     },
   });
 
-  if (updatedRequest.email && updatedRequest.clientAccessToken) {
-    const dashboardUrl = `${getPublicBaseUrl()}/client/${updatedRequest.clientAccessToken}`;
-    sendTicketApprovedEmail({
-      to: updatedRequest.email,
-      eventName: event.eventName,
+  // Send system message to chat + email notification (tracked)
+  sendSystemMessageForTicketRequest({
+    ticketRequestId: request.id,
+    body: `Your ticket request has been approved. ${tickets.length} ticket(s) are ready in your dashboard.`,
+    emailFn: sendTicketApprovedEmail,
+    emailArgs: {
       eventDate: event.eventDate,
       eventAddress: event.eventAddress,
-      dashboardUrl,
-    }).catch(() => {});
-  }
+    },
+  }).catch(() => {});
 
   res.json({
     request: updatedRequest,
@@ -372,6 +373,12 @@ async function rejectTicketRequest(req, res) {
     data: { status: "REJECTED" },
     select: { id: true, status: true, name: true, quantity: true },
   });
+
+  sendSystemMessageForTicketRequest({
+    ticketRequestId: request.id,
+    body: "Your ticket request has been rejected by the organizer. Please contact the organizer for more details.",
+    emailFn: null,
+  }).catch(() => {});
 
   res.json({ request: updatedRequest });
 }
@@ -642,41 +649,12 @@ async function cancelOrganizerTicket(req, res) {
   });
 
   let chatMessage = null;
-  let clientEmail = null;
-  let clientAccessToken = null;
   if (ticket.ticketRequestId) {
-    try {
-      const organizerActor = await resolveActorFromOrganizer(accessCode);
-      if (organizerActor) {
-        const conversationId = await startConversationForActor(organizerActor, {
-          conversationType: CHAT_CONVERSATION_TYPE.ORGANIZER_CLIENT,
-          ticketRequestId: ticket.ticketRequestId,
-        });
-        chatMessage = await sendMessageForActor(organizerActor, conversationId, {
-          message: organizerMessage,
-          legacyDataUrl: evidenceImageDataUrl || "",
-        });
-      }
-    } catch {
-      // Keep cancellation successful even if chat sync fails.
-      chatMessage = null;
-    }
-
-    const requestRecord = await prisma.ticketRequest.findUnique({
-      where: { id: ticket.ticketRequestId },
-      select: { email: true, clientAccessToken: true },
+    chatMessage = await sendSystemMessageForTicketRequest({
+      ticketRequestId: ticket.ticketRequestId,
+      body: organizerMessage,
+      emailFn: sendTicketCancelledEmail,
     });
-    clientEmail = requestRecord?.email || null;
-    clientAccessToken = requestRecord?.clientAccessToken || null;
-  }
-
-  if (clientEmail && clientAccessToken) {
-    const dashboardUrl = `${getPublicBaseUrl()}/client/${clientAccessToken}`;
-    sendTicketCancelledEmail({
-      to: clientEmail,
-      eventName: event.eventName,
-      dashboardUrl,
-    }).catch(() => {});
   }
 
   res.json({
