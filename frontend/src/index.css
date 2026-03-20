@@ -32,7 +32,7 @@ canvas {
 input,
 textarea,
 select {
-  font-size: max(16px, 1em);
+  font-size: max(16px, 1em) !important;
 }
 
 /* Lock body scroll when a modal is open */

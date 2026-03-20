@@ -2661,32 +2661,21 @@ export default function Dashboard() {
 
       {generatedOrganizerCodeModal.open ? (
         <ModalOverlay className="z-50 bg-black/50">
-          <section className="w-full max-w-xl rounded border bg-white p-4 shadow-xl">
-            <p className="text-lg font-semibold">Your organizer code has been generated.</p>
+          <section className="w-full max-w-sm max-h-[80dvh] overflow-y-auto rounded border bg-white p-4 shadow-xl">
+            <p className="font-semibold">Organizer code generated</p>
             <div className="mt-3 rounded border bg-slate-50 p-3">
-              <p className="text-sm font-semibold">Organizer Code</p>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Your Code</p>
               <div className="mt-2 flex flex-wrap items-center gap-2">
-                <code className="rounded bg-white px-2 py-1 font-mono text-sm">{generatedOrganizerCodeModal.code}</code>
+                <code className="rounded bg-white px-2 py-1 font-mono text-sm break-all">{generatedOrganizerCodeModal.code}</code>
                 <AppButton type="button" variant="secondary" className="px-2 py-1 text-xs" onClick={copyOrganizerCode}>
                   {generatedOrganizerCodeModal.copied ? "Copied" : "Copy"}
                 </AppButton>
               </div>
             </div>
-            <div className="mt-4 space-y-1 text-sm text-slate-700">
-              <p className="font-semibold">Use this code to:</p>
-              <p>✓ Unlock your dashboard and continue generating tickets.</p>
-              <p>✓ Deliver QR tickets to your customers.</p>
-              <p>✓ Unlock the QR scanner and validate tickets at the event.</p>
-            </div>
-            <div className="mt-4 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-              <p><span className="font-semibold">Important:</span></p>
-              <p>
-                This code is extremely important. Please save it and <strong>do not share it with anyone you do not trust.</strong>
-              </p>
-              <p className="mt-2">
-                - If you lose this code, you will lose access to your events and tickets. <strong>There is no way to recover it.</strong>
-              </p>
-              <p>- If the code is lost, you will need to create a new event and generate new tickets.</p>
+            <div className="mt-3 rounded border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 space-y-1">
+              <p className="font-semibold">Save this code — it cannot be recovered.</p>
+              <p>Use it to access your dashboard, deliver tickets, and scan QR codes at the event.</p>
+              <p>Do not share it with anyone you don't trust.</p>
             </div>
             <div className="mt-4 flex justify-end">
               <AppButton type="button" variant="primary" onClick={closeOrganizerCodeModal}>
