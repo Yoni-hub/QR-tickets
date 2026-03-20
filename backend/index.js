@@ -13,9 +13,11 @@ const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 4100;
 
+const ALLOWED_ORIGIN = process.env.PUBLIC_BASE_URL || "http://localhost:5174";
+
 const io = new Server(server, {
   cors: {
-    origin: "*",
+    origin: ALLOWED_ORIGIN,
     methods: ["GET", "POST"],
   },
 });
@@ -23,7 +25,7 @@ const io = new Server(server, {
 socketManager.init(io);
 registerSocketHandlers(io);
 
-app.use(cors());
+app.use(cors({ origin: ALLOWED_ORIGIN }));
 app.use(express.json({ limit: "12mb" }));
 
 app.get("/health", (_req, res) => {
