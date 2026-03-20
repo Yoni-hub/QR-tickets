@@ -2040,50 +2040,48 @@ export default function Dashboard() {
                   {emailMode === "bulk-table" ? (
                     <div className="space-y-2">
                       <p className="text-sm font-medium">Recipients</p>
-                      {/* Column headers (desktop) */}
-                      <div className="hidden sm:grid gap-2 px-1 text-xs font-semibold text-slate-500" style={{ gridTemplateColumns: `1fr ${deliveryTicketTypeOptions.map(() => "80px").join(" ")} 32px` }}>
-                        <span>Email</span>
-                        {deliveryTicketTypeOptions.map((type) => <span key={type} className="text-center">{type}</span>)}
-                        <span />
-                      </div>
                       {/* Rows */}
                       {tableRecipients.map((row) => (
-                        <div key={row.id} className="grid items-start gap-2" style={{ gridTemplateColumns: `1fr ${deliveryTicketTypeOptions.map(() => "80px").join(" ")} 32px` }}>
-                          <div className="min-w-0">
+                        <div key={row.id} className="rounded border bg-white p-2 space-y-2">
+                          {/* Row 1: email + remove button */}
+                          <div className="flex items-center gap-2">
                             <input
                               type="email"
-                              className="w-full rounded border p-2 text-sm"
+                              className="flex-1 min-w-0 rounded border p-2 text-sm"
                               placeholder="alice@example.com"
                               value={row.email}
                               onChange={(e) => updateTableRow(row.id, "email", e.target.value)}
                             />
+                            <button
+                              type="button"
+                              className="flex-none rounded text-slate-400 hover:text-red-500 text-lg leading-none px-1"
+                              onClick={() => removeTableRow(row.id)}
+                              disabled={tableRecipients.length === 1}
+                            >
+                              ✕
+                            </button>
                           </div>
-                          {deliveryTicketTypeOptions.map((type) => {
-                            const available = availableCountByType[type] || 0;
-                            const totalRequested = tableRequestedByType[type] || 0;
-                            const exceeded = totalRequested > available;
-                            return (
-                              <div key={type} className="flex flex-col items-center gap-0.5">
-                                <span className="text-xs text-slate-400 sm:hidden">{type}</span>
-                                <input
-                                  type="text"
-                                  inputMode="numeric"
-                                  className={`w-full rounded border p-1 text-center text-sm ${exceeded ? "border-red-400 bg-red-50" : ""}`}
-                                  value={row.quantities[type] ?? ""}
-                                  placeholder="0"
-                                  onChange={(e) => updateTableRowQty(row.id, type, e.target.value)}
-                                />
-                              </div>
-                            );
-                          })}
-                          <button
-                            type="button"
-                            className="mt-1 rounded text-slate-400 hover:text-red-500 text-lg leading-none"
-                            onClick={() => removeTableRow(row.id)}
-                            disabled={tableRecipients.length === 1}
-                          >
-                            ✕
-                          </button>
+                          {/* Row 2: quantity inputs per ticket type */}
+                          <div className="flex flex-wrap gap-2">
+                            {deliveryTicketTypeOptions.map((type) => {
+                              const available = availableCountByType[type] || 0;
+                              const totalRequested = tableRequestedByType[type] || 0;
+                              const exceeded = totalRequested > available;
+                              return (
+                                <div key={type} className="flex items-center gap-1">
+                                  <span className="text-xs text-slate-500 whitespace-nowrap">{type}</span>
+                                  <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    className={`w-14 rounded border p-1 text-center text-sm ${exceeded ? "border-red-400 bg-red-50" : ""}`}
+                                    value={row.quantities[type] ?? ""}
+                                    placeholder="0"
+                                    onChange={(e) => updateTableRowQty(row.id, type, e.target.value)}
+                                  />
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
                       ))}
                       {/* Per-type availability summary */}
