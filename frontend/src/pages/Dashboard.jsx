@@ -1980,6 +1980,7 @@ export default function Dashboard() {
                           const available = availableCountByType[type] || 0;
                           const requested = emailRequestedByType[type] || 0;
                           const exceeded = requested > 0 && requested > available;
+                          const remaining = Math.max(0, available - requested);
                           return (
                             <div key={type} className={`flex flex-col gap-1 rounded border px-3 py-2 bg-white ${exceeded ? "border-red-400" : ""}`}>
                               <div className="flex items-center gap-2">
@@ -1995,7 +1996,7 @@ export default function Dashboard() {
                               </div>
                               {exceeded
                                 ? <p className="text-xs text-red-600">Only {available} available</p>
-                                : <p className="text-xs text-slate-400">{available} available</p>
+                                : <p className="text-xs text-slate-400">{remaining} available</p>
                               }
                             </div>
                           );
@@ -2050,7 +2051,7 @@ export default function Dashboard() {
                         <div key={row.id} className="grid items-start gap-2" style={{ gridTemplateColumns: `1fr ${deliveryTicketTypeOptions.map(() => "80px").join(" ")} 32px` }}>
                           <input
                             type="email"
-                            className="w-full rounded border p-2 text-sm"
+                            className="w-full min-w-0 rounded border p-2 text-sm"
                             placeholder="alice@example.com"
                             value={row.email}
                             onChange={(e) => updateTableRow(row.id, "email", e.target.value)}
@@ -2091,7 +2092,7 @@ export default function Dashboard() {
                           if (requested === 0) return null;
                           return requested > available
                             ? <p key={type} className="text-xs text-red-600">{type}: {requested} requested — only {available} available</p>
-                            : <p key={type} className="text-xs text-slate-500">{type}: {requested} of {available} available</p>;
+                            : <p key={type} className="text-xs text-slate-500">{type}: {available - requested} available</p>;
                         })}
                       </div>
                       <button
