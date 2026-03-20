@@ -484,7 +484,7 @@ export default function Dashboard() {
     setEmailQuantities((prev) => {
       const next = { ...prev };
       for (const type of deliveryTicketTypeOptions) {
-        if (!(type in next)) next[type] = 0;
+        if (!(type in next)) next[type] = "";
       }
       return next;
     });
