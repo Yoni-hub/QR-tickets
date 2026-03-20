@@ -2049,13 +2049,15 @@ export default function Dashboard() {
                       {/* Rows */}
                       {tableRecipients.map((row) => (
                         <div key={row.id} className="grid items-start gap-2" style={{ gridTemplateColumns: `1fr ${deliveryTicketTypeOptions.map(() => "80px").join(" ")} 32px` }}>
-                          <input
-                            type="email"
-                            className="w-full min-w-0 rounded border p-2 text-sm"
-                            placeholder="alice@example.com"
-                            value={row.email}
-                            onChange={(e) => updateTableRow(row.id, "email", e.target.value)}
-                          />
+                          <div className="min-w-0">
+                            <input
+                              type="email"
+                              className="w-full rounded border p-2 text-sm"
+                              placeholder="alice@example.com"
+                              value={row.email}
+                              onChange={(e) => updateTableRow(row.id, "email", e.target.value)}
+                            />
+                          </div>
                           {deliveryTicketTypeOptions.map((type) => {
                             const available = availableCountByType[type] || 0;
                             const totalRequested = tableRequestedByType[type] || 0;
