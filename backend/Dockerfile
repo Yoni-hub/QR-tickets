@@ -2,12 +2,12 @@ FROM node:20-slim
 
 WORKDIR /app
 
-# Install system deps needed by puppeteer, sharp, and prisma
+# Install system deps: openssl (prisma), pg_isready (entrypoint), chromium (puppeteer PDF)
+# Note: sharp uses prebuilt binaries — libvips-dev not needed
 RUN apt-get update && apt-get install -y \
     openssl \
     postgresql-client \
     chromium \
-    libvips-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Tell puppeteer to use system chromium instead of downloading its own
