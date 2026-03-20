@@ -8,6 +8,7 @@ import TicketEditor from "../components/ticket-editor/TicketEditor";
 import PublicEventExperience from "../components/public/PublicEventExperience";
 import ChatInboxLayout from "../features/chat/ChatInboxLayout";
 import { organizerChatApi } from "../features/chat/chatApi";
+import ModalOverlay from "../components/ui/ModalOverlay";
 
 function useFeedback(autoClearMs = 5000) {
   const [fb, setFb] = useState({ kind: "", message: "" });
@@ -2434,7 +2435,7 @@ export default function Dashboard() {
           ) : null}
 
           {cancelModal.open ? (
-            <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-3 sm:items-center">
+            <ModalOverlay>
               <section className="w-full max-w-lg rounded border bg-white p-4 shadow-xl">
                 <div className="flex items-start justify-between gap-2">
                   <div>
@@ -2507,11 +2508,11 @@ export default function Dashboard() {
                   </>
                 )}
               </section>
-            </div>
+            </ModalOverlay>
           ) : null}
 
           {chatContext ? (
-            <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-3 sm:items-center">
+            <ModalOverlay>
               <section className="w-full max-w-xl rounded border bg-white p-3 shadow-xl">
                 <div className="flex items-start justify-between gap-2">
                   <div>
@@ -2573,11 +2574,11 @@ export default function Dashboard() {
                 </div>
                 <FeedbackBanner className="mt-2" kind={chatFb.kind} message={chatFb.message} />
               </section>
-            </div>
+            </ModalOverlay>
           ) : null}
 
           {deliveryWarningModal.open ? (
-            <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-3 sm:items-center">
+            <ModalOverlay>
               <section className="w-full max-w-lg rounded border bg-white p-4 shadow-xl">
                 <p className="text-sm font-semibold">Before You Continue</p>
                 <p className="mt-2 text-sm text-slate-700">
@@ -2592,11 +2593,11 @@ export default function Dashboard() {
                   </AppButton>
                 </div>
               </section>
-            </div>
+            </ModalOverlay>
           ) : null}
 
           {evidencePreview ? (
-            <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/70 p-3 sm:items-center">
+            <ModalOverlay className="bg-black/70">
               <section className="w-full max-w-4xl rounded border bg-slate-900 p-3 shadow-xl">
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <p className="text-sm font-semibold text-white">Payment Evidence</p>
@@ -2608,7 +2609,7 @@ export default function Dashboard() {
                   <img src={evidencePreview} alt="Payment evidence" className="max-h-[74vh] w-auto rounded bg-white" />
                 </div>
               </section>
-            </div>
+            </ModalOverlay>
           ) : null}
         </>
       ) : shouldOpenHomeMode ? (
@@ -2659,7 +2660,7 @@ export default function Dashboard() {
       ) : null}
 
       {generatedOrganizerCodeModal.open ? (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-3 sm:items-center">
+        <ModalOverlay className="z-50 bg-black/50">
           <section className="w-full max-w-xl rounded border bg-white p-4 shadow-xl">
             <p className="text-lg font-semibold">Your organizer code has been generated.</p>
             <div className="mt-3 rounded border bg-slate-50 p-3">
@@ -2693,7 +2694,7 @@ export default function Dashboard() {
               </AppButton>
             </div>
           </section>
-        </div>
+        </ModalOverlay>
       ) : null}
     </main>
   );

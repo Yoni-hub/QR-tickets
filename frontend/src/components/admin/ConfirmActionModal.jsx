@@ -1,4 +1,5 @@
 import AppButton from "../ui/AppButton";
+import ModalOverlay from "../ui/ModalOverlay";
 
 export default function ConfirmActionModal({
   open,
@@ -13,7 +14,7 @@ export default function ConfirmActionModal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/50 p-4">
+    <ModalOverlay className="z-50 bg-slate-900/50">
       <div className="w-full max-w-sm rounded border bg-white p-4">
         <h3 className="text-lg font-bold">{title}</h3>
         <div className="mt-2 text-sm text-slate-600">{message}</div>
@@ -22,6 +23,6 @@ export default function ConfirmActionModal({
           <AppButton variant="danger" onClick={onConfirm} loading={loading} loadingText="Working...">{confirmLabel}</AppButton>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }

@@ -28,6 +28,19 @@ canvas {
   height: auto;
 }
 
+/* Prevent iOS Safari from zooming into input fields */
+input,
+textarea,
+select {
+  font-size: max(16px, 1em);
+}
+
+/* Lock body scroll when a modal is open */
+body.modal-open {
+  overflow: hidden;
+  touch-action: none;
+}
+
 button.btn-clicked {
   filter: saturate(0.9);
   transform: scale(0.98);
