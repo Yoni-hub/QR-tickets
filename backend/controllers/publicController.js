@@ -7,6 +7,10 @@ const {
   resolveActorFromClient,
   startConversationForActor,
 } = require("../services/chatService");
+const { sendTicketApprovedEmail } = require("../utils/mailer");
+const { createTicketsForRequest } = require("./organizerController");
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const MAX_EVIDENCE_INPUT_BYTES = 8 * 1024 * 1024;
 const MAX_EVIDENCE_OUTPUT_BYTES = 900 * 1024;
@@ -328,6 +332,8 @@ async function getPublicEventBySlug(req, res) {
 async function createPublicTicketRequest(req, res) {
   const eventSlug = String(req.body?.eventSlug || "").trim();
   const name = String(req.body?.name || "").trim();
+  const emailRaw = String(req.body?.email || "").trim().toLowerCase();
+  const email = EMAIL_PATTERN.test(emailRaw) ? emailRaw : null;
   const promoterCode = String(req.body?.promoterCode || "").trim().toLowerCase();
   const ticketSelections = parseTicketSelections(req.body?.ticketSelections || []);
   const evidenceValidation = await sanitizeEvidenceDataUrl(req.body?.evidenceImageDataUrl);
@@ -351,11 +357,14 @@ async function createPublicTicketRequest(req, res) {
       id: true,
       slug: true,
       eventName: true,
+      eventDate: true,
+      eventAddress: true,
       paymentInstructions: true,
       ticketPrice: true,
       ticketType: true,
       designJson: true,
       adminStatus: true,
+      autoApprove: true,
     },
   });
 
@@ -417,7 +426,7 @@ async function createPublicTicketRequest(req, res) {
       clientAccessToken,
       eventId: event.id,
       name,
-      email: null,
+      email,
       ticketType: normalizedSelections.length === 1 ? normalizedSelections[0].ticketType : "MIXED",
       ticketPrice: normalizedSelections.length === 1 ? normalizedSelections[0].unitPrice : null,
       totalPrice,
@@ -437,6 +446,7 @@ async function createPublicTicketRequest(req, res) {
       totalPrice: true,
       ticketSelections: true,
       evidenceImageDataUrl: true,
+      email: true,
       promoter: { select: { name: true, code: true } },
       event: { select: { slug: true, paymentInstructions: true, eventName: true } },
     },
@@ -451,6 +461,38 @@ async function createPublicTicketRequest(req, res) {
       });
     } catch {
       // Request creation should not fail if chat bootstrap fails.
+    }
+  }
+
+  // Auto-approve: immediately assign tickets and notify buyer
+  if (event.autoApprove) {
+    try {
+      await createTicketsForRequest({ event, request });
+      await prisma.ticketRequest.update({
+        where: { id: request.id },
+        data: { status: "APPROVED" },
+      });
+
+      if (email) {
+        const dashboardUrl = `${getPublicBaseUrl()}/client/${clientAccessToken}`;
+        sendTicketApprovedEmail({
+          to: email,
+          eventName: event.eventName,
+          eventDate: event.eventDate,
+          eventAddress: event.eventAddress,
+          dashboardUrl,
+        }).catch(() => {});
+      }
+
+      res.status(201).json({
+        request: { ...request, status: "APPROVED" },
+        payment: { selections: normalizedSelections, totalQuantity, totalPrice },
+        autoApproved: true,
+        instructions: "Your request was automatically approved! Check your client dashboard to view your ticket.",
+      });
+      return;
+    } catch {
+      // Auto-approve failed (e.g. no tickets left) — fall through to normal pending flow
     }
   }
 

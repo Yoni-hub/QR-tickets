@@ -28,6 +28,8 @@ const {
   createPromoter,
   updatePromoter,
   deletePromoter,
+  getEventAutoApprove,
+  setEventAutoApprove,
 } = require("../controllers/organizerController");
 const {
   organizerListConversations,
@@ -87,6 +89,8 @@ router.get("/public/support/conversations/:conversationToken/messages", getSuppo
 router.post("/public/support/conversations/:conversationToken/messages", sendSupportConversationMessage);
 
 router.get("/events/by-code/:accessCode/ticket-requests", getOrganizerTicketRequests);
+router.get("/events/by-code/:accessCode/auto-approve", getEventAutoApprove);
+router.patch("/events/by-code/:accessCode/auto-approve", setEventAutoApprove);
 router.post("/ticket-requests/:id/approve", approveTicketRequest);
 router.post("/ticket-requests/:id/reject", rejectTicketRequest);
 router.post("/ticket-requests/:id/message", messageTicketRequest);

@@ -3,6 +3,8 @@ const fs = require("fs");
 const prisma = require("../utils/prisma");
 const { saveChatAttachment, resolveAttachmentAbsolutePath } = require("./chatAttachmentService");
 const socketManager = require("../socket/socketManager");
+const { sendNewChatMessageEmail } = require("../utils/mailer");
+const { getPublicBaseUrl } = require("./eventService");
 
 const CHAT_ACTOR = {
   ADMIN: "ADMIN",
@@ -663,6 +665,27 @@ async function sendMessageForActor(actor, conversationIdRaw, payload = {}) {
   const io = socketManager.getIo();
   if (io) {
     io.to(`conv:${resolved.conversation.id}`).emit("new_message", mappedMessage);
+  }
+
+  // Email notification: when organizer sends a message to a client, notify by email
+  if (
+    actor.type === CHAT_ACTOR.ORGANIZER &&
+    resolved.conversation.conversationType === CHAT_CONVERSATION_TYPE.ORGANIZER_CLIENT &&
+    resolved.conversation.ticketRequestId
+  ) {
+    prisma.ticketRequest.findUnique({
+      where: { id: resolved.conversation.ticketRequestId },
+      select: { email: true, clientAccessToken: true, event: { select: { eventName: true } } },
+    }).then((ticketRequest) => {
+      if (ticketRequest?.email && ticketRequest?.clientAccessToken) {
+        const dashboardUrl = `${getPublicBaseUrl()}/client/${ticketRequest.clientAccessToken}`;
+        sendNewChatMessageEmail({
+          to: ticketRequest.email,
+          eventName: ticketRequest.event?.eventName || "",
+          dashboardUrl,
+        }).catch(() => {});
+      }
+    }).catch(() => {});
   }
 
   return mappedMessage;
