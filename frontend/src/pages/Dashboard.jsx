@@ -344,6 +344,8 @@ export default function Dashboard() {
     downloadableTickets: 0,
   });
   const [ticketRequests, setTicketRequests] = useState([]);
+  const [autoApprove, setAutoApprove] = useState(false);
+  const [togglingAutoApprove, setTogglingAutoApprove] = useState(false);
   const [promoters, setPromoters] = useState([]);
   const [leaderboard, setLeaderboard] = useState([]);
 
@@ -638,17 +640,21 @@ export default function Dashboard() {
 
   const loadRequestsAndPromoters = async (targetCode, targetEventId) => {
     if (!targetCode || !targetEventId) return;
-    const [requestRes, promoterRes] = await Promise.all([
+    const [requestRes, promoterRes, autoApproveRes] = await Promise.all([
       api.get(`/events/by-code/${encodeURIComponent(targetCode)}/ticket-requests`, {
         params: { eventId: targetEventId },
       }),
       api.get(`/events/by-code/${encodeURIComponent(targetCode)}/promoters`, {
         params: { eventId: targetEventId },
       }),
+      api.get(`/events/by-code/${encodeURIComponent(targetCode)}/auto-approve`, {
+        params: { eventId: targetEventId },
+      }),
     ]);
     setTicketRequests(requestRes.data.items || []);
     setPromoters(promoterRes.data.items || []);
     setLeaderboard(promoterRes.data.leaderboard || []);
+    setAutoApprove(autoApproveRes.data.autoApprove ?? false);
   };
 
   const loadTicketsForEvent = async (eventId) => {
@@ -871,6 +877,24 @@ export default function Dashboard() {
       return;
     }
     setCancelModal((prev) => ({ ...prev, step: "confirm", error: "" }));
+  };
+
+  const toggleAutoApprove = async () => {
+    if (togglingAutoApprove || !accessCode || !summary?.event?.id) return;
+    setTogglingAutoApprove(true);
+    try {
+      const next = !autoApprove;
+      await api.patch(`/events/by-code/${encodeURIComponent(accessCode)}/auto-approve`, {
+        autoApprove: next,
+        eventId: summary.event.id,
+      });
+      setAutoApprove(next);
+      setRequestFb("success", next ? "Auto-approve enabled — new requests will be approved instantly." : "Auto-approve disabled — requests need manual approval.");
+    } catch {
+      setRequestFb("error", "Could not update auto-approve setting.");
+    } finally {
+      setTogglingAutoApprove(false);
+    }
   };
 
   const approveRequest = async (requestId) => {
@@ -2203,7 +2227,21 @@ export default function Dashboard() {
 
           {activeMenu === "requests" ? (
             <section className="mt-4 rounded border p-4">
-              <p className="text-sm font-semibold">Ticket requests</p>
+              <div className="flex items-center justify-between gap-4">
+                <p className="text-sm font-semibold">Ticket requests</p>
+                <button
+                  type="button"
+                  onClick={toggleAutoApprove}
+                  disabled={togglingAutoApprove}
+                  className={`flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold transition-colors ${autoApprove ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+                >
+                  <span className={`h-2 w-2 rounded-full ${autoApprove ? "bg-emerald-500" : "bg-slate-400"}`} />
+                  Auto-approve {autoApprove ? "ON" : "OFF"}
+                </button>
+              </div>
+              {autoApprove ? (
+                <p className="mt-1 text-xs text-emerald-700">New requests are approved instantly and buyers are notified by email.</p>
+              ) : null}
               <FeedbackBanner className="mt-2" kind={requestFb.kind} message={requestFb.message} />
               <div className="mt-3 space-y-3 lg:hidden">
                 {ticketRequests.map((item) => {

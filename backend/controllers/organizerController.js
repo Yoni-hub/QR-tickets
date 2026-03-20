@@ -6,6 +6,10 @@ const {
   startConversationForActor,
   sendMessageForActor,
 } = require("../services/chatService");
+const {
+  sendTicketApprovedEmail,
+  sendTicketCancelledEmail,
+} = require("../utils/mailer");
 
 const MAX_CHAT_MESSAGE_LENGTH = 1200;
 
@@ -314,9 +318,22 @@ async function approveTicketRequest(req, res) {
       totalPrice: true,
       ticketSelections: true,
       name: true,
+      email: true,
+      clientAccessToken: true,
       promoter: { select: { name: true, code: true } },
     },
   });
+
+  if (updatedRequest.email && updatedRequest.clientAccessToken) {
+    const dashboardUrl = `${getPublicBaseUrl()}/client/${updatedRequest.clientAccessToken}`;
+    sendTicketApprovedEmail({
+      to: updatedRequest.email,
+      eventName: event.eventName,
+      eventDate: event.eventDate,
+      eventAddress: event.eventAddress,
+      dashboardUrl,
+    }).catch(() => {});
+  }
 
   res.json({
     request: updatedRequest,
@@ -625,6 +642,8 @@ async function cancelOrganizerTicket(req, res) {
   });
 
   let chatMessage = null;
+  let clientEmail = null;
+  let clientAccessToken = null;
   if (ticket.ticketRequestId) {
     try {
       const organizerActor = await resolveActorFromOrganizer(accessCode);
@@ -642,6 +661,22 @@ async function cancelOrganizerTicket(req, res) {
       // Keep cancellation successful even if chat sync fails.
       chatMessage = null;
     }
+
+    const requestRecord = await prisma.ticketRequest.findUnique({
+      where: { id: ticket.ticketRequestId },
+      select: { email: true, clientAccessToken: true },
+    });
+    clientEmail = requestRecord?.email || null;
+    clientAccessToken = requestRecord?.clientAccessToken || null;
+  }
+
+  if (clientEmail && clientAccessToken) {
+    const dashboardUrl = `${getPublicBaseUrl()}/client/${clientAccessToken}`;
+    sendTicketCancelledEmail({
+      to: clientEmail,
+      eventName: event.eventName,
+      dashboardUrl,
+    }).catch(() => {});
   }
 
   res.json({
@@ -822,6 +857,39 @@ async function deletePromoter(req, res) {
 }
 
 
+async function getEventAutoApprove(req, res) {
+  const accessCode = parseAccessCode(req.params?.accessCode || req.query?.accessCode);
+  if (!accessCode) {
+    res.status(400).json({ error: "accessCode is required." });
+    return;
+  }
+  const event = await findEventByAccessCode(accessCode, parseEventId(req.query?.eventId));
+  if (!event) {
+    res.status(404).json({ error: "Event not found." });
+    return;
+  }
+  res.json({ autoApprove: event.autoApprove ?? false });
+}
+
+async function setEventAutoApprove(req, res) {
+  const accessCode = parseAccessCode(req.params?.accessCode || req.body?.accessCode);
+  const autoApprove = req.body?.autoApprove === true || req.body?.autoApprove === "true";
+  if (!accessCode) {
+    res.status(400).json({ error: "accessCode is required." });
+    return;
+  }
+  const event = await findEventByAccessCode(accessCode, parseEventId(req.body?.eventId));
+  if (!event) {
+    res.status(404).json({ error: "Event not found." });
+    return;
+  }
+  await prisma.userEvent.update({
+    where: { id: event.id },
+    data: { autoApprove },
+  });
+  res.json({ autoApprove });
+}
+
 module.exports = {
   getOrganizerTicketRequests,
   approveTicketRequest,
@@ -834,6 +902,9 @@ module.exports = {
   createPromoter,
   updatePromoter,
   deletePromoter,
+  getEventAutoApprove,
+  setEventAutoApprove,
+  createTicketsForRequest,
 };
 
 

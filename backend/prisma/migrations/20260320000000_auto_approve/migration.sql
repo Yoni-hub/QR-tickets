@@ -1,0 +1,1 @@
+ALTER TABLE "UserEvent" ADD COLUMN "autoApprove" BOOLEAN NOT NULL DEFAULT false;
