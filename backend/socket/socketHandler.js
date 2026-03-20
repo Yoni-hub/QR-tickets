@@ -1,7 +1,7 @@
 const { resolveOrganizerScope } = require("../services/chatService");
 const prisma = require("../utils/prisma");
 
-const ADMIN_KEY = process.env.ADMIN_KEY || "";
+const ADMIN_KEY = process.env.ADMIN_PANEL_KEY || "";
 
 async function authenticateJoin(actor, conversationId) {
   const conversation = await prisma.chatConversation.findUnique({
