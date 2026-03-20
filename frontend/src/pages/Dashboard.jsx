@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useReducer } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import api from "../lib/api";
 import AppButton from "../components/ui/AppButton";
@@ -8,6 +8,20 @@ import TicketEditor from "../components/ticket-editor/TicketEditor";
 import PublicEventExperience from "../components/public/PublicEventExperience";
 import ChatInboxLayout from "../features/chat/ChatInboxLayout";
 import { organizerChatApi } from "../features/chat/chatApi";
+
+function useFeedback(autoClearMs = 5000) {
+  const [fb, setFb] = useState({ kind: "", message: "" });
+  const timerRef = useRef(null);
+  // setter: setXxxFb("success", "msg") or setXxxFb("", "") to clear
+  const set = (kind, message) => {
+    clearTimeout(timerRef.current);
+    setFb({ kind, message });
+    if (message && autoClearMs > 0) {
+      timerRef.current = setTimeout(() => setFb({ kind: "", message: "" }), autoClearMs);
+    }
+  };
+  return [fb, set];
+}
 
 const DELIVERY_METHODS = {
   PDF: "PDF",
@@ -339,14 +353,20 @@ export default function Dashboard() {
   const [deliveryMethod, setDeliveryMethod] = useState(DELIVERY_METHODS.PDF);
   const [pdfTicketCount, setPdfTicketCount] = useState(1);
   const [pdfTicketsPerPage, setPdfTicketsPerPage] = useState(2);
-  const [deliveryTicketType, setDeliveryTicketType] = useState("");
-  const [recipientEmails, setRecipientEmails] = useState("");
-  const [emailTemplatesByType, setEmailTemplatesByType] = useState({});
-  const [emailSubject, setEmailSubject] = useState(DEFAULT_EMAIL_SUBJECT);
-  const [emailBody, setEmailBody] = useState(DEFAULT_EMAIL_BODY);
+  const [emailMode, setEmailMode] = useState("single"); // 'single' | 'bulk-same' | 'bulk-table'
+  const [singleEmail, setSingleEmail] = useState("");
+  const [emailQuantities, setEmailQuantities] = useState({}); // {[ticketType]: number}
+  const [bulkEmails, setBulkEmails] = useState("");
+  const [tableRecipients, setTableRecipients] = useState([{ id: 1, email: "", quantities: {} }]);
   const [showEmailPreview, setShowEmailPreview] = useState(false);
   const [sendSummary, setSendSummary] = useState(null);
-  const [feedback, setFeedback] = useState({ kind: "", message: "" });
+  const [loadFb, setLoadFb] = useFeedback();
+  const [eventFb, setEventFb] = useFeedback();
+  const [ticketFb, setTicketFb] = useFeedback();
+  const [deliveryFb, setDeliveryFb] = useFeedback();
+  const [requestFb, setRequestFb] = useFeedback();
+  const [promoterFb, setPromoterFb] = useFeedback();
+  const [chatFb, setChatFb] = useFeedback();
   const [promoterForm, setPromoterForm] = useState({ name: "" });
   const [chatUnreadTotal, setChatUnreadTotal] = useState(0);
   const [chatContext, setChatContext] = useState(null);
@@ -383,7 +403,6 @@ export default function Dashboard() {
     payload: null,
   });
   const ticketEditorDraftRef = useRef(null);
-  const feedbackRef = useRef(null);
   const organizerNameRef = useRef(null);
   const copyResetTimersRef = useRef({
     publicEventLink: null,
@@ -391,27 +410,10 @@ export default function Dashboard() {
     promoterId: null,
   });
 
-  const recipientList = parseRecipientEmails(recipientEmails);
-  const sampleRecipient = recipientList[0] || "customer@example.com";
-  const sampleTicketPublicId =
-    tickets.find((ticket) => resolveDefaultTicketType(ticket.ticketType || summary?.event?.ticketType) === deliveryTicketType)?.ticketPublicId
-    || tickets[0]?.ticketPublicId
-    || "TICKET-PUBLIC-ID";
-  const sampleData = {
-    organizerName: summary?.event?.organizerName || "Organizer name",
-    eventName: summary?.event?.eventName || "Your Event",
-    eventDate: summary?.event?.eventDate ? new Date(summary.event.eventDate).toLocaleString() : "Event date",
-    eventAddress: summary?.event?.eventAddress || "Event address",
-    ticketType: deliveryTicketType || tickets[0]?.ticketType || summary?.event?.ticketType || DEFAULT_TICKET_TYPE,
-    ticketUrl: `${window.location.origin}/t/${sampleTicketPublicId}`,
-    recipientEmail: sampleRecipient,
-  };
-  const previewSubject = renderEmailTemplate(emailSubject, sampleData);
-  const previewBody = renderEmailTemplate(emailBody, sampleData);
-  const previewBodyHtml =
-    emailBody === DEFAULT_EMAIL_BODY
-      ? renderEmailTemplate(DEFAULT_EMAIL_HTML_TEMPLATE, sampleData)
-      : renderEmailHtmlPreview(previewBody, sampleData.ticketUrl);
+  // Preview data for email digest sample (previewTicketLinks depends on deliveryTicketTypeOptions — defined below)
+  const previewEventName = summary?.event?.eventName || "Your Event";
+  const previewEventDate = summary?.event?.eventDate ? new Date(summary.event.eventDate).toLocaleString() : "Event date";
+  const previewEventAddress = summary?.event?.eventAddress || "Event address";
 
   const accessCode = useMemo(() => code.trim(), [code]);
   const organizerChatAccessCode = useMemo(() => {
@@ -471,39 +473,22 @@ export default function Dashboard() {
     return [resolveDefaultTicketType(summary?.event?.ticketType)];
   }, [ticketTypeOptions, summary?.event?.ticketType]);
 
-  useEffect(() => {
-    if (!deliveryTicketTypeOptions.length) return;
-    setDeliveryTicketType((prev) =>
-      prev && deliveryTicketTypeOptions.includes(prev) ? prev : deliveryTicketTypeOptions[0],
-    );
-  }, [deliveryTicketTypeOptions]);
+  const previewTicketLinks = deliveryTicketTypeOptions.map((type) => ({
+    ticketType: type,
+    ticketUrl: `${window.location.origin}/t/SAMPLE-${type.toUpperCase()}`,
+  }));
 
+  // Initialise emailQuantities when ticket types become available
   useEffect(() => {
     if (!deliveryTicketTypeOptions.length) return;
-    setEmailTemplatesByType((prev) => {
+    setEmailQuantities((prev) => {
       const next = { ...prev };
-      for (const ticketType of deliveryTicketTypeOptions) {
-        if (!next[ticketType]) {
-          next[ticketType] = {
-            subject: buildDefaultEmailSubject(ticketType),
-            body: buildDefaultEmailBody(ticketType),
-          };
-        }
+      for (const type of deliveryTicketTypeOptions) {
+        if (!(type in next)) next[type] = 0;
       }
       return next;
     });
   }, [deliveryTicketTypeOptions]);
-
-  useEffect(() => {
-    const ticketType = deliveryTicketType || deliveryTicketTypeOptions[0];
-    if (!ticketType) return;
-    const template = emailTemplatesByType[ticketType] || {
-      subject: buildDefaultEmailSubject(ticketType),
-      body: buildDefaultEmailBody(ticketType),
-    };
-    setEmailSubject(template.subject);
-    setEmailBody(template.body);
-  }, [deliveryTicketType, deliveryTicketTypeOptions, emailTemplatesByType]);
   const filteredTickets = useMemo(() => {
     return tickets.filter((ticket) => {
       const ticketTypeMatches =
@@ -554,10 +539,20 @@ export default function Dashboard() {
   );
   const noDeliverableTickets = tickets.length > 0 && deliverableCount < 1;
 
+  // Available count per ticket type (for inline email delivery validation)
+  const availableCountByType = useMemo(() => {
+    const map = {};
+    for (const ticket of deliverableTickets) {
+      const type = String(ticket.ticketType || summary?.event?.ticketType || DEFAULT_TICKET_TYPE).trim();
+      map[type] = (map[type] || 0) + 1;
+    }
+    return map;
+  }, [deliverableTickets, summary?.event?.ticketType]);
+
   useEffect(() => {
     if (!shouldOpenHomeMode) return;
     setCode("");
-    setFeedback({ kind: "", message: "" });
+    setLoadFb("", "");
     setSummary(null);
     setEvents([]);
     setSelectedEventId("");
@@ -569,7 +564,7 @@ export default function Dashboard() {
     setActiveMenu("events");
     setShowPublicPreview(false);
     setEventEditMode(EVENT_EDIT_MODES.CREATE);
-    setEventDraft({ organizerName: "", eventName: "", eventDate: "", paymentInstructions: "" });
+    setEventDraft({ organizerName: "", eventName: "", eventDate: "", eventAddress: "", paymentInstructions: "" });
   }, [shouldOpenHomeMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -607,10 +602,6 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [chatContext?.id, accessCode]);
   useEffect(() => {
-    if (!feedback.message) return;
-    feedbackRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [feedback.kind, feedback.message]);
-  useEffect(() => {
     setPdfTicketCount((prev) => {
       if (deliverableCount < 1) return 1;
       return Math.min(Math.max(1, Number(prev) || 1), deliverableCount);
@@ -641,7 +632,7 @@ export default function Dashboard() {
     const message = responseData.error
       || `You cant make changes on the tickets you already deliverd the tickets in ${fallbackMethods}. Create a new event from the Events menu.`;
     window.alert(message);
-    setFeedback({ kind: "error", message });
+    setLoadFb("error", message);
     return true;
   }, []);
 
@@ -676,7 +667,7 @@ export default function Dashboard() {
     const trimmedCode = String(targetCode || "").trim();
     if (!trimmedCode || loading) return;
     setLoading(true);
-    setFeedback({ kind: "", message: "" });
+    setLoadFb("", "");
     setSendSummary(null);
     setParams({ code: trimmedCode });
 
@@ -698,11 +689,11 @@ export default function Dashboard() {
       setTicketPage(1);
       await loadTicketsForEvent(summaryRes.data.event.id);
       await loadRequestsAndPromoters(trimmedCode, summaryRes.data.event.id);
-      setFeedback({ kind: "success", message: "Dashboard loaded." });
+      setLoadFb("success", "Dashboard loaded.");
       window.localStorage.setItem("qr-dashboard:loaded-once", "1");
       window.dispatchEvent(new Event("qr-dashboard-nav-updated"));
     } catch (requestError) {
-      setFeedback({ kind: "error", message: requestError.response?.data?.error || "Unable to load dashboard." });
+      setLoadFb("error", requestError.response?.data?.error || "Unable to load dashboard.");
       setSummary(null);
       setEvents([]);
       setSelectedEventId("");
@@ -721,7 +712,7 @@ export default function Dashboard() {
   const load = async () => {
     const trimmedCode = code.trim();
     if (!trimmedCode) {
-      setFeedback({ kind: "info", message: "New here? Fill in your event details to generate your access code." });
+      setLoadFb("info", "New here? Fill in your event details to generate your access code.");
       return;
     }
     await loadDashboard(trimmedCode);
@@ -773,7 +764,7 @@ export default function Dashboard() {
       setTicketCopyError({ ticketPublicId: "", message: "" });
       markCopiedTicketPublicId(ticketPublicId);
     } catch {
-      setFeedback({ kind: "error", message: "Could not copy ticket URL." });
+      setTicketFb("error", "Could not copy ticket URL.");
     }
   };
 
@@ -853,7 +844,7 @@ export default function Dashboard() {
       }
       setTicketCancelError({ ticketPublicId: "", message: "" });
       closeCancelModal();
-      setFeedback({ kind: "success", message: `Ticket ${ticket.ticketPublicId} cancelled.` });
+      setTicketFb("success", `Ticket ${ticket.ticketPublicId} cancelled.`);
     } catch (requestError) {
       setCancelModal((prev) => ({
         ...prev,
@@ -885,11 +876,11 @@ export default function Dashboard() {
   const approveRequest = async (requestId) => {
     const requestItem = ticketRequests.find((item) => item.id === requestId);
     if (requestItem?.status === "CANCELLED") {
-      setFeedback({ kind: "info", message: "request already cancelled" });
+      setRequestFb("info", "request already cancelled");
       return;
     }
     if (requestItem?.status === "APPROVED") {
-      setFeedback({ kind: "info", message: "request already approved" });
+      setRequestFb("info", "request already approved");
       return;
     }
     if (approvingRequestIds.has(requestId)) return;
@@ -907,9 +898,9 @@ export default function Dashboard() {
       });
       await loadRequestsAndPromoters(accessCode, summary?.event?.id);
       await loadTicketsForEvent(summary.event.id);
-      setFeedback({ kind: "success", message: "Request approved and ticket Assigned to client." });
+      setRequestFb("success", "Request approved and ticket Assigned to client.");
     } catch (requestError) {
-      setFeedback({ kind: "error", message: requestError.response?.data?.error || "Approve failed." });
+      setRequestFb("error", requestError.response?.data?.error || "Approve failed.");
     } finally {
       setApprovingRequestIds((prev) => {
         const next = new Set(prev);
@@ -932,7 +923,7 @@ export default function Dashboard() {
       );
     } catch (requestError) {
       if (!silent) {
-        setFeedback({ kind: "error", message: requestError.response?.data?.error || "Could not load chat." });
+        setRequestFb("error", requestError.response?.data?.error || "Could not load chat.");
       }
     } finally {
       if (!silent) setChatLoading(false);
@@ -967,7 +958,7 @@ export default function Dashboard() {
       await loadChatMessages(requestId, { silent: true });
       await loadRequestsAndPromoters(accessCode, summary?.event?.id);
     } catch (requestError) {
-      setFeedback({ kind: "error", message: requestError.response?.data?.error || "Could not send message." });
+      setChatFb("error", requestError.response?.data?.error || "Could not send message.");
     } finally {
       setChatSending(false);
     }
@@ -975,7 +966,7 @@ export default function Dashboard() {
 
   const addPromoter = async () => {
     if (!promoterForm.name.trim()) {
-      setFeedback({ kind: "error", message: "Promoter name is required." });
+      setPromoterFb("error", "Promoter name is required.");
       return;
     }
 
@@ -987,9 +978,9 @@ export default function Dashboard() {
       });
       setPromoterForm({ name: "" });
       await loadRequestsAndPromoters(accessCode, summary?.event?.id);
-      setFeedback({ kind: "success", message: "Promoter added." });
+      setPromoterFb("success", "Promoter added.");
     } catch (requestError) {
-      setFeedback({ kind: "error", message: requestError.response?.data?.error || "Could not add promoter." });
+      setPromoterFb("error", requestError.response?.data?.error || "Could not add promoter.");
     }
   };
 
@@ -999,16 +990,16 @@ export default function Dashboard() {
         data: { accessCode, eventId: summary?.event?.id },
       });
       await loadRequestsAndPromoters(accessCode, summary?.event?.id);
-      setFeedback({ kind: "info", message: "Promoter deleted." });
+      setPromoterFb("info", "Promoter deleted.");
     } catch (requestError) {
-      setFeedback({ kind: "error", message: requestError.response?.data?.error || "Delete failed." });
+      setPromoterFb("error", requestError.response?.data?.error || "Delete failed.");
     }
   };
 
   const downloadPdf = async (skipWarning = false) => {
     if (!summary?.event?.id || downloading) return;
     if (deliverableCount < 1) {
-      setFeedback({ kind: "error", message: "You downloaded all your tickets. Please generate more tickets." });
+      setDeliveryFb("error", "You downloaded all your tickets. Please generate more tickets.");
       return;
     }
     if (!deliveryWarningAcknowledged && skipWarning !== true) {
@@ -1017,7 +1008,7 @@ export default function Dashboard() {
     }
     const safeCount = Math.min(Math.max(1, Number.parseInt(String(pdfTicketCount || 1), 10) || 1), deliverableCount);
     setDownloading(true);
-    setFeedback({ kind: "", message: "" });
+    setDeliveryFb("", "");
     try {
       const response = await withMinDelay(
         api.get(`/events/${summary.event.id}/tickets.pdf`, {
@@ -1043,94 +1034,147 @@ export default function Dashboard() {
       const remainingAfterDownload = Number.parseInt(String(response.headers?.["x-tickets-remaining-deliverable"] || 0), 10) || 0;
       await loadTicketsForEvent(summary.event.id);
       if (remainingAfterDownload < 1) {
-        setFeedback({ kind: "info", message: "All tickets downloaded." });
+        setDeliveryFb("info", "All tickets downloaded.");
       } else {
-        setFeedback({
-          kind: "success",
-          message: `Downloaded ${downloadedCount} ticket(s). You have ${remainingAfterDownload} tickets left to deliver.`,
-        });
+        setDeliveryFb("success", `Downloaded ${downloadedCount} ticket(s). You have ${remainingAfterDownload} tickets left to deliver.`);
       }
     } catch (requestError) {
-      setFeedback({
-        kind: "error",
-        message: requestError.response?.data?.error || requestError.message || "Could not download tickets PDF.",
-      });
+      setDeliveryFb("error", requestError.response?.data?.error || requestError.message || "Could not download tickets PDF.");
     } finally {
       setDownloading(false);
     }
   };
 
+  const buildRecipients = () => {
+    const selections = Object.entries(emailQuantities)
+      .map(([ticketType, raw]) => ({ ticketType, quantity: parseInt(raw || "0", 10) || 0 }))
+      .filter(({ quantity }) => quantity > 0);
+
+    if (emailMode === "single") {
+      const email = singleEmail.trim().toLowerCase();
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return null;
+      if (!selections.length) return null;
+      return [{ email, selections }];
+    }
+
+    if (emailMode === "bulk-same") {
+      if (!selections.length) return null;
+      const emails = bulkEmails
+        .split(/[\n,]+/)
+        .map((e) => e.trim().toLowerCase())
+        .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+      const unique = [...new Set(emails)];
+      if (!unique.length) return null;
+      return unique.map((email) => ({ email, selections }));
+    }
+
+    if (emailMode === "bulk-table") {
+      const result = [];
+      for (const row of tableRecipients) {
+        const email = row.email.trim().toLowerCase();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) continue;
+        const rowSelections = Object.entries(row.quantities)
+          .map(([ticketType, raw]) => ({ ticketType, quantity: parseInt(raw || "0", 10) || 0 }))
+          .filter(({ quantity }) => quantity > 0);
+        if (rowSelections.length) result.push({ email, selections: rowSelections });
+      }
+      return result.length ? result : null;
+    }
+
+    return null;
+  };
+
+  // Compute total requested per type across all table rows (for inline validation)
+  const tableRequestedByType = useMemo(() => {
+    if (emailMode !== "bulk-table") return {};
+    const map = {};
+    for (const row of tableRecipients) {
+      for (const [type, raw] of Object.entries(row.quantities)) {
+        const qty = parseInt(raw || "0", 10) || 0;
+        if (qty > 0) map[type] = (map[type] || 0) + qty;
+      }
+    }
+    return map;
+  }, [emailMode, tableRecipients]);
+
+  // Same for single/bulk-same modes
+  const emailRequestedByType = useMemo(() => {
+    if (emailMode === "bulk-table") return {};
+    const multiplier = emailMode === "bulk-same"
+      ? Math.max(1, bulkEmails.split(/[\n,]+/).filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e.trim())).length)
+      : 1;
+    const map = {};
+    for (const [type, raw] of Object.entries(emailQuantities)) {
+      const qty = parseInt(raw || "0", 10) || 0;
+      if (qty > 0) map[type] = qty * multiplier;
+    }
+    return map;
+  }, [emailMode, emailQuantities, bulkEmails]);
+
+  const addTableRow = () => setTableRecipients((prev) => [
+    ...prev,
+    { id: Date.now(), email: "", quantities: {} },
+  ]);
+
+  const removeTableRow = (id) => setTableRecipients((prev) => prev.filter((r) => r.id !== id));
+
+  const updateTableRow = (id, field, value) => setTableRecipients((prev) =>
+    prev.map((r) => r.id === id ? { ...r, [field]: value } : r),
+  );
+
+  const updateTableRowQty = (id, type, value) => setTableRecipients((prev) =>
+    prev.map((r) => r.id === id ? { ...r, quantities: { ...r.quantities, [type]: value.replace(/[^0-9]/g, "") } } : r),
+  );
+
   const sendTicketLinks = async (skipWarning = false) => {
     if (!accessCode || sending) return;
-    if (!deliveryTicketType) {
-      setFeedback({ kind: "error", message: "Select a ticket type first." });
+
+    const recipients = buildRecipients();
+    if (!recipients || !recipients.length) {
+      if (emailMode === "single") {
+        setDeliveryFb("error", "Enter a valid email and at least one ticket quantity.");
+      } else if (emailMode === "bulk-same") {
+        setDeliveryFb("error", "Add at least one valid email and set ticket quantities.");
+      } else {
+        setDeliveryFb("error", "Add at least one valid row with an email and ticket quantity.");
+      }
       return;
     }
-    if (!recipientList.length) {
-      setFeedback({ kind: "error", message: "Add at least one valid recipient email." });
-      return;
-    }
-    if (!emailSubject.trim() || !emailBody.trim()) {
-      setFeedback({ kind: "error", message: "Email subject and body cannot be empty." });
-      return;
-    }
+
     if (!deliveryWarningAcknowledged && skipWarning !== true) {
       openDeliveryWarningModal("send-ticket-links");
       return;
     }
 
-    const executeSend = async (allowPartial = false) => {
-      setSending(true);
-      setFeedback({ kind: "", message: "" });
-      setSendSummary(null);
-      try {
-        const response = await withMinDelay(
-          api.post(`/orders/${encodeURIComponent(accessCode)}/send-links`, {
-            emails: recipientList,
-            eventId: summary?.event?.id,
-            ticketType: deliveryTicketType,
-            baseUrl: window.location.origin,
-            emailSubject,
-            emailBody,
-            allowPartial,
-          }),
-        );
-        setSendSummary(response.data);
-        setRecipientEmails("");
-        await loadTicketsForEvent(summary.event.id);
-        if (response.data.partialApplied) {
-          setFeedback({
-            kind: "info",
-            message: `Only ${response.data.attemptedEmails} ticket(s) were sent because only ${response.data.availableTicketsBeforeSend} were available.`,
-          });
-        } else {
-          setFeedback({ kind: "success", message: `Email sent for ${deliveryTicketType}.` });
-        }
-      } catch (requestError) {
-        const responseData = requestError.response?.data || {};
-        if (
-          responseData.code === "INSUFFICIENT_TICKETS" &&
-          Number(responseData.availableTickets || 0) > 0 &&
-          Number(responseData.availableTickets || 0) < recipientList.length &&
-          !allowPartial
-        ) {
-          const proceed = window.confirm(
-            `You have only ${responseData.availableTickets} tickets left. Proceed sending the ${responseData.availableTickets} available ticket(s)?`,
-          );
-          if (proceed) {
-            await executeSend(true);
-            return;
-          }
-          setFeedback({ kind: "info", message: "Email send cancelled." });
-          return;
-        }
-        setFeedback({ kind: "error", message: responseData.error || "Could not send ticket links." });
-      } finally {
-        setSending(false);
+    setSending(true);
+    setDeliveryFb("", "");
+    setSendSummary(null);
+    try {
+      const response = await withMinDelay(
+        api.post(`/orders/${encodeURIComponent(accessCode)}/send-links`, {
+          recipients,
+          eventId: summary?.event?.id,
+          baseUrl: window.location.origin,
+        }),
+      );
+      setSendSummary(response.data);
+      setSingleEmail("");
+      setBulkEmails("");
+      setTableRecipients([{ id: 1, email: "", quantities: {} }]);
+      await loadTicketsForEvent(summary.event.id);
+      const totalSent = response.data.totalSent || 0;
+      const failCount = response.data.failed?.length || 0;
+      if (failCount > 0) {
+        setDeliveryFb("info", `Sent ${totalSent} ticket(s). ${failCount} email(s) failed — check results below.`);
+      } else {
+        setDeliveryFb("success", `Successfully sent ${totalSent} ticket(s) to ${recipients.length} recipient(s).`);
       }
-    };
-
-    await executeSend(false);
+    } catch (requestError) {
+      const responseData = requestError.response?.data || {};
+      setDeliveryFb("error", responseData.error || "Could not send ticket links.");
+    } finally {
+      setSending(false);
+    }
   };
 
   const handleTicketsGenerated = async () => {
@@ -1163,7 +1207,7 @@ export default function Dashboard() {
           setTicketCopyError({ ticketPublicId: "", message: "" });
           markCopiedTicketPublicId(pendingTicketPublicId);
         } catch {
-          setFeedback({ kind: "error", message: "Could not copy ticket URL." });
+          setTicketFb("error", "Could not copy ticket URL.");
         }
       }
       return;
@@ -1188,10 +1232,7 @@ export default function Dashboard() {
       !eventDraft.eventDate ||
       !eventDraft.eventAddress.trim()
     ) {
-      setFeedback({
-        kind: "error",
-        message: "Event name, date, and location are required.",
-      });
+      setEventFb("error", "Event name, date, and location are required.");
       return;
     }
     setSavingEvent(true);
@@ -1219,7 +1260,7 @@ export default function Dashboard() {
             code: nextOrganizerCode,
             copied: false,
           });
-          setFeedback({ kind: "success", message: "Event created and organizer code generated." });
+          setEventFb("success", "Event created and organizer code generated.");
           return;
         }
 
@@ -1231,12 +1272,12 @@ export default function Dashboard() {
           paymentInstructions: eventDraft.paymentInstructions,
         });
         await loadDashboard(accessCode, response.data?.event?.id);
-        setFeedback({ kind: "success", message: "New event created." });
+        setEventFb("success", "New event created.");
         return;
       }
 
       if (!summary?.event?.id) {
-        setFeedback({ kind: "error", message: "Load an event first." });
+        setEventFb("error", "Load an event first.");
         return;
       }
       const response = await api.patch(`/events/${summary.event.id}`, {
@@ -1262,10 +1303,10 @@ export default function Dashboard() {
             : eventItem,
         ),
       });
-      setFeedback({ kind: "success", message: "Event details updated." });
+      setEventFb("success", "Event details updated.");
     } catch (requestError) {
       if (handleTicketLockError(requestError)) return;
-      setFeedback({ kind: "error", message: requestError.response?.data?.error || "Could not update event." });
+      setEventFb("error", requestError.response?.data?.error || "Could not update event.");
     } finally {
       setSavingEvent(false);
     }
@@ -1350,10 +1391,10 @@ export default function Dashboard() {
         eventAddress: String(response.data?.event?.eventAddress || ""),
         paymentInstructions: String(response.data?.event?.paymentInstructions || ""),
       });
-      setFeedback({ kind: "success", message: "Ticket editor changes saved." });
+      setTicketFb("success", "Ticket editor changes saved.");
     } catch (requestError) {
       if (handleTicketLockError(requestError)) return;
-      setFeedback({ kind: "error", message: requestError.response?.data?.error || "Could not save ticket changes." });
+      setTicketFb("error", requestError.response?.data?.error || "Could not save ticket changes.");
     } finally {
       setSavingTicketDraft(false);
     }
@@ -1385,20 +1426,18 @@ export default function Dashboard() {
       await navigator.clipboard.writeText(promoterLink);
       markCopiedPromoterId(promoterId);
     } catch {
-      setFeedback({ kind: "error", message: "Could not copy promoter link." });
+      setPromoterFb("error", "Could not copy promoter link.");
     }
   };
 
   const copyPublicEventLink = async (skipWarning = false) => {
     if (!summary?.event?.slug) return;
     if (noDeliverableTickets) {
-      setFeedback({
-        kind: "error",
-        message:
-          pendingRequestedCount > 0
-            ? "You have no free tickets to deliver right now because pending public requests reserved them."
-            : "You have no more tickets to deliver and downloaded all tickets. Generate more before sharing public link.",
-      });
+      setDeliveryFb("error",
+        pendingRequestedCount > 0
+          ? "You have no free tickets to deliver right now because pending public requests reserved them."
+          : "You have no more tickets to deliver and downloaded all tickets. Generate more before sharing public link.",
+      );
       return;
     }
     if (!deliveryWarningAcknowledged && skipWarning !== true) {
@@ -1409,7 +1448,7 @@ export default function Dashboard() {
       await navigator.clipboard.writeText(`${window.location.origin}/e/${summary.event.slug}`);
       markCopiedPublicEventLink();
     } catch {
-      setFeedback({ kind: "error", message: "Could not copy public event link." });
+      setDeliveryFb("error", "Could not copy public event link.");
     }
   };
 
@@ -1500,9 +1539,7 @@ export default function Dashboard() {
         </>
       )}
 
-      <div ref={feedbackRef}>
-        <FeedbackBanner className="mt-3" kind={feedback.kind} message={feedback.message} />
-      </div>
+      <FeedbackBanner className="mt-3" kind={loadFb.kind} message={loadFb.message} />
 
       {(!showLoadDashboard || summary) ? (
         <div className="mt-4 flex flex-wrap items-center gap-2 text-sm font-semibold">
@@ -1533,6 +1570,7 @@ export default function Dashboard() {
         <>
           {activeMenu === "events" ? (
             <>
+              <FeedbackBanner className="mt-3" kind={eventFb.kind} message={eventFb.message} />
               <section className="mt-4 rounded border p-4">
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-[100px_1fr] sm:items-center">
                   <p className="font-semibold">Event:</p>
@@ -1654,6 +1692,7 @@ export default function Dashboard() {
 
           {activeMenu === "tickets" ? (
             <section className="mt-4 rounded border p-4">
+              <FeedbackBanner className="mb-3" kind={ticketFb.kind} message={ticketFb.message} />
               <div className="mb-5">
                 <TicketEditor
                   key={summary.event.id}
@@ -1912,40 +1951,206 @@ export default function Dashboard() {
               ) : null}
 
               {deliveryMethod === DELIVERY_METHODS.EMAIL_LINK ? (
-                <div className="mt-3">
-                  <label className="mb-1 block text-sm font-medium">Ticket type</label>
-                  <select
-                    className="w-full rounded border p-2 text-sm sm:w-72"
-                    value={deliveryTicketType}
-                    onChange={(event) => setDeliveryTicketType(event.target.value)}
-                  >
-                    {deliveryTicketTypeOptions.map((type) => (
-                      <option key={type} value={type}>{type}</option>
+                <div className="mt-3 space-y-4">
+
+                  {/* Mode tabs */}
+                  <div className="flex gap-1 rounded border bg-slate-100 p-1 text-xs font-medium sm:w-fit">
+                    {[
+                      { id: "single", label: "Single recipient" },
+                      { id: "bulk-same", label: "Bulk — same tickets" },
+                      { id: "bulk-table", label: "Bulk — per person" },
+                    ].map(({ id, label }) => (
+                      <button
+                        key={id}
+                        type="button"
+                        className={`rounded px-3 py-1.5 transition-colors ${emailMode === id ? "bg-white shadow text-slate-900" : "text-slate-500 hover:text-slate-700"}`}
+                        onClick={() => setEmailMode(id)}
+                      >
+                        {label}
+                      </button>
                     ))}
-                  </select>
+                  </div>
 
-                  <label className="mb-1 mt-3 block text-sm font-medium">Recipient emails ({deliveryTicketType || DEFAULT_TICKET_TYPE})</label>
-                  <textarea className="w-full rounded border p-2" rows={4} value={recipientEmails} onChange={(event) => setRecipientEmails(event.target.value)} placeholder="alice@email.com, bob@email.com" />
-                  <p className="mt-1 text-xs text-slate-600">Send one ticket type at a time. Group similar buyers together, then switch type for the next batch.</p>
-                  <p className="mt-1 text-xs text-slate-600">Undelivered tickets currently available: {deliverableCount}</p>
+                  {/* Tickets per recipient — single + bulk-same modes */}
+                  {(emailMode === "single" || emailMode === "bulk-same") ? (
+                    <div>
+                      <p className="mb-2 text-sm font-medium">Tickets per recipient</p>
+                      <div className="flex flex-wrap gap-3">
+                        {deliveryTicketTypeOptions.map((type) => {
+                          const available = availableCountByType[type] || 0;
+                          const requested = emailRequestedByType[type] || 0;
+                          const exceeded = requested > 0 && requested > available;
+                          return (
+                            <div key={type} className={`flex flex-col gap-1 rounded border px-3 py-2 bg-white ${exceeded ? "border-red-400" : ""}`}>
+                              <div className="flex items-center gap-2">
+                                <label className="text-sm font-medium text-slate-700 min-w-[60px]">{type}</label>
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  className="w-16 rounded border p-1 text-center text-sm"
+                                  value={emailQuantities[type] ?? ""}
+                                  placeholder="0"
+                                  onChange={(e) => setEmailQuantities((prev) => ({ ...prev, [type]: e.target.value.replace(/[^0-9]/g, "") }))}
+                                />
+                              </div>
+                              {exceeded
+                                ? <p className="text-xs text-red-600">Only {available} available</p>
+                                : <p className="text-xs text-slate-400">{available} available</p>
+                              }
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
 
-                  <div className="mt-4 rounded border bg-slate-50 p-3">
+                  {/* Single recipient email input */}
+                  {emailMode === "single" ? (
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">Recipient email</label>
+                      <input
+                        type="email"
+                        className="w-full rounded border p-2 text-sm"
+                        placeholder="alice@example.com"
+                        value={singleEmail}
+                        onChange={(e) => setSingleEmail(e.target.value)}
+                      />
+                    </div>
+                  ) : null}
+
+                  {/* Bulk same — email list */}
+                  {emailMode === "bulk-same" ? (
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">Recipient emails (one per line)</label>
+                      <textarea
+                        className="w-full rounded border p-2 text-sm"
+                        rows={5}
+                        placeholder={"alice@example.com\nbob@example.com\ncharlie@example.com"}
+                        value={bulkEmails}
+                        onChange={(e) => setBulkEmails(e.target.value)}
+                      />
+                      <p className="mt-1 text-xs text-slate-500">
+                        {bulkEmails.split(/[\n,]+/).filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e.trim())).length} valid email(s) detected
+                      </p>
+                    </div>
+                  ) : null}
+
+                  {/* Bulk table — one row per recipient, different quantities */}
+                  {emailMode === "bulk-table" ? (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium">Recipients</p>
+                      {/* Column headers (desktop) */}
+                      <div className="hidden sm:grid gap-2 px-1 text-xs font-semibold text-slate-500" style={{ gridTemplateColumns: `1fr ${deliveryTicketTypeOptions.map(() => "80px").join(" ")} 32px` }}>
+                        <span>Email</span>
+                        {deliveryTicketTypeOptions.map((type) => <span key={type} className="text-center">{type}</span>)}
+                        <span />
+                      </div>
+                      {/* Rows */}
+                      {tableRecipients.map((row) => (
+                        <div key={row.id} className="grid items-start gap-2" style={{ gridTemplateColumns: `1fr ${deliveryTicketTypeOptions.map(() => "80px").join(" ")} 32px` }}>
+                          <input
+                            type="email"
+                            className="w-full rounded border p-2 text-sm"
+                            placeholder="alice@example.com"
+                            value={row.email}
+                            onChange={(e) => updateTableRow(row.id, "email", e.target.value)}
+                          />
+                          {deliveryTicketTypeOptions.map((type) => {
+                            const available = availableCountByType[type] || 0;
+                            const totalRequested = tableRequestedByType[type] || 0;
+                            const exceeded = totalRequested > available;
+                            return (
+                              <div key={type} className="flex flex-col items-center gap-0.5">
+                                <span className="text-xs text-slate-400 sm:hidden">{type}</span>
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  className={`w-full rounded border p-1 text-center text-sm ${exceeded ? "border-red-400 bg-red-50" : ""}`}
+                                  value={row.quantities[type] ?? ""}
+                                  placeholder="0"
+                                  onChange={(e) => updateTableRowQty(row.id, type, e.target.value)}
+                                />
+                              </div>
+                            );
+                          })}
+                          <button
+                            type="button"
+                            className="mt-1 rounded text-slate-400 hover:text-red-500 text-lg leading-none"
+                            onClick={() => removeTableRow(row.id)}
+                            disabled={tableRecipients.length === 1}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                      {/* Per-type availability summary */}
+                      <div className="flex flex-wrap gap-3 pt-1">
+                        {deliveryTicketTypeOptions.map((type) => {
+                          const available = availableCountByType[type] || 0;
+                          const requested = tableRequestedByType[type] || 0;
+                          if (requested === 0) return null;
+                          return requested > available
+                            ? <p key={type} className="text-xs text-red-600">{type}: {requested} requested — only {available} available</p>
+                            : <p key={type} className="text-xs text-slate-500">{type}: {requested} of {available} available</p>;
+                        })}
+                      </div>
+                      <button
+                        type="button"
+                        className="mt-1 text-sm text-indigo-600 hover:text-indigo-800 font-medium"
+                        onClick={addTableRow}
+                      >
+                        + Add recipient
+                      </button>
+                    </div>
+                  ) : null}
+
+                  {/* Email preview */}
+                  <div className="rounded border bg-slate-50 p-3">
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-semibold">Email content sample - its only a sample ! the actual ticket links and ticket type is different for each recipient (we send one ticket per email)</p>
+                      <p className="text-sm font-medium text-slate-700">Email preview (sample)</p>
                       <AppButton type="button" variant="secondary" className="px-2 py-1 text-xs" onClick={() => setShowEmailPreview((prev) => !prev)}>
-                        {showEmailPreview ? "Hide preview" : "View preview"}
+                        {showEmailPreview ? "Hide" : "View preview"}
                       </AppButton>
                     </div>
                     {showEmailPreview ? (
-                      <div className="mt-3 rounded border bg-white p-3 text-sm">
-                        <p className="text-xs text-slate-500">To: {sampleRecipient}</p>
-                        <p className="mt-2"><span className="font-semibold">Subject:</span> {previewSubject}</p>
-                        <div className="mt-2 overflow-hidden rounded bg-slate-50 p-2 text-sm text-slate-700 [&_a]:break-all [&_table]:max-w-full [&_table]:w-full [&_td]:break-words" dangerouslySetInnerHTML={{ __html: previewBodyHtml }} />
+                      <div className="mt-3 rounded border bg-white p-2">
+                        <p className="mb-1 text-xs text-slate-500">To: alice@example.com</p>
+                        <p className="mb-2 text-xs text-slate-500">Subject: <strong>Your tickets for {previewEventName} are ready</strong></p>
+                        <div
+                          className="overflow-hidden rounded text-sm [&_a]:break-all [&_table]:max-w-full [&_table]:w-full [&_td]:break-words"
+                          dangerouslySetInnerHTML={{
+                            __html: `
+                              <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#ffffff;padding:8px 0;">
+                                <tr><td align="center">
+                                  <table width="480" cellpadding="20" cellspacing="0" role="presentation" style="background:#f5f7fb;border-radius:8px;font-family:Arial,Helvetica,sans-serif;color:#0f172a;width:100%;max-width:480px;">
+                                    <tr><td>
+                                      <p style="margin:0 0 12px 0;font-size:18px;font-weight:700;text-align:center;">Your Tickets Are Ready</p>
+                                      <p style="margin:0 0 10px 0;">Hello,</p>
+                                      <p style="margin:0 0 14px 0;">Your tickets for <strong>${previewEventName}</strong> are ready.</p>
+                                      <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 16px 0;text-align:left;">
+                                        <tr><td style="padding:3px 10px 3px 0;">Event:</td><td><strong>${previewEventName}</strong></td></tr>
+                                        <tr><td style="padding:3px 10px 3px 0;">Date:</td><td><strong>${previewEventDate}</strong></td></tr>
+                                        <tr><td style="padding:3px 10px 3px 0;">Location:</td><td><strong>${previewEventAddress}</strong></td></tr>
+                                      </table>
+                                      <p style="margin:0 0 8px 0;">Use the links below to view your tickets:</p>
+                                      <ul style="padding-left:18px;margin:0 0 16px 0;">
+                                        ${previewTicketLinks.map((l) => `<li style="margin:5px 0;"><strong>${l.ticketType}:</strong> <a href="${l.ticketUrl}" style="color:#2d5bd1;">${l.ticketUrl}</a></li>`).join("")}
+                                      </ul>
+                                      <p style="margin:0;">Please present the QR code at the entrance.</p>
+                                    </td></tr>
+                                  </table>
+                                </td></tr>
+                              </table>
+                            `,
+                          }}
+                        />
                       </div>
                     ) : null}
                   </div>
 
-                  <AppButton className="mt-3" variant="indigo" onClick={() => void sendTicketLinks()} loading={sending} loadingText="Sending...">Send tickets</AppButton>
+                  <AppButton variant="indigo" onClick={() => void sendTicketLinks()} loading={sending} loadingText="Sending...">
+                    Send tickets
+                  </AppButton>
                 </div>
               ) : null}
 
@@ -1975,10 +2180,21 @@ export default function Dashboard() {
                 </div>
               ) : null}
 
+              <FeedbackBanner className="mt-3" kind={deliveryFb.kind} message={deliveryFb.message} />
+
               {sendSummary ? (
-                <div className="mt-3 rounded border bg-emerald-50 p-3 text-sm">
-                  <p>Links sent: {sendSummary.sent}</p>
-                  <p>Failed: {sendSummary.failed?.length || 0}</p>
+                <div className="mt-3 rounded border bg-emerald-50 p-3 text-sm space-y-1">
+                  <p className="font-medium">Send complete — {sendSummary.totalSent} ticket(s) sent to {sendSummary.recipients} recipient(s)</p>
+                  {sendSummary.failed?.length > 0 ? (
+                    <div className="mt-2 text-red-700">
+                      <p className="font-medium">Failed ({sendSummary.failed.length}):</p>
+                      <ul className="mt-1 list-disc pl-4 text-xs">
+                        {sendSummary.failed.map((f, i) => (
+                          <li key={i}>{f.email} — {f.error}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
             </section>
@@ -1987,6 +2203,7 @@ export default function Dashboard() {
           {activeMenu === "requests" ? (
             <section className="mt-4 rounded border p-4">
               <p className="text-sm font-semibold">Ticket requests</p>
+              <FeedbackBanner className="mt-2" kind={requestFb.kind} message={requestFb.message} />
               <div className="mt-3 space-y-3 lg:hidden">
                 {ticketRequests.map((item) => {
                   const selections = Array.isArray(item.ticketSelections) ? item.ticketSelections : [];
@@ -2115,6 +2332,7 @@ export default function Dashboard() {
           {activeMenu === "promoters" ? (
             <section className="mt-4 rounded border p-4">
               <p className="text-sm font-semibold">Promoters</p>
+              <FeedbackBanner className="mt-2" kind={promoterFb.kind} message={promoterFb.message} />
               <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <input className="rounded border p-2" placeholder="Name" value={promoterForm.name} onChange={(e) => setPromoterForm((prev) => ({ ...prev, name: e.target.value }))} />
               </div>
@@ -2314,6 +2532,7 @@ export default function Dashboard() {
                     Send
                   </AppButton>
                 </div>
+                <FeedbackBanner className="mt-2" kind={chatFb.kind} message={chatFb.message} />
               </section>
             </div>
           ) : null}
