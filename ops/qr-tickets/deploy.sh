@@ -19,7 +19,8 @@ LOG_FILE="/opt/qr-tickets/deployments.log"
 # ─── Directories ────────────────────────────────────────────────────────────
 echo "[deploy] Creating directories..."
 sudo mkdir -p "$APP_DIR" "$ENV_DIR" "$UPLOADS_DIR" "$POSTGRES_DIR"
-sudo chown -R ubuntu:ubuntu /opt/qr-tickets
+sudo chown -R ubuntu:ubuntu "$APP_DIR" "$ENV_DIR" "$UPLOADS_DIR"
+sudo chown -R 999:999 "$POSTGRES_DIR"
 
 # ─── Git ────────────────────────────────────────────────────────────────────
 echo "[deploy] Syncing repo..."
