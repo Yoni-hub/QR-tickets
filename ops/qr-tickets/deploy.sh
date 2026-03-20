@@ -73,11 +73,12 @@ POSTGRES_USER=${DB_USER:-qr_user}
 POSTGRES_PASSWORD=${DB_PASSWORD}
 EOF
 
-# ─── Symlink compose env ────────────────────────────────────────────────────
-# docker-compose.yml reads DB_* from environment; export them for compose
-export DB_NAME="${DB_NAME:-qr_tickets}"
-export DB_USER="${DB_USER:-qr_user}"
-export DB_PASSWORD="$DB_PASSWORD"
+# ─── Write compose .env (docker-compose reads this automatically, even under sudo) ───
+cat > "$APP_DIR/.env" <<EOF
+DB_NAME=${DB_NAME:-qr_tickets}
+DB_USER=${DB_USER:-qr_user}
+DB_PASSWORD=${DB_PASSWORD}
+EOF
 
 # ─── Build & start containers ───────────────────────────────────────────────
 echo "[deploy] Building and starting containers..."

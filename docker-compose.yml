@@ -6,10 +6,8 @@ services:
       - "127.0.0.1:5432:5432"
     volumes:
       - /opt/qr-tickets/postgres:/var/lib/postgresql/data
-    environment:
-      POSTGRES_DB: ${DB_NAME:-qr_tickets}
-      POSTGRES_USER: ${DB_USER:-qr_user}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    env_file:
+      - /opt/qr-tickets/env/postgres.env
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-qr_user} -d ${DB_NAME:-qr_tickets}"]
       interval: 5s
@@ -25,13 +23,6 @@ services:
       - "127.0.0.1:4100:4100"
     env_file:
       - /opt/qr-tickets/env/backend.env
-    environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: ${DB_NAME:-qr_tickets}
-      DB_USER: ${DB_USER:-qr_user}
-      DB_PASSWORD: ${DB_PASSWORD}
-      DATABASE_URL: postgresql://${DB_USER:-qr_user}:${DB_PASSWORD}@postgres:5432/${DB_NAME:-qr_tickets}?schema=public
     volumes:
       - /opt/qr-tickets/uploads:/app/uploads
     depends_on:
