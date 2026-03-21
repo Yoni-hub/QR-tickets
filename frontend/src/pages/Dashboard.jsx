@@ -589,7 +589,7 @@ export default function Dashboard() {
     setShowPublicPreview(false);
     setEventEditMode(EVENT_EDIT_MODES.CREATE);
     setEventDraft({ organizerName: "", eventName: "", eventDate: "", eventAddress: "", paymentInstructions: "" });
-  }, [shouldOpenHomeMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [location.key]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setCopiedPublicEventLink(false);
@@ -1675,7 +1675,7 @@ export default function Dashboard() {
 
       <FeedbackBanner className="mt-3" kind={loadFb.kind} message={loadFb.message} />
 
-      {(!showLoadDashboard || summary) ? (
+      {(!showLoadDashboard || summary) && !showHeroSection ? (
         <div className="mt-4 flex flex-wrap items-center gap-2 text-sm font-semibold">
           {visibleMenus.map((menu) => (
             <button
@@ -2816,7 +2816,8 @@ export default function Dashboard() {
               />
               {showGetStartedHint ? (
                 <p className="mt-1 text-xs text-blue-700">Fill in your event details. You can update them anytime.</p>
-              ) : isAccessCodeGenerationMode ? (
+              ) : null}
+              {showGetStartedHint ? (
                 <p className="mt-1 text-xs text-indigo-600">Start here — enter your name or brand to generate your organizer access code.</p>
               ) : null}
             </div>
