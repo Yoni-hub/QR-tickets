@@ -613,15 +613,14 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
+    if (shouldOpenHomeMode || summary) return;
     const urlCode = params.get("code");
-    if (!urlCode) {
-      const savedCode = localStorage.getItem(LOCAL_SAVED_CODE_KEY);
-      if (savedCode) {
-        setCode(savedCode);
-        loadDashboard(savedCode);
-      }
+    const codeToLoad = urlCode || localStorage.getItem(LOCAL_SAVED_CODE_KEY) || "";
+    if (codeToLoad) {
+      setCode(codeToLoad);
+      void loadDashboard(codeToLoad);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [shouldOpenHomeMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (ticketPage > totalTicketPages) setTicketPage(totalTicketPages);
