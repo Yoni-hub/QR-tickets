@@ -589,7 +589,7 @@ export default function Dashboard() {
     setShowPublicPreview(false);
     setEventEditMode(EVENT_EDIT_MODES.CREATE);
     setEventDraft({ organizerName: "", eventName: "", eventDate: "", eventAddress: "", paymentInstructions: "" });
-  }, [location.key]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [shouldOpenHomeMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setCopiedPublicEventLink(false);
