@@ -746,6 +746,8 @@ async function listAdminOrganizers(req, res) {
       eventAddress: true,
       accessCode: true,
       organizerAccessCode: true,
+      organizerName: true,
+      organizerEmail: true,
       adminStatus: true,
       createdAt: true,
       _count: {
@@ -799,6 +801,8 @@ async function listAdminOrganizers(req, res) {
 
     const existing = organizerMap.get(organizerAccessCode) || {
       organizerAccessCode,
+      organizerName: "",
+      organizerEmail: "",
       eventsTotal: 0,
       ticketsTotal: 0,
       ticketsUsed: 0,
@@ -815,6 +819,9 @@ async function listAdminOrganizers(req, res) {
     existing.ticketRequestsTotal += eventSummary.ticketRequestsTotal;
     if (!existing.latestEventCreatedAt || eventSummary.createdAt > existing.latestEventCreatedAt) {
       existing.latestEventCreatedAt = eventSummary.createdAt;
+      // Use name/email from the latest event (most up-to-date)
+      existing.organizerName = String(event.organizerName || "").trim();
+      existing.organizerEmail = String(event.organizerEmail || "").trim();
     }
     existing.events.push(eventSummary);
     organizerMap.set(organizerAccessCode, existing);

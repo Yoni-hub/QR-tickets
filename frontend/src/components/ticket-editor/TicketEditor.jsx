@@ -119,6 +119,10 @@ export default function TicketEditor({
   const [previewQrPayload, setPreviewQrPayload] = useState("");
   const [ticketDesign, setTicketDesign] = useState(() => resolveInitialDesign());
   const [settings, setSettings] = useState(() => resolveInitialSettings());
+  const [currency, setCurrency] = useState(() => {
+    const design = initialDesignJson && typeof initialDesignJson === "object" ? initialDesignJson : {};
+    return String(design.currency || "$");
+  });
 
   useEffect(() => {
     setTicketDesign(resolveInitialDesign());
@@ -126,6 +130,8 @@ export default function TicketEditor({
     setPreviewQrPayload("");
     setResult(null);
     setFeedback({ kind: "", message: "" });
+    const design = initialDesignJson && typeof initialDesignJson === "object" ? initialDesignJson : {};
+    setCurrency(String(design.currency || "$"));
   }, [eventId, initialEventName, initialEventAddress, initialDateTimeText, initialTicketType, initialTicketPrice, initialDesignJson]);
 
   const totalQuantity = useMemo(
@@ -300,9 +306,10 @@ export default function TicketEditor({
     const parsedDate = new Date(String(design.dateTimeText || "").replace(/\s*\|\s*/g, " "));
     const primaryPrice = String(primaryGroup.ticketPrice || "").trim();
     const parsedPrimaryPrice = Number(primaryPrice);
+    const currencySymbol = String(currency || "$").trim();
     const resolvedPriceText =
       primaryPrice && Number.isFinite(parsedPrimaryPrice) && parsedPrimaryPrice > 0
-        ? `$${parsedPrimaryPrice.toFixed(2)}`
+        ? `${currencySymbol}${parsedPrimaryPrice.toFixed(2)}`
         : primaryPrice || "Free";
     return {
       eventName: String(design.eventName || "").trim(),
@@ -316,6 +323,7 @@ export default function TicketEditor({
         organizerName: String(design.organizerName || "").trim(),
         ticketTypeLabel: String(primaryGroup.ticketType || "General").toUpperCase(),
         priceText: resolvedPriceText,
+        currency: currencySymbol,
         headerImageDataUrl: primaryGroup.headerImageDataUrl || null,
         headerOverlay: Number(primaryGroup.headerOverlay ?? DEFAULT_OVERLAY),
         headerTextColorMode: primaryGroup.headerTextColorMode || DEFAULT_TEXT_COLOR_MODE,
@@ -328,7 +336,7 @@ export default function TicketEditor({
     if (typeof onDraftChange === "function") {
       onDraftChange(buildDraft(ticketDesign, settings));
     }
-  }, [ticketDesign, settings, onDraftChange]);
+  }, [ticketDesign, settings, currency, onDraftChange]);
 
   const rootClass =
     mode === "append_to_event"
@@ -349,11 +357,23 @@ export default function TicketEditor({
               onHeaderImageUpload={(event) => onHeaderImageUpload(index, event)}
               onRemoveHeaderImage={() => updateTicketGroup(index, "headerImageDataUrl", null)}
               imageLoading={imageLoading}
+              currency={currency}
               title={`Live ticket preview: ${group.ticketType || `Ticket ${index + 1}`}`}
               helperText="(you can change the event name, location, time, type and price directly on the ticket preview)"
               showRemoveTicketType={canDeleteTicketTypes && settings.ticketGroups.length > 1}
               onRemoveTicketType={() => removeTicketType(index)}
             />
+            {index === 0 ? (
+              <div className="mx-auto w-full max-w-xl">
+                <label className="mb-1 block text-sm font-medium">Currency</label>
+                <input
+                  className="w-full rounded border p-2 text-sm"
+                  type="text"
+                  value={currency}
+                  onChange={(e) => setCurrency(e.target.value)}
+                />
+              </div>
+            ) : null}
             <div className="mx-auto w-full max-w-xl">
               <label className="mb-1 block text-sm font-medium">Quantity</label>
               <input

@@ -15,6 +15,7 @@ export default function PublicEventConfirmPage() {
 
   const request = location.state?.request || null;
   const payment = location.state?.payment || null;
+  const currency = String(location.state?.currency || "$");
   const selections = Array.isArray(payment?.selections)
     ? payment.selections
     : Array.isArray(request?.ticketSelections)
@@ -57,7 +58,7 @@ export default function PublicEventConfirmPage() {
         <p><span className="font-semibold">Status:</span> {requestStatus}</p>
         <p><span className="font-semibold">Ticket types:</span> {selections.length ? selections.map((item) => `${item.ticketType} x${item.quantity}`).join(", ") : request?.ticketType || "-"}</p>
         <p><span className="font-semibold">Quantity:</span> {payment?.totalQuantity || request?.quantity || "-"}</p>
-        <p><span className="font-semibold">Total payment:</span> {isFreeRequest ? "FREE" : `$${totalPrice.toFixed(2)}`}</p>
+        <p><span className="font-semibold">Total payment:</span> {isFreeRequest ? "FREE" : `${currency}${totalPrice.toFixed(2)}`}</p>
         <p><span className="font-semibold">Request ID:</span> <span className="font-mono">{request?.id || "-"}</span></p>
         <p>
           <span className="font-semibold">Client Access Token:</span>{" "}

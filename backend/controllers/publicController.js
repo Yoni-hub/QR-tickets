@@ -313,6 +313,7 @@ async function getPublicEventBySlug(req, res) {
   ]);
   const ticketsRemaining = ticketTypes.reduce((sum, item) => sum + Number(item.ticketsRemaining || 0), 0);
 
+  const currency = String(event.designJson?.currency || "$").trim();
   res.json({
     event: {
       eventId: event.id,
@@ -322,6 +323,7 @@ async function getPublicEventBySlug(req, res) {
       eventDate: event.eventDate,
       location: event.eventAddress,
       price: event.ticketPrice,
+      currency,
       paymentInstructions: event.paymentInstructions,
       ticketTypes,
       ticketsRemaining,

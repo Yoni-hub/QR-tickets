@@ -127,10 +127,11 @@ function formatLockedDeliveryMethods(methods) {
   });
 }
 
-function normalizePriceText(value) {
+function normalizePriceText(value, currency = "$") {
+  const sym = String(currency || "$").trim();
   if (value == null) return "Free";
   const parsed = Number(value);
-  if (Number.isFinite(parsed) && parsed > 0) return `$${parsed.toFixed(2)}`;
+  if (Number.isFinite(parsed) && parsed > 0) return `${sym}${parsed.toFixed(2)}`;
   if (Number.isFinite(parsed) && parsed === 0) return "Free";
   const raw = String(value || "").trim();
   return raw || "Free";
@@ -151,7 +152,7 @@ function resolveTicketGroupsFromDesign(designJson) {
         groupDesign: {
           ...designJson,
           ticketTypeLabel: ticketType.toUpperCase(),
-          priceText: normalizePriceText(ticketPrice),
+          priceText: normalizePriceText(ticketPrice, designJson?.currency),
           headerImageDataUrl: group?.headerImageDataUrl || null,
           headerOverlay: Number(group?.headerOverlay ?? designJson?.headerOverlay ?? 0.25),
           headerTextColorMode: String(group?.headerTextColorMode || designJson?.headerTextColorMode || "AUTO"),
@@ -403,9 +404,10 @@ async function generateTicketsByAccessCode(req, res) {
       const ticketPriceRaw = String(group?.ticketPrice ?? "").trim();
       const parsedPrice = ticketPriceRaw === "" ? null : Number(ticketPriceRaw);
       const ticketPrice = Number.isFinite(parsedPrice) ? parsedPrice : null;
+      const currencySymbol = String(designJson?.currency || "$").trim();
       const resolvedPriceText = ticketPriceRaw
         ? Number.isFinite(parsedPrice) && parsedPrice > 0
-          ? `$${parsedPrice.toFixed(2)}`
+          ? `${currencySymbol}${parsedPrice.toFixed(2)}`
           : ticketPriceRaw
         : "Free";
       return {
@@ -601,7 +603,7 @@ async function updateEventInline(req, res) {
             ? {
                 ...req.body.designJson,
                 ticketTypeLabel: resolvedType.toUpperCase(),
-                priceText: normalizePriceText(hasTicketPrice ? parsedTicketPrice : updated.ticketPrice),
+                priceText: normalizePriceText(hasTicketPrice ? parsedTicketPrice : updated.ticketPrice, req.body.designJson?.currency),
               }
             : null;
 
@@ -961,6 +963,47 @@ async function getTicketsPdf(req, res) {
   }
 }
 
+async function getOrganizerNotifications(req, res) {
+  const accessCode = (req.params.accessCode || "").trim();
+  if (!accessCode) {
+    res.status(400).json({ error: "accessCode is required." });
+    return;
+  }
+  const event = await prisma.userEvent.findFirst({
+    where: { OR: [{ accessCode }, { organizerAccessCode: accessCode }] },
+    select: { organizerEmail: true, notifyOnRequest: true, notifyOnMessage: true },
+  });
+  if (!event) {
+    res.status(404).json({ error: "Event not found." });
+    return;
+  }
+  res.json({ organizerEmail: event.organizerEmail || "", notifyOnRequest: event.notifyOnRequest, notifyOnMessage: event.notifyOnMessage });
+}
+
+async function updateOrganizerNotifications(req, res) {
+  const accessCode = (req.params.accessCode || "").trim();
+  if (!accessCode) {
+    res.status(400).json({ error: "accessCode is required." });
+    return;
+  }
+  const event = await prisma.userEvent.findFirst({
+    where: { OR: [{ accessCode }, { organizerAccessCode: accessCode }] },
+    select: { id: true },
+  });
+  if (!event) {
+    res.status(404).json({ error: "Event not found." });
+    return;
+  }
+  const organizerEmail = String(req.body?.organizerEmail || "").trim();
+  const notifyOnRequest = Boolean(req.body?.notifyOnRequest);
+  const notifyOnMessage = Boolean(req.body?.notifyOnMessage);
+  await prisma.userEvent.update({
+    where: { id: event.id },
+    data: { organizerEmail: organizerEmail || null, notifyOnRequest, notifyOnMessage },
+  });
+  res.json({ ok: true });
+}
+
 module.exports = {
   createLiveEvent,
   createDemoEvent,
@@ -970,5 +1013,7 @@ module.exports = {
   generateTicketsByAccessCode,
   getTicketsPdf,
   updateEventInline,
+  getOrganizerNotifications,
+  updateOrganizerNotifications,
 };
 

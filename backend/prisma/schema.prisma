@@ -26,6 +26,9 @@ model UserEvent {
   organizerAccessCode String?
   isDemo      Boolean     @default(false)
   autoApprove Boolean     @default(false)
+  organizerEmail      String?
+  notifyOnRequest     Boolean @default(false)
+  notifyOnMessage     Boolean @default(false)
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
   tickets     Ticket[]

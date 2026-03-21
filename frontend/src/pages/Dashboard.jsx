@@ -37,6 +37,7 @@ const DASHBOARD_MENUS_ALL = [
   { id: "requests", label: "Ticket Requests" },
   { id: "chat", label: "Chat" },
   { id: "promoters", label: "Promoters" },
+  { id: "notifications", label: "Notifications" },
 ];
 
 const DASHBOARD_MENUS_PRELOAD = [
@@ -354,7 +355,7 @@ export default function Dashboard() {
   const [downloading, setDownloading] = useState(false);
   const [sending, setSending] = useState(false);
   const [deliveryMethod, setDeliveryMethod] = useState(DELIVERY_METHODS.PDF);
-  const [pdfTicketCount, setPdfTicketCount] = useState(1);
+  const [pdfTicketCount, setPdfTicketCount] = useState("");
   const [pdfTicketsPerPage, setPdfTicketsPerPage] = useState(2);
   const [emailMode, setEmailMode] = useState("single"); // 'single' | 'bulk-same' | 'bulk-table'
   const [singleEmail, setSingleEmail] = useState("");
@@ -365,11 +366,15 @@ export default function Dashboard() {
   const [sendSummary, setSendSummary] = useState(null);
   const [loadFb, setLoadFb] = useFeedback();
   const [eventFb, setEventFb] = useFeedback();
-  const [ticketFb, setTicketFb] = useFeedback();
+  const [ticketFb, setTicketFb] = useFeedback(10000);
   const [deliveryFb, setDeliveryFb] = useFeedback();
   const [requestFb, setRequestFb] = useFeedback();
   const [promoterFb, setPromoterFb] = useFeedback();
   const [chatFb, setChatFb] = useFeedback();
+  const [notifFb, setNotifFb] = useFeedback();
+  const [notifDraft, setNotifDraft] = useState({ organizerEmail: "", notifyOnRequest: false, notifyOnMessage: false });
+  const [notifLoaded, setNotifLoaded] = useState(false);
+  const [savingNotif, setSavingNotif] = useState(false);
   const [promoterForm, setPromoterForm] = useState({ name: "" });
   const [chatUnreadTotal, setChatUnreadTotal] = useState(0);
   const [chatContext, setChatContext] = useState(null);
@@ -564,6 +569,7 @@ export default function Dashboard() {
     setTicketRequests([]);
     setPromoters([]);
     setLeaderboard([]);
+    setNotifLoaded(false);
     setActiveMenu("events");
     setShowPublicPreview(false);
     setEventEditMode(EVENT_EDIT_MODES.CREATE);
@@ -605,10 +611,7 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [chatContext?.id, accessCode]);
   useEffect(() => {
-    setPdfTicketCount((prev) => {
-      if (deliverableCount < 1) return 1;
-      return Math.min(Math.max(1, Number(prev) || 1), deliverableCount);
-    });
+    setPdfTicketCount("");
   }, [deliverableCount]);
 
   const applySummaryEvent = useCallback((payload) => {
@@ -709,6 +712,7 @@ export default function Dashboard() {
       setTicketRequests([]);
       setPromoters([]);
       setLeaderboard([]);
+      setNotifLoaded(false);
       setTicketTypeFilter("ALL");
       setTicketStatusFilter(TICKET_STATUS_FILTERS.TOTAL);
     } finally {
@@ -989,6 +993,31 @@ export default function Dashboard() {
     }
   };
 
+  const loadNotifications = async () => {
+    if (!accessCode || notifLoaded) return;
+    try {
+      const res = await api.get(`/events/by-code/${accessCode}/notifications`);
+      setNotifDraft({ organizerEmail: res.data.organizerEmail || "", notifyOnRequest: res.data.notifyOnRequest, notifyOnMessage: res.data.notifyOnMessage });
+      setNotifLoaded(true);
+    } catch {
+      // silently ignore — will show empty form
+      setNotifLoaded(true);
+    }
+  };
+
+  const saveNotifications = async () => {
+    if (!accessCode || savingNotif) return;
+    setSavingNotif(true);
+    try {
+      await api.patch(`/events/by-code/${accessCode}/notifications`, notifDraft);
+      setNotifFb("success", "Notification preferences saved.");
+    } catch {
+      setNotifFb("error", "Could not save preferences.");
+    } finally {
+      setSavingNotif(false);
+    }
+  };
+
   const addPromoter = async () => {
     if (!promoterForm.name.trim()) {
       setPromoterFb("error", "Promoter name is required.");
@@ -1024,14 +1053,23 @@ export default function Dashboard() {
   const downloadPdf = async (skipWarning = false) => {
     if (!summary?.event?.id || downloading) return;
     if (deliverableCount < 1) {
-      setDeliveryFb("error", "You downloaded all your tickets. Please generate more tickets.");
+      setDeliveryFb("error", "No tickets available. Go to the Tickets menu to generate more.");
+      return;
+    }
+    const requestedCount = Number.parseInt(String(pdfTicketCount || ""), 10);
+    if (Number.isNaN(requestedCount) || requestedCount < 1) {
+      setDeliveryFb("error", "Enter how many tickets you want to download.");
+      return;
+    }
+    if (requestedCount > deliverableCount) {
+      setDeliveryFb("error", `You only have ${deliverableCount} ticket${deliverableCount !== 1 ? "s" : ""} available. Update the number and try again.`);
       return;
     }
     if (!deliveryWarningAcknowledged && skipWarning !== true) {
       openDeliveryWarningModal("download-pdf");
       return;
     }
-    const safeCount = Math.min(Math.max(1, Number.parseInt(String(pdfTicketCount || 1), 10) || 1), deliverableCount);
+    const safeCount = requestedCount;
     setDownloading(true);
     setDeliveryFb("", "");
     try {
@@ -1204,9 +1242,9 @@ export default function Dashboard() {
 
   const handleTicketsGenerated = async () => {
     if (!summary?.event?.id || !accessCode) return;
-    await loadDashboard(accessCode, summary.event.id);
-    setActiveMenu("tickets");
+    await loadTicketsForEvent(summary.event.id);
     setTicketPage(1);
+    setTicketFb("success", "Tickets generated! Head to the Delivery menu to start sending tickets to your customers.");
   };
 
   const confirmDeliveryWarningModal = async () => {
@@ -1339,6 +1377,7 @@ export default function Dashboard() {
 
   const switchToCreateEventMode = () => {
     setEventEditMode(EVENT_EDIT_MODES.CREATE);
+    setSelectedEventId("");
     setEventDraft({
       organizerName: "",
       eventName: "",
@@ -1373,7 +1412,7 @@ export default function Dashboard() {
   };
 
   const selectExistingEvent = async (eventId) => {
-    if (!eventId || !accessCode || eventId === selectedEventId) return;
+    if (!eventId || !accessCode) return;
     const storageKey = getSelectedEventStorageKey(accessCode);
     localStorage.setItem(storageKey, eventId);
     await loadDashboard(accessCode, eventId);
@@ -1572,7 +1611,7 @@ export default function Dashboard() {
             <button
               key={menu.id}
               type="button"
-              onClick={() => setActiveMenu(menu.id)}
+              onClick={() => { setActiveMenu(menu.id); if (menu.id === "notifications") loadNotifications(); }}
               className={`relative rounded border px-3 py-1.5 ${activeMenu === menu.id ? "bg-slate-900 text-white" : "bg-white text-slate-800"}`}
             >
               {menu.label}
@@ -1595,7 +1634,6 @@ export default function Dashboard() {
         <>
           {activeMenu === "events" ? (
             <>
-              <FeedbackBanner className="mt-3" kind={eventFb.kind} message={eventFb.message} />
               <section className="mt-4 rounded border p-4">
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-[100px_1fr] sm:items-center">
                   <p className="font-semibold">Event:</p>
@@ -1605,6 +1643,9 @@ export default function Dashboard() {
                     onChange={(e) => selectExistingEvent(e.target.value)}
                     disabled={!events.length || loading || savingEvent}
                   >
+                    {!selectedEventId && (
+                      <option value="">— select an existing event —</option>
+                    )}
                     {events.map((eventItem) => (
                       <option key={eventItem.id} value={eventItem.id}>
                         {eventItem.eventName} ({formatDate(eventItem.eventDate)})
@@ -1664,6 +1705,7 @@ export default function Dashboard() {
                     Edit Event
                   </AppButton>
                 </div>
+                <FeedbackBanner className="mt-3" kind={eventFb.kind} message={eventFb.message} />
                 {eventEditMode === EVENT_EDIT_MODES.CREATE ? (
                   <p className="mt-2 text-xs text-blue-700">
                     {isAccessCodeGenerationMode
@@ -1717,7 +1759,6 @@ export default function Dashboard() {
 
           {activeMenu === "tickets" ? (
             <section className="mt-4 rounded border p-4">
-              <FeedbackBanner className="mb-3" kind={ticketFb.kind} message={ticketFb.message} />
               <div className="mb-5">
                 <TicketEditor
                   key={summary.event.id}
@@ -1738,6 +1779,12 @@ export default function Dashboard() {
                   saveLoading={savingTicketDraft}
                 />
               </div>
+              <FeedbackBanner className="mb-3" kind={ticketFb.kind} message={ticketFb.message} />
+              {ticketFb.kind === "success" && ticketFb.message.startsWith("Tickets generated") ? (
+                <div className="mb-3">
+                  <AppButton variant="primary" onClick={() => setActiveMenu("delivery")}>Go to Delivery →</AppButton>
+                </div>
+              ) : null}
               <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
                 <button
                   type="button"
@@ -1949,29 +1996,48 @@ export default function Dashboard() {
 
               {deliveryMethod === DELIVERY_METHODS.PDF ? (
                 <div className="mt-3">
-                  <label className="mb-1 block text-sm font-medium">Number of tickets to download</label>
-                  <input
-                    className="w-full rounded border p-2 text-sm sm:w-44"
-                    type="number"
-                    min={1}
-                    max={Math.max(1, deliverableCount)}
-                    value={pdfTicketCount}
-                    onChange={(event) => setPdfTicketCount(Math.max(1, Number.parseInt(event.target.value, 10) || 1))}
-                    disabled={downloading || deliverableCount < 1}
-                  />
-                  <p className="mt-1 text-xs text-slate-600">
-                    Deliverable tickets left: {deliverableCount}. Already downloaded via PDF: {pdfDeliveredCount}.
-                  </p>
-                  {pendingRequestedCount > 0 ? (
-                    <p className="mt-1 text-xs text-amber-700">
-                      You have {pendingRequestedCount} ticket(s) requested via public page. You can only download {deliverableCount} ticket(s).
-                    </p>
-                  ) : null}
-                  <label className="mb-1 block text-sm font-medium">Tickets per page</label>
-                  <select className="w-full rounded border p-2 text-sm sm:w-44" value={pdfTicketsPerPage} onChange={(event) => setPdfTicketsPerPage(Number.parseInt(event.target.value, 10) || 2)} disabled={downloading}>
-                    {PDF_TICKETS_PER_PAGE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
-                  </select>
-                  <AppButton className="mt-3" variant="secondary" onClick={() => void downloadPdf()} loading={downloading} loadingText="Downloading...">Download Tickets PDF</AppButton>
+                  {deliverableCount < 1 ? (
+                    <div className="rounded border border-amber-300 bg-amber-50 p-4">
+                      <p className="font-semibold text-amber-900">No tickets available to download.</p>
+                      <p className="mt-1 text-sm text-amber-800">
+                        {pdfDeliveredCount > 0
+                          ? `You've already downloaded all ${pdfDeliveredCount} ticket(s) as PDF.`
+                          : "All your tickets have been delivered through other methods."}
+                        {" "}Generate more tickets to continue.
+                      </p>
+                      <AppButton className="mt-3" variant="secondary" onClick={() => setActiveMenu("tickets")}>
+                        Go to Tickets → Generate More
+                      </AppButton>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="mb-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm">
+                        <span className="font-semibold text-emerald-800">{deliverableCount} ticket{deliverableCount !== 1 ? "s" : ""} ready to download.</span>
+                        {pdfDeliveredCount > 0 ? <span className="ml-2 text-emerald-700">{pdfDeliveredCount} already downloaded.</span> : null}
+                      </div>
+                      <label className="mb-1 block text-sm font-medium">How many tickets to download?</label>
+                      <input
+                        className="w-full rounded border p-2 text-sm sm:w-44"
+                        type="number"
+                        min={1}
+                        max={deliverableCount}
+                        placeholder={`1 – ${deliverableCount}`}
+                        value={pdfTicketCount}
+                        onChange={(event) => setPdfTicketCount(event.target.value)}
+                        disabled={downloading}
+                      />
+                      {pendingRequestedCount > 0 ? (
+                        <p className="mt-1 text-xs text-amber-700">
+                          {pendingRequestedCount} ticket(s) are reserved for pending public requests and are not included in your {deliverableCount} available.
+                        </p>
+                      ) : null}
+                      <label className="mb-1 mt-3 block text-sm font-medium">Tickets per page</label>
+                      <select className="w-full rounded border p-2 text-sm sm:w-44" value={pdfTicketsPerPage} onChange={(event) => setPdfTicketsPerPage(Number.parseInt(event.target.value, 10) || 2)} disabled={downloading}>
+                        {PDF_TICKETS_PER_PAGE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                      </select>
+                      <AppButton className="mt-3" variant="secondary" onClick={() => void downloadPdf()} loading={downloading} loadingText="Downloading...">Download Tickets PDF</AppButton>
+                    </>
+                  )}
                 </div>
               ) : null}
 
@@ -2372,11 +2438,11 @@ export default function Dashboard() {
           {activeMenu === "promoters" ? (
             <section className="mt-4 rounded border p-4">
               <p className="text-sm font-semibold">Promoters</p>
-              <FeedbackBanner className="mt-2" kind={promoterFb.kind} message={promoterFb.message} />
               <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <input className="rounded border p-2" placeholder="Name" value={promoterForm.name} onChange={(e) => setPromoterForm((prev) => ({ ...prev, name: e.target.value }))} />
               </div>
               <AppButton className="mt-3" onClick={addPromoter}>Add Promoter</AppButton>
+              <FeedbackBanner className="mt-2" kind={promoterFb.kind} message={promoterFb.message} />
               <p className="mt-2 text-xs text-slate-600">
                 Add a promoter name to generate a tracking link and measure how many guests each promoter brings.
               </p>
@@ -2411,6 +2477,54 @@ export default function Dashboard() {
                   {!leaderboard.length ? <p className="text-slate-500">No data yet.</p> : null}
                 </div>
               </div>
+            </section>
+          ) : null}
+
+          {activeMenu === "notifications" ? (
+            <section className="mt-4 rounded border p-4">
+              <p className="text-sm font-semibold">Notifications</p>
+              <p className="mt-1 text-xs text-slate-500">
+                Enter your email below to receive notifications when customers send a ticket request,
+                reply to a message, or when the admin contacts you. Without this, you must log in
+                to the dashboard regularly to check for new activity.
+              </p>
+              <div className="mt-4 grid grid-cols-1 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-700">Your email address</label>
+                  <input
+                    className="w-full rounded border p-2 text-sm"
+                    type="email"
+                    placeholder="you@example.com"
+                    value={notifDraft.organizerEmail}
+                    onChange={(e) => setNotifDraft((prev) => ({ ...prev, organizerEmail: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="block text-xs font-medium text-slate-700">Notify me when:</label>
+                  <label className="flex items-start gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={notifDraft.notifyOnRequest}
+                      onChange={(e) => setNotifDraft((prev) => ({ ...prev, notifyOnRequest: e.target.checked }))}
+                    />
+                    <span>A customer submits a ticket request</span>
+                  </label>
+                  <label className="flex items-start gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={notifDraft.notifyOnMessage}
+                      onChange={(e) => setNotifDraft((prev) => ({ ...prev, notifyOnMessage: e.target.checked }))}
+                    />
+                    <span>A customer or the admin sends you a message</span>
+                  </label>
+                </div>
+              </div>
+              <AppButton className="mt-4" onClick={saveNotifications} loading={savingNotif} loadingText="Saving...">
+                Save Preferences
+              </AppButton>
+              <FeedbackBanner className="mt-2" kind={notifFb.kind} message={notifFb.message} />
             </section>
           ) : null}
 

@@ -8,6 +8,8 @@ const {
   generateTicketsByAccessCode,
   getTicketsPdf,
   updateEventInline,
+  getOrganizerNotifications,
+  updateOrganizerNotifications,
 } = require("../controllers/eventController");
 const { scanTicket } = require("../controllers/scanController");
 const { getTicketByPublicId, getPublicTicketByPublicId } = require("../controllers/ticketController");
@@ -91,6 +93,8 @@ router.post("/public/support/conversations/:conversationToken/messages", sendSup
 router.get("/events/by-code/:accessCode/ticket-requests", getOrganizerTicketRequests);
 router.get("/events/by-code/:accessCode/auto-approve", getEventAutoApprove);
 router.patch("/events/by-code/:accessCode/auto-approve", setEventAutoApprove);
+router.get("/events/by-code/:accessCode/notifications", getOrganizerNotifications);
+router.patch("/events/by-code/:accessCode/notifications", updateOrganizerNotifications);
 router.post("/ticket-requests/:id/approve", approveTicketRequest);
 router.post("/ticket-requests/:id/reject", rejectTicketRequest);
 router.post("/ticket-requests/:id/message", messageTicketRequest);

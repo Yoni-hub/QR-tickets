@@ -45,6 +45,7 @@ async function getTicketByPublicId(req, res) {
           accessCode: true,
           isDemo: true,
           adminStatus: true,
+          designJson: true,
         },
       },
     },
@@ -78,7 +79,22 @@ async function getTicketByPublicId(req, res) {
     status: ticket.event.adminStatus === "ACTIVE" ? "ACTIVE" : "DISABLED",
   };
 
-  res.json({ ticket, order });
+  // Override priceText in ticket designJson using the event's current currency setting
+  const currency = String(ticket.event.designJson?.currency || "$").trim();
+  let ticketOut = ticket;
+  if (ticket.designJson && typeof ticket.designJson === "object") {
+    const price = ticket.ticketPrice != null ? Number(ticket.ticketPrice) : null;
+    const priceText = price != null && Number.isFinite(price) && price > 0
+      ? `${currency}${price.toFixed(2)}`
+      : ticket.designJson.priceText || "Free";
+    ticketOut = { ...ticket, designJson: { ...ticket.designJson, priceText, currency } };
+  }
+
+  // Strip event.designJson from the response (internal data)
+  const { designJson: _eventDesign, ...eventOut } = ticket.event;
+  ticketOut = { ...ticketOut, event: eventOut };
+
+  res.json({ ticket: ticketOut, order });
 }
 
 async function getPublicTicketByPublicId(req, res) {

@@ -12,12 +12,13 @@ export default function PublicEventPage() {
     <PublicEventExperience
       eventSlug={eventSlug}
       promoterCode={promoterCode}
-      onRequestSuccess={(responseData) => {
+      onRequestSuccess={(responseData, currency) => {
         navigate(`/e/${eventSlug}/confirm`, {
           state: {
             request: responseData.request,
             instructions: responseData.instructions,
             payment: responseData.payment,
+            currency,
           },
         });
       }}
