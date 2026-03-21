@@ -986,21 +986,18 @@ async function updateOrganizerNotifications(req, res) {
     res.status(400).json({ error: "accessCode is required." });
     return;
   }
-  const event = await prisma.userEvent.findFirst({
-    where: { OR: [{ accessCode }, { organizerAccessCode: accessCode }] },
-    select: { id: true },
-  });
-  if (!event) {
-    res.status(404).json({ error: "Event not found." });
-    return;
-  }
   const organizerEmail = String(req.body?.organizerEmail || "").trim();
   const notifyOnRequest = Boolean(req.body?.notifyOnRequest);
   const notifyOnMessage = Boolean(req.body?.notifyOnMessage);
-  await prisma.userEvent.update({
-    where: { id: event.id },
+  // Update ALL events for this organizer so any event slug gets the notification settings
+  const result = await prisma.userEvent.updateMany({
+    where: { OR: [{ accessCode }, { organizerAccessCode: accessCode }] },
     data: { organizerEmail: organizerEmail || null, notifyOnRequest, notifyOnMessage },
   });
+  if (result.count === 0) {
+    res.status(404).json({ error: "Event not found." });
+    return;
+  }
   res.json({ ok: true });
 }
 

@@ -474,6 +474,10 @@ export default function Dashboard() {
   const eventPrimaryActionLabel = isAccessCodeGenerationMode ? "Generate Access Code" : "Save Event";
   const eventPrimaryLoadingLabel = isAccessCodeGenerationMode ? "Generating..." : "Saving...";
   const visibleMenus = summary ? DASHBOARD_MENUS_ALL : DASHBOARD_MENUS_PRELOAD;
+  const pendingRequestCount = useMemo(
+    () => ticketRequests.filter((r) => r.status === "PENDING_VERIFICATION").length,
+    [ticketRequests],
+  );
   const ticketTypeOptions = useMemo(
     () =>
       Array.from(
@@ -630,6 +634,41 @@ export default function Dashboard() {
     }, 8000);
     return () => clearInterval(interval);
   }, [chatContext?.id, accessCode]);
+
+  // Poll chat unread count in background when not on the chat menu
+  useEffect(() => {
+    if (!organizerChatAccessCode || activeMenu === "chat") return undefined;
+    const fetchUnread = async () => {
+      try {
+        const res = await organizerChatApi.listConversations(organizerChatAccessCode);
+        const items = res.data?.items || [];
+        setChatUnreadTotal(items.reduce((sum, item) => sum + (item.unreadCount || 0), 0));
+      } catch {
+        // ignore
+      }
+    };
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 30000);
+    return () => clearInterval(interval);
+  }, [organizerChatAccessCode, activeMenu]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Poll pending ticket requests count in background when not on the requests menu
+  useEffect(() => {
+    if (!accessCode || !summary?.event?.id || activeMenu === "requests") return undefined;
+    const poll = async () => {
+      try {
+        const res = await api.get(`/events/by-code/${encodeURIComponent(accessCode)}/ticket-requests`, {
+          params: { eventId: summary.event.id },
+        });
+        setTicketRequests(res.data.items || []);
+      } catch {
+        // ignore
+      }
+    };
+    const interval = setInterval(poll, 30000);
+    return () => clearInterval(interval);
+  }, [accessCode, summary?.event?.id, activeMenu]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     setPdfTicketCount("");
   }, [deliverableCount]);
@@ -1644,6 +1683,11 @@ export default function Dashboard() {
               {menu.id === "chat" && chatUnreadTotal > 0 ? (
                 <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-indigo-600 px-1 text-[10px] font-bold text-white">
                   {chatUnreadTotal > 99 ? "99+" : chatUnreadTotal}
+                </span>
+              ) : null}
+              {menu.id === "requests" && pendingRequestCount > 0 ? (
+                <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
+                  {pendingRequestCount > 99 ? "99+" : pendingRequestCount}
                 </span>
               ) : null}
             </button>
