@@ -161,7 +161,7 @@ async function getOrganizerTicketRequests(req, res) {
     let deliveryStatus = "PENDING";
     if (request.status === "APPROVED") {
       if (!latestStatuses.length) {
-        deliveryStatus = "PENDING";
+        deliveryStatus = "CLIENT DASHBOARD";
       } else {
         const sentCount = latestStatuses.filter((status) => status === "SENT").length;
         const failedCount = latestStatuses.filter((status) => status === "FAILED").length;
