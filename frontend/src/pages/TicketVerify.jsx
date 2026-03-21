@@ -89,7 +89,7 @@ export default function TicketVerify() {
           <span className="font-semibold">Type:</span> {ticket.ticketType || "General"}
         </p>
         <p className="break-words">
-          <span className="font-semibold">Price:</span> {ticket.ticketPrice != null ? `$${Number(ticket.ticketPrice).toFixed(2)}` : "Free"}
+          <span className="font-semibold">Price:</span> {ticket.designJson?.priceText || (ticket.ticketPrice != null ? `${ticket.designJson?.currency || "$"}${Number(ticket.ticketPrice).toFixed(2)}` : "Free")}
         </p>
         <p className="break-all">
           <span className="font-semibold">Ticket ID:</span> <span className="font-mono">{ticket.ticketPublicId}</span>

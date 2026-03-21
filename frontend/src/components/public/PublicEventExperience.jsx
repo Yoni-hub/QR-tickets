@@ -116,6 +116,10 @@ export default function PublicEventExperience({
       setFeedback({ kind: "error", message: "Name is required." });
       return;
     }
+    if (!form.email.trim()) {
+      setFeedback({ kind: "error", message: "Email is required so we can send you your ticket." });
+      return;
+    }
     if (totalQuantity < 1) {
       setFeedback({ kind: "error", message: "Please add quantity for at least one ticket type." });
       return;
@@ -149,7 +153,7 @@ export default function PublicEventExperience({
       });
 
       if (typeof onRequestSuccess === "function") {
-        onRequestSuccess(response.data);
+        onRequestSuccess(response.data, eventData?.event?.currency || "$");
       }
     } catch (requestError) {
       const responseData = requestError.response?.data;
@@ -189,17 +193,20 @@ export default function PublicEventExperience({
               </div>
               <div className="mt-1 grid grid-cols-4 gap-2 items-center text-sm text-slate-900">
                 <p className="font-medium break-words">{item.ticketType}</p>
-                <p>{item.price != null ? `$${Number(item.price).toFixed(2)}` : "Ask organizer"}</p>
-                <p>{item.ticketsRemaining}</p>
-                <input
-                  className="w-full rounded border p-1.5"
-                  type="number"
-                  min={0}
-                  max={Math.max(0, Number(item.ticketsRemaining || 0))}
-                  value={quantitiesByType[item.ticketType] ?? 0}
-                  onChange={(event) => handleTypeQuantityChange(item.ticketType, event.target.value)}
-                  disabled={Number(item.ticketsRemaining || 0) <= 0}
-                />
+                <p>{item.price != null ? `${eventData.event.currency || "$"}${Number(item.price).toFixed(2)}` : "Ask organizer"}</p>
+                <p>{Number(item.ticketsRemaining || 0) <= 0 ? <span className="inline-block rounded bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">Sold out</span> : item.ticketsRemaining}</p>
+                {Number(item.ticketsRemaining || 0) <= 0 ? (
+                  <span className="text-xs text-slate-400">—</span>
+                ) : (
+                  <input
+                    className="w-full rounded border p-1.5"
+                    type="number"
+                    min={0}
+                    max={Math.max(0, Number(item.ticketsRemaining || 0))}
+                    value={quantitiesByType[item.ticketType] ?? 0}
+                    onChange={(event) => handleTypeQuantityChange(item.ticketType, event.target.value)}
+                  />
+                )}
               </div>
             </article>
           ))}
@@ -219,18 +226,25 @@ export default function PublicEventExperience({
               {(eventData.event.ticketTypes || []).map((item) => (
                 <tr key={item.ticketType} className="border-t">
                   <td className="p-2 font-medium">{item.ticketType}</td>
-                  <td className="p-2">{item.price != null ? `$${Number(item.price).toFixed(2)}` : "Ask organizer"}</td>
-                  <td className="p-2">{item.ticketsRemaining}</td>
+                  <td className="p-2">{item.price != null ? `${eventData.event.currency || "$"}${Number(item.price).toFixed(2)}` : "Ask organizer"}</td>
                   <td className="p-2">
-                    <input
-                      className="w-24 rounded border p-1.5"
-                      type="number"
-                      min={0}
-                      max={Math.max(0, Number(item.ticketsRemaining || 0))}
-                      value={quantitiesByType[item.ticketType] ?? 0}
-                      onChange={(event) => handleTypeQuantityChange(item.ticketType, event.target.value)}
-                      disabled={Number(item.ticketsRemaining || 0) <= 0}
-                    />
+                    {Number(item.ticketsRemaining || 0) <= 0
+                      ? <span className="inline-block rounded bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">Sold out</span>
+                      : item.ticketsRemaining}
+                  </td>
+                  <td className="p-2">
+                    {Number(item.ticketsRemaining || 0) <= 0 ? (
+                      <span className="text-xs text-slate-400">—</span>
+                    ) : (
+                      <input
+                        className="w-24 rounded border p-1.5"
+                        type="number"
+                        min={0}
+                        max={Math.max(0, Number(item.ticketsRemaining || 0))}
+                        value={quantitiesByType[item.ticketType] ?? 0}
+                        onChange={(event) => handleTypeQuantityChange(item.ticketType, event.target.value)}
+                      />
+                    )}
                   </td>
                 </tr>
               ))}
@@ -249,7 +263,7 @@ export default function PublicEventExperience({
         <h2 className="text-lg font-semibold">Request Tickets</h2>
         <div className="mt-3 grid grid-cols-1 gap-2">
           <input className="rounded border p-2" placeholder="Name (required)" value={form.name} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} />
-          <input className="rounded border p-2" type="email" placeholder="Email (optional — for notifications)" value={form.email} onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))} />
+          <input className="rounded border p-2" type="email" placeholder="Email (required — we'll send your ticket here)" value={form.email} onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))} />
         </div>
 
         {isFreeSelection ? (
@@ -261,7 +275,7 @@ export default function PublicEventExperience({
         ) : (
           <>
             <div className="mt-3 rounded border bg-amber-50 p-3 text-sm text-amber-900">
-              <p className="font-semibold">Total payment: ${finalPrice.toFixed(2)}</p>
+              <p className="font-semibold">Total payment: {eventData.event.currency || "$"}{finalPrice.toFixed(2)}</p>
               <p className="mt-1">Selected tickets: {totalQuantity}</p>
               <p className="mt-1">Organizer Instructions: </p>
               <p className="mt-1">{eventData.event.paymentInstructions || "Please contact the organizer for payment instructions."}</p>

@@ -31,6 +31,7 @@ export default function TicketPreview({
   helperText,
   showRemoveTicketType = false,
   onRemoveTicketType = null,
+  currency = "$",
 }) {
   const [autoTextColor, setAutoTextColor] = useState("#ffffff");
 
@@ -41,7 +42,13 @@ export default function TicketPreview({
     onTicketGroupChange(field, nextValue);
   };
   const resolvedTicketTypeLabel = String(ticketGroup?.ticketType || "").trim() || "General";
-  const resolvedPriceText = String(ticketGroup?.ticketPrice || "").trim() || "0";
+  const rawPrice = String(ticketGroup?.ticketPrice || "").trim();
+  const parsedRawPrice = rawPrice === "" ? NaN : Number(rawPrice);
+  const resolvedPriceText = rawPrice
+    ? Number.isFinite(parsedRawPrice) && parsedRawPrice > 0
+      ? `${String(currency || "$").trim()}${parsedRawPrice.toFixed(2)}`
+      : rawPrice
+    : "0";
 
   const headerStyle = ticketGroup?.headerImageDataUrl
     ? {

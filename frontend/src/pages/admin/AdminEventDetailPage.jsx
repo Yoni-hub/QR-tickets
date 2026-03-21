@@ -69,7 +69,7 @@ export default function AdminEventDetailPage() {
           <p><span className="font-semibold">Location:</span> {configurationSnapshot?.location || "-"}</p>
           <p><span className="font-semibold">Tickets Requested:</span> {configurationSnapshot?.ticketsRequested ?? "-"}</p>
           <p><span className="font-semibold">Default Ticket Type:</span> {configurationSnapshot?.ticketType || "-"}</p>
-          <p><span className="font-semibold">Default Ticket Price:</span> {configurationSnapshot?.ticketPrice != null ? `$${Number(configurationSnapshot.ticketPrice).toFixed(2)}` : "Ask organizer"}</p>
+          <p><span className="font-semibold">Default Ticket Price:</span> {configurationSnapshot?.ticketPrice != null ? `${configurationSnapshot?.designJson?.currency || "$"}${Number(configurationSnapshot.ticketPrice).toFixed(2)}` : "Ask organizer"}</p>
           <p><span className="font-semibold">Header Image:</span> {configurationSnapshot?.hasHeaderImage ? "Yes" : "No"}</p>
         </div>
         {Array.isArray(configurationSnapshot?.designJson?.ticketGroups) && configurationSnapshot.designJson.ticketGroups.length ? (
@@ -78,7 +78,7 @@ export default function AdminEventDetailPage() {
             {configurationSnapshot.designJson.ticketGroups.map((group, index) => (
               <div key={`${group.ticketType || "group"}-${index}`} className="rounded border bg-slate-50 p-2 text-xs">
                 <p><span className="font-semibold">Type:</span> {group.ticketType || "-"}</p>
-                <p><span className="font-semibold">Price:</span> {group.ticketPrice != null ? `$${Number(group.ticketPrice).toFixed(2)}` : "-"}</p>
+                <p><span className="font-semibold">Price:</span> {group.ticketPrice != null ? `${configurationSnapshot?.designJson?.currency || "$"}${Number(group.ticketPrice).toFixed(2)}` : "-"}</p>
                 <p><span className="font-semibold">Header Text:</span> {group.headerText || "-"}</p>
               </div>
             ))}

@@ -72,6 +72,8 @@ export default function AdminOrganizersPage() {
                       <div>
                         <p className="text-xs uppercase tracking-wide text-slate-500">Organizer Access Code</p>
                         <p className="font-mono text-sm font-semibold">{organizer.organizerAccessCode}</p>
+                        {organizer.organizerName ? <p className="mt-0.5 text-sm font-medium">{organizer.organizerName}</p> : null}
+                        {organizer.organizerEmail ? <p className="text-xs text-slate-600">{organizer.organizerEmail}</p> : null}
                         <p className="mt-1 text-xs text-slate-500">Latest event: {formatDate(organizer.latestEventCreatedAt)}</p>
                       </div>
                     </div>
@@ -150,6 +152,8 @@ export default function AdminOrganizersPage() {
               <thead className="bg-slate-100 text-xs uppercase tracking-wide text-slate-600">
                 <tr>
                   <th className="px-3 py-2">Organizer Access Code</th>
+                  <th className="px-3 py-2">Name</th>
+                  <th className="px-3 py-2">Email</th>
                   <th className="px-3 py-2">Events</th>
                   <th className="px-3 py-2">Tickets</th>
                   <th className="px-3 py-2">Used</th>
@@ -166,6 +170,8 @@ export default function AdminOrganizersPage() {
                     <Fragment key={organizer.organizerAccessCode}>
                       <tr className="border-t align-top">
                         <td className="px-3 py-2 font-mono">{organizer.organizerAccessCode}</td>
+                        <td className="px-3 py-2">{organizer.organizerName || <span className="text-slate-400">—</span>}</td>
+                        <td className="px-3 py-2">{organizer.organizerEmail || <span className="text-slate-400">—</span>}</td>
                         <td className="px-3 py-2">{organizer.eventsTotal}</td>
                         <td className="px-3 py-2">{organizer.ticketsTotal}</td>
                         <td className="px-3 py-2">{organizer.ticketsUsed}</td>
@@ -191,7 +197,7 @@ export default function AdminOrganizersPage() {
                       </tr>
                       {isExpanded ? (
                         <tr className="border-t bg-slate-50">
-                          <td className="px-3 py-3" colSpan={8}>
+                          <td className="px-3 py-3" colSpan={10}>
                             {Array.isArray(organizer.events) && organizer.events.length ? (
                               <div className="overflow-x-auto rounded border bg-white">
                                 <table className="min-w-full text-left text-xs">
