@@ -3,7 +3,7 @@ const fs = require("fs");
 const prisma = require("../utils/prisma");
 const { saveChatAttachment, resolveAttachmentAbsolutePath } = require("./chatAttachmentService");
 const socketManager = require("../socket/socketManager");
-const { sendNewChatMessageEmail } = require("../utils/mailer");
+const { sendNewChatMessageEmail, sendOrganizerNewMessageEmail } = require("../utils/mailer");
 const { getPublicBaseUrl } = require("./eventService");
 
 const CHAT_ACTOR = {
@@ -699,6 +699,29 @@ async function sendMessageForActor(actor, conversationIdRaw, payload = {}) {
       data: { emailStatus },
       include: { attachments: true },
     });
+  }
+
+  // Email notification: when client sends a message to organizer, notify organizer by email
+  if (
+    actor.type === CHAT_ACTOR.CLIENT &&
+    resolved.conversation.conversationType === CHAT_CONVERSATION_TYPE.ORGANIZER_CLIENT &&
+    resolved.conversation.event?.id
+  ) {
+    prisma.userEvent.findUnique({
+      where: { id: resolved.conversation.event.id },
+      select: { organizerEmail: true, notifyOnMessage: true, organizerAccessCode: true, accessCode: true },
+    }).then((event) => {
+      if (event?.organizerEmail && event?.notifyOnMessage) {
+        const codeForUrl = event.organizerAccessCode || event.accessCode;
+        const dashboardUrl = `${getPublicBaseUrl()}/dashboard?code=${encodeURIComponent(codeForUrl)}&menu=chat`;
+        sendOrganizerNewMessageEmail({
+          to: event.organizerEmail,
+          eventName: resolved.conversation.event.eventName || "",
+          senderName: resolved.conversation.ticketRequest?.name || "A customer",
+          dashboardUrl,
+        }).catch((err) => console.error("organizer chat notify failed", err));
+      }
+    }).catch(() => {});
   }
 
   const mappedMessage = mapMessage(finalMessage, {
