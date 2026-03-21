@@ -421,6 +421,8 @@ export default function Dashboard() {
   });
   const ticketEditorDraftRef = useRef(null);
   const organizerNameRef = useRef(null);
+  const [showGetStartedHint, setShowGetStartedHint] = useState(false);
+  const getStartedHintTimerRef = useRef(null);
   const copyResetTimersRef = useRef({
     publicEventLink: null,
     ticketPublicId: null,
@@ -1586,6 +1588,9 @@ export default function Dashboard() {
       organizerNameRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
       organizerNameRef.current.focus();
     }
+    clearTimeout(getStartedHintTimerRef.current);
+    setShowGetStartedHint(true);
+    getStartedHintTimerRef.current = setTimeout(() => setShowGetStartedHint(false), 10000);
   };
 
   const handleAlreadyHaveCode = () => {
@@ -1693,11 +1698,6 @@ export default function Dashboard() {
             </button>
           ))}
         </div>
-      ) : null}
-      {shouldOpenHomeMode && !summary ? (
-        <p className="mt-2 text-xs text-blue-700">
-          Fill in your event details. You can update them anytime.
-        </p>
       ) : null}
 
       {summary ? (
@@ -2814,7 +2814,9 @@ export default function Dashboard() {
                 onChange={(e) => setEventDraft((prev) => ({ ...prev, organizerName: e.target.value }))}
                 placeholder="Organizer or brand name"
               />
-              {isAccessCodeGenerationMode ? (
+              {showGetStartedHint ? (
+                <p className="mt-1 text-xs text-blue-700">Fill in your event details. You can update them anytime.</p>
+              ) : isAccessCodeGenerationMode ? (
                 <p className="mt-1 text-xs text-indigo-600">Start here — enter your name or brand to generate your organizer access code.</p>
               ) : null}
             </div>
