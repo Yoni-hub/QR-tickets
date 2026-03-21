@@ -740,12 +740,16 @@ export default function Dashboard() {
     setLoading(true);
     setLoadFb("", "");
     setSendSummary(null);
-    setParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.set("code", trimmedCode);
-      next.set("menu", "events");
-      return next;
-    });
+    if (location.pathname === "/") {
+      navigate(`/dashboard?code=${encodeURIComponent(trimmedCode)}&menu=events`, { replace: true });
+    } else {
+      setParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.set("code", trimmedCode);
+        next.set("menu", "events");
+        return next;
+      });
+    }
 
     const storageKey = getSelectedEventStorageKey(trimmedCode);
     const storedEventId = requestedEventId || localStorage.getItem(storageKey) || "";
@@ -785,7 +789,7 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  }, [loading, setParams, applySummaryEvent]);
+  }, [loading, setParams, applySummaryEvent, navigate, location.pathname]);
 
   const load = async () => {
     const trimmedCode = code.trim();
@@ -2816,9 +2820,6 @@ export default function Dashboard() {
               />
               {showGetStartedHint ? (
                 <p className="mt-1 text-xs text-blue-700">Fill in your event details. You can update them anytime.</p>
-              ) : null}
-              {showGetStartedHint ? (
-                <p className="mt-1 text-xs text-indigo-600">Start here — enter your name or brand to generate your organizer access code.</p>
               ) : null}
             </div>
             <p className="font-semibold">Event Name:</p>
