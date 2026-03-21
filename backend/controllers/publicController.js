@@ -8,7 +8,7 @@ const {
   startConversationForActor,
   sendSystemMessageForTicketRequest,
 } = require("../services/chatService");
-const { sendTicketApprovedEmail } = require("../utils/mailer");
+const { sendTicketApprovedEmail, sendOrganizerNewRequestEmail, sendOrganizerNewMessageEmail } = require("../utils/mailer");
 const { createTicketsForRequest } = require("./organizerController");
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -368,6 +368,10 @@ async function createPublicTicketRequest(req, res) {
       designJson: true,
       adminStatus: true,
       autoApprove: true,
+      organizerEmail: true,
+      notifyOnRequest: true,
+      organizerAccessCode: true,
+      accessCode: true,
     },
   });
 
@@ -511,6 +515,17 @@ async function createPublicTicketRequest(req, res) {
         : request.event.paymentInstructions ||
           "Send payment using the organizer instructions and wait for approval.",
   });
+
+  // Fire-and-forget organizer notification
+  if (event.organizerEmail && event.notifyOnRequest) {
+    const baseUrl = getPublicBaseUrl();
+    const dashboardUrl = `${baseUrl}/dashboard?code=${encodeURIComponent(event.organizerAccessCode || event.accessCode)}`;
+    sendOrganizerNewRequestEmail({
+      to: event.organizerEmail,
+      eventName: event.eventName,
+      dashboardUrl,
+    }).catch((err) => console.error("organizer notify email failed", err));
+  }
 }
 
 async function getClientDashboardByToken(req, res) {
@@ -665,7 +680,19 @@ async function createClientRequestMessageByToken(req, res) {
 
   const request = await prisma.ticketRequest.findFirst({
     where: { clientAccessToken },
-    select: { id: true },
+    select: {
+      id: true,
+      name: true,
+      event: {
+        select: {
+          eventName: true,
+          organizerEmail: true,
+          notifyOnMessage: true,
+          organizerAccessCode: true,
+          accessCode: true,
+        },
+      },
+    },
   });
   if (!request) {
     res.status(404).json({ error: "Client dashboard not found." });
@@ -682,6 +709,19 @@ async function createClientRequestMessageByToken(req, res) {
   });
 
   res.status(201).json({ message: mapChatMessage(created) });
+
+  // Fire-and-forget organizer notification
+  const eventForNotif = request.event;
+  if (eventForNotif?.organizerEmail && eventForNotif?.notifyOnMessage) {
+    const baseUrl = getPublicBaseUrl();
+    const dashboardUrl = `${baseUrl}/dashboard?code=${encodeURIComponent(eventForNotif.organizerAccessCode || eventForNotif.accessCode)}`;
+    sendOrganizerNewMessageEmail({
+      to: eventForNotif.organizerEmail,
+      eventName: eventForNotif.eventName,
+      senderName: request.name || "A customer",
+      dashboardUrl,
+    }).catch((err) => console.error("organizer message notify failed", err));
+  }
 }
 
 module.exports = {

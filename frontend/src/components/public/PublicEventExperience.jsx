@@ -20,6 +20,7 @@ export default function PublicEventExperience({
   const [eventData, setEventData] = useState(null);
   const [form, setForm] = useState({ name: "", email: "", ticketType: "", quantity: 0 });
   const [quantitiesByType, setQuantitiesByType] = useState({});
+  const [quantityErrors, setQuantityErrors] = useState({});
   const [evidenceImageDataUrl, setEvidenceImageDataUrl] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState({ kind: "", message: "" });
@@ -78,13 +79,18 @@ export default function PublicEventExperience({
     : false;
   const isFreeSelection = totalQuantity > 0 ? finalPrice <= 0 : allTicketTypesFree;
 
-  const handleTypeQuantityChange = (ticketType, rawValue) => {
-    const parsedQuantity = Math.max(0, Number.parseInt(rawValue, 10) || 0);
-    setQuantitiesByType((prev) => ({ ...prev, [ticketType]: parsedQuantity }));
+  const handleTypeQuantityChange = (ticketType, rawValue, maxRemaining) => {
+    const parsed = Math.max(0, Number.parseInt(rawValue, 10) || 0);
+    const capped = maxRemaining != null ? Math.min(parsed, maxRemaining) : parsed;
+    setQuantitiesByType((prev) => ({ ...prev, [ticketType]: capped }));
+    setQuantityErrors((prev) => ({
+      ...prev,
+      [ticketType]: parsed > maxRemaining ? `Only ${maxRemaining} ticket${maxRemaining !== 1 ? "s" : ""} remaining` : "",
+    }));
     setForm((prev) => ({
       ...prev,
-      ticketType: parsedQuantity > 0 ? ticketType : prev.ticketType,
-      quantity: parsedQuantity,
+      ticketType: capped > 0 ? ticketType : prev.ticketType,
+      quantity: capped,
     }));
   };
 
@@ -198,14 +204,17 @@ export default function PublicEventExperience({
                 {Number(item.ticketsRemaining || 0) <= 0 ? (
                   <span className="text-xs text-slate-400">—</span>
                 ) : (
-                  <input
-                    className="w-full rounded border p-1.5"
-                    type="number"
-                    min={0}
-                    max={Math.max(0, Number(item.ticketsRemaining || 0))}
-                    value={quantitiesByType[item.ticketType] ?? 0}
-                    onChange={(event) => handleTypeQuantityChange(item.ticketType, event.target.value)}
-                  />
+                  <div>
+                    <input
+                      className="w-full rounded border p-1.5"
+                      type="number"
+                      min={0}
+                      max={Math.max(0, Number(item.ticketsRemaining || 0))}
+                      value={quantitiesByType[item.ticketType] || ""}
+                      onChange={(event) => handleTypeQuantityChange(item.ticketType, event.target.value, Number(item.ticketsRemaining || 0))}
+                    />
+                    {quantityErrors[item.ticketType] ? <p className="mt-1 text-xs text-red-600">{quantityErrors[item.ticketType]}</p> : null}
+                  </div>
                 )}
               </div>
             </article>
@@ -236,14 +245,17 @@ export default function PublicEventExperience({
                     {Number(item.ticketsRemaining || 0) <= 0 ? (
                       <span className="text-xs text-slate-400">—</span>
                     ) : (
-                      <input
-                        className="w-24 rounded border p-1.5"
-                        type="number"
-                        min={0}
-                        max={Math.max(0, Number(item.ticketsRemaining || 0))}
-                        value={quantitiesByType[item.ticketType] ?? 0}
-                        onChange={(event) => handleTypeQuantityChange(item.ticketType, event.target.value)}
-                      />
+                      <div>
+                        <input
+                          className="w-24 rounded border p-1.5"
+                          type="number"
+                          min={0}
+                          max={Math.max(0, Number(item.ticketsRemaining || 0))}
+                          value={quantitiesByType[item.ticketType] || ""}
+                          onChange={(event) => handleTypeQuantityChange(item.ticketType, event.target.value, Number(item.ticketsRemaining || 0))}
+                        />
+                        {quantityErrors[item.ticketType] ? <p className="mt-1 text-xs text-red-600">{quantityErrors[item.ticketType]}</p> : null}
+                      </div>
                     )}
                   </td>
                 </tr>

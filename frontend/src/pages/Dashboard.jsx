@@ -121,6 +121,8 @@ const CANCELLATION_REASON_OPTIONS = [
   { value: "OTHER", label: "Other" },
 ];
 
+const LOCAL_SAVED_CODE_KEY = "qr-dashboard:saved-code";
+
 function getSelectedEventStorageKey(accessCode) {
   return `qr-dashboard:selected-event:${String(accessCode || "").trim()}`;
 }
@@ -322,10 +324,17 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const location = useLocation();
   const [params, setParams] = useSearchParams();
-  const [activeMenu, setActiveMenu] = useState(() => {
-    const initial = String(params.get("menu") || "events").trim().toLowerCase();
-    return ["events", "tickets", "delivery", "requests", "chat", "promoters"].includes(initial) ? initial : "events";
-  });
+  const VALID_MENU_IDS = ["events", "tickets", "delivery", "requests", "chat", "promoters", "notifications"];
+  const activeMenu = VALID_MENU_IDS.includes(String(params.get("menu") || "").toLowerCase())
+    ? String(params.get("menu")).toLowerCase()
+    : "events";
+  const setActiveMenu = useCallback((menuId) => {
+    setParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("menu", menuId);
+      return next;
+    }, { replace: true });
+  }, [setParams]);
   const [code, setCode] = useState(params.get("code") || "");
   const [showPublicPreview, setShowPublicPreview] = useState(false);
   const [ticketPage, setTicketPage] = useState(1);
@@ -598,6 +607,17 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
+    const urlCode = params.get("code");
+    if (!urlCode) {
+      const savedCode = localStorage.getItem(LOCAL_SAVED_CODE_KEY);
+      if (savedCode) {
+        setCode(savedCode);
+        loadDashboard(savedCode);
+      }
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
     if (ticketPage > totalTicketPages) setTicketPage(totalTicketPages);
   }, [ticketPage, totalTicketPages]);
   useEffect(() => {
@@ -679,7 +699,12 @@ export default function Dashboard() {
     setLoading(true);
     setLoadFb("", "");
     setSendSummary(null);
-    setParams({ code: trimmedCode });
+    setParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("code", trimmedCode);
+      next.set("menu", "events");
+      return next;
+    });
 
     const storageKey = getSelectedEventStorageKey(trimmedCode);
     const storedEventId = requestedEventId || localStorage.getItem(storageKey) || "";
@@ -701,6 +726,7 @@ export default function Dashboard() {
       await loadRequestsAndPromoters(trimmedCode, summaryRes.data.event.id);
       setLoadFb("success", "Dashboard loaded.");
       window.localStorage.setItem("qr-dashboard:loaded-once", "1");
+      localStorage.setItem(LOCAL_SAVED_CODE_KEY, trimmedCode);
       window.dispatchEvent(new Event("qr-dashboard-nav-updated"));
     } catch (requestError) {
       setLoadFb("error", requestError.response?.data?.error || "Unable to load dashboard.");
@@ -1863,19 +1889,23 @@ export default function Dashboard() {
                       </p>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2">
-                      <AppButton
-                        type="button"
-                        className={`px-2 py-1 text-xs ${!isTicketSold(ticket) || isTicketCancelled(ticket) ? "opacity-70" : ""}`}
-                        variant={!isTicketSold(ticket) || isTicketCancelled(ticket) ? "secondary" : "danger"}
-                        onClick={() => openCancelTicketModal(ticket)}
-                        disabled={!isTicketSold(ticket)}
-                      >
-                        {!isTicketSold(ticket)
-                          ? "Not Sold"
-                          : isTicketCancelled(ticket)
-                            ? `Cancelled at ${formatDate(ticket.cancelledAt || ticket.invalidatedAt)}`
-                            : "Cancel Ticket"}
-                      </AppButton>
+                      {ticket.status === "USED" ? (
+                        <span className="inline-block rounded border border-slate-300 bg-slate-100 px-2 py-1 text-xs text-slate-500">Scanned — cannot cancel</span>
+                      ) : (
+                        <AppButton
+                          type="button"
+                          className={`px-2 py-1 text-xs ${!isTicketSold(ticket) || isTicketCancelled(ticket) ? "opacity-70" : ""}`}
+                          variant={!isTicketSold(ticket) || isTicketCancelled(ticket) ? "secondary" : "danger"}
+                          onClick={() => openCancelTicketModal(ticket)}
+                          disabled={!isTicketSold(ticket)}
+                        >
+                          {!isTicketSold(ticket)
+                            ? "Not Sold"
+                            : isTicketCancelled(ticket)
+                              ? `Cancelled at ${formatDate(ticket.cancelledAt || ticket.invalidatedAt)}`
+                              : "Cancel Ticket"}
+                        </AppButton>
+                      )}
                       <AppButton
                         type="button"
                         className={`px-2 py-1 text-xs ${resolveDeliveryMethodLabel(ticket) !== "NOT_DELIVERED" ? "opacity-70" : ""}`}
@@ -1910,7 +1940,9 @@ export default function Dashboard() {
                         <td className="p-2">{resolveDeliveryMethodLabel(ticket)}</td>
                         <td className="p-2">{formatDate(ticket.scannedAt)}</td>
                         <td className="p-2">
-                          {isTicketSold(ticket) ? (
+                          {ticket.status === "USED" ? (
+                            <span className="inline-block rounded border border-slate-300 bg-slate-100 px-2 py-1 text-xs text-slate-500">Scanned — cannot cancel</span>
+                          ) : isTicketSold(ticket) ? (
                             <>
                               <button
                                 type="button"
