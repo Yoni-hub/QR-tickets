@@ -1472,6 +1472,8 @@ export default function Dashboard() {
 
   const closeOrganizerCodeModal = () => {
     setGeneratedOrganizerCodeModal((prev) => ({ ...prev, open: false, copied: false }));
+    const code = String(generatedOrganizerCodeModal.code || "").trim();
+    if (code) navigate(`/dashboard?code=${encodeURIComponent(code)}&menu=events`, { replace: true });
   };
 
   const copyOrganizerCode = async () => {
