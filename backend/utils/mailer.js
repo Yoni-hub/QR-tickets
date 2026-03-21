@@ -359,12 +359,63 @@ async function sendNewChatMessageEmail({ to, eventName, dashboardUrl }) {
   return transporter.sendMail({ from, to, subject, text, html });
 }
 
+async function sendOrganizerNewRequestEmail({ to, eventName, requestId, dashboardUrl }) {
+  const transporter = getTransporter();
+  const from = process.env.MAIL_FROM || "no-reply@localhost";
+  const subject = `New ticket request for ${String(eventName || "your event")}`;
+  const text = [
+    "Hello,",
+    "",
+    `A new ticket request has been submitted for ${String(eventName || "")}. Log in to your organizer dashboard to review and approve it.`,
+    "",
+    String(dashboardUrl || ""),
+  ].join("\n");
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.45;color:#0f172a;">
+      <p>Hello,</p>
+      <p>A new ticket request has been submitted for <strong>${escapeHtml(eventName)}</strong>.</p>
+      <p>Log in to your organizer dashboard to review and approve it:</p>
+      <p style="text-align:center;margin:20px 0;">
+        <a href="${escapeHtml(String(dashboardUrl || ""))}" target="_blank" rel="noopener noreferrer" style="background:#2d5bd1;color:#ffffff;padding:12px 22px;border-radius:6px;text-decoration:none;font-weight:600;display:inline-block;">Review Request</a>
+      </p>
+    </div>
+  `;
+  return transporter.sendMail({ from, to, subject, text, html });
+}
+
+async function sendOrganizerNewMessageEmail({ to, eventName, senderName, dashboardUrl }) {
+  const transporter = getTransporter();
+  const from = process.env.MAIL_FROM || "no-reply@localhost";
+  const subject = `New message about ${String(eventName || "your event")}`;
+  const text = [
+    "Hello,",
+    "",
+    `${String(senderName || "A customer")} has sent you a message about ${String(eventName || "your event")}.`,
+    "",
+    "Log in to your organizer dashboard to reply:",
+    String(dashboardUrl || ""),
+  ].join("\n");
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.45;color:#0f172a;">
+      <p>Hello,</p>
+      <p><strong>${escapeHtml(String(senderName || "A customer"))}</strong> has sent you a message about <strong>${escapeHtml(eventName)}</strong>.</p>
+      <p>Log in to your organizer dashboard to reply:</p>
+      <p style="text-align:center;margin:20px 0;">
+        <a href="${escapeHtml(String(dashboardUrl || ""))}" target="_blank" rel="noopener noreferrer" style="background:#2d5bd1;color:#ffffff;padding:12px 22px;border-radius:6px;text-decoration:none;font-weight:600;display:inline-block;">View Message</a>
+      </p>
+    </div>
+  `;
+  return transporter.sendMail({ from, to, subject, text, html });
+}
+
 module.exports = {
   sendTicketLinkEmail,
   sendTicketLinksDigestEmail,
   sendTicketApprovedEmail,
   sendTicketCancelledEmail,
   sendNewChatMessageEmail,
+  sendOrganizerNewRequestEmail,
+  sendOrganizerNewMessageEmail,
   DEFAULT_SUBJECT_TEMPLATE,
   DEFAULT_BODY_TEMPLATE,
   renderEmailTemplate,
