@@ -429,9 +429,11 @@ async function createPublicTicketRequest(req, res) {
     return;
   }
 
+  const TOKEN_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
   const request = await prisma.ticketRequest.create({
     data: {
       clientAccessToken,
+      clientTokenExpiresAt: new Date(Date.now() + TOKEN_TTL_MS),
       eventId: event.id,
       name,
       email,
@@ -536,8 +538,12 @@ async function getClientDashboardByToken(req, res) {
     return;
   }
 
+  const now = new Date();
   const request = await prisma.ticketRequest.findFirst({
-    where: { clientAccessToken },
+    where: {
+      clientAccessToken,
+      OR: [{ clientTokenExpiresAt: null }, { clientTokenExpiresAt: { gt: now } }],
+    },
     select: {
       id: true,
       clientAccessToken: true,
@@ -584,6 +590,12 @@ async function getClientDashboardByToken(req, res) {
     res.status(404).json({ error: "Client dashboard not found." });
     return;
   }
+
+  // Sliding window — extend expiry on each access (fire and forget)
+  prisma.ticketRequest.update({
+    where: { id: request.id },
+    data: { clientTokenExpiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000) },
+  }).catch(() => {});
 
   const baseUrl = getPublicBaseUrl();
   const tickets = (request.tickets || []).map((ticket) => ({

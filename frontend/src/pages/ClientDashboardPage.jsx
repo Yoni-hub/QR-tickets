@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import api from "../lib/api";
 import AppButton from "../components/ui/AppButton";
 import FeedbackBanner from "../components/ui/FeedbackBanner";
@@ -20,14 +20,18 @@ function resolveRequestStatusLabel(status) {
   return "PENDING";
 }
 
+const SESSION_TOKEN_KEY = "qr-client-token";
+
 export default function ClientDashboardPage() {
   const { clientAccessToken: routeToken = "" } = useParams();
-  const [tokenInput, setTokenInput] = useState(routeToken);
+  const navigate = useNavigate();
+  const [sessionToken, setSessionToken] = useState(() => sessionStorage.getItem(SESSION_TOKEN_KEY) || "");
+  const [tokenInput, setTokenInput] = useState(sessionToken);
   const [loading, setLoading] = useState(false);
   const [requestData, setRequestData] = useState(null);
   const [feedback, setFeedback] = useState({ kind: "", message: "" });
 
-  const normalizedToken = useMemo(() => String(routeToken || "").trim(), [routeToken]);
+  const normalizedToken = useMemo(() => String(routeToken || sessionToken || "").trim(), [routeToken, sessionToken]);
 
   const load = async (token) => {
     const nextToken = String(token || "").trim();
@@ -49,12 +53,22 @@ export default function ClientDashboardPage() {
     }
   };
 
+  // Move URL token to sessionStorage and redirect to clean URL
   useEffect(() => {
-    if (normalizedToken) {
-      setTokenInput(normalizedToken);
-      load(normalizedToken);
-    }
-  }, [normalizedToken]);
+    const t = String(routeToken || "").trim();
+    if (!t) return;
+    sessionStorage.setItem(SESSION_TOKEN_KEY, t);
+    setSessionToken(t);
+    setTokenInput(t);
+    navigate("/client", { replace: true });
+  }, [routeToken, navigate]);
+
+  // Auto-load when token is available (but not while mid-redirect)
+  useEffect(() => {
+    if (!normalizedToken || routeToken) return;
+    setTokenInput(normalizedToken);
+    load(normalizedToken);
+  }, [sessionToken, routeToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const chatApi = useMemo(() => {
     const token = String(normalizedToken || tokenInput || "").trim();
