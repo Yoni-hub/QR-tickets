@@ -1,3 +1,4 @@
+const { Prisma } = require("@prisma/client");
 const prisma = require("../utils/prisma");
 const { LIMITS, sanitizeText, safeError } = require("../utils/sanitize");
 const { getPublicBaseUrl } = require("../services/eventService");
@@ -198,7 +199,8 @@ async function getOrganizerTicketRequests(req, res) {
   });
 }
 
-async function createTicketsForRequest({ event, request }) {
+async function createTicketsForRequest({ event, request }, tx = null) {
+  const db = tx || prisma;
   const rawSelections = Array.isArray(request.ticketSelections) ? request.ticketSelections : [];
   const normalizedSelections = rawSelections.length
     ? rawSelections
@@ -212,7 +214,7 @@ async function createTicketsForRequest({ event, request }) {
       quantity: request.quantity,
     }];
 
-  const unsoldTickets = await prisma.ticket.findMany({
+  const unsoldTickets = await db.ticket.findMany({
     where: {
       eventId: event.id,
       ticketRequestId: null,
@@ -247,21 +249,41 @@ async function createTicketsForRequest({ event, request }) {
     }
   }
 
-  await prisma.$transaction(
-    assigned.map((ticket) =>
-      prisma.ticket.update({
-        where: { id: ticket.id },
-        data: {
-          ticketType: ticket.ticketType,
-          attendeeName: request.name,
-          attendeePhone: request.phone,
-          attendeeEmail: request.email,
-          promoterId: request.promoterId,
-          ticketRequestId: request.id,
-        },
-      }),
-    ),
-  );
+  if (tx) {
+    // Already inside a transaction — update directly
+    await Promise.all(
+      assigned.map((ticket) =>
+        tx.ticket.update({
+          where: { id: ticket.id },
+          data: {
+            ticketType: ticket.ticketType,
+            attendeeName: request.name,
+            attendeePhone: request.phone,
+            attendeeEmail: request.email,
+            promoterId: request.promoterId,
+            ticketRequestId: request.id,
+          },
+        }),
+      ),
+    );
+  } else {
+    // No outer transaction — use batch transaction for atomicity
+    await prisma.$transaction(
+      assigned.map((ticket) =>
+        prisma.ticket.update({
+          where: { id: ticket.id },
+          data: {
+            ticketType: ticket.ticketType,
+            attendeeName: request.name,
+            attendeePhone: request.phone,
+            attendeeEmail: request.email,
+            promoterId: request.promoterId,
+            ticketRequestId: request.id,
+          },
+        }),
+      ),
+    );
+  }
 
   return assigned;
 }
@@ -300,31 +322,40 @@ async function approveTicketRequest(req, res) {
     return;
   }
 
-  let tickets;
+  let approvalResult;
   try {
-    tickets = await createTicketsForRequest({ event, request });
+    approvalResult = await prisma.$transaction(async (tx) => {
+      // Re-check status inside transaction to prevent race condition
+      const fresh = await tx.ticketRequest.findFirst({ where: { id: request.id }, select: { status: true } });
+      if (fresh?.status === "APPROVED") return { alreadyApproved: true };
+      if (fresh?.status === "REJECTED") throw Object.assign(new Error("Rejected request cannot be approved."), { statusCode: 400 });
+      const tickets = await createTicketsForRequest({ event, request }, tx);
+      const updatedRequest = await tx.ticketRequest.update({
+        where: { id: request.id },
+        data: { status: "APPROVED", organizerMessage: null },
+        select: {
+          id: true, status: true, quantity: true, ticketType: true, ticketPrice: true,
+          totalPrice: true, ticketSelections: true, name: true, email: true,
+          clientAccessToken: true, promoter: { select: { name: true, code: true } },
+        },
+      });
+      return { alreadyApproved: false, tickets, updatedRequest };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   } catch (error) {
+    if (error?.code === "P2034") {
+      res.status(409).json({ error: "Request is being processed concurrently. Please try again." });
+      return;
+    }
     res.status(error.statusCode || 500).json({ error: safeError(error, "Could not allocate tickets.") });
     return;
   }
 
-  const updatedRequest = await prisma.ticketRequest.update({
-    where: { id: request.id },
-    data: { status: "APPROVED", organizerMessage: null },
-    select: {
-      id: true,
-      status: true,
-      quantity: true,
-      ticketType: true,
-      ticketPrice: true,
-      totalPrice: true,
-      ticketSelections: true,
-      name: true,
-      email: true,
-      clientAccessToken: true,
-      promoter: { select: { name: true, code: true } },
-    },
-  });
+  if (approvalResult.alreadyApproved) {
+    res.json({ request, alreadyApproved: true });
+    return;
+  }
+
+  const { tickets, updatedRequest } = approvalResult;
 
   // Send system message to chat + email notification (tracked)
   sendSystemMessageForTicketRequest({
