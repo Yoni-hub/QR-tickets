@@ -1,6 +1,7 @@
 const prisma = require("../utils/prisma");
 const crypto = require("crypto");
 const sharp = require("sharp");
+const { LIMITS, sanitizeText, safeError } = require("../utils/sanitize");
 const { getPublicBaseUrl } = require("../services/eventService");
 const {
   CHAT_CONVERSATION_TYPE,
@@ -334,7 +335,7 @@ async function getPublicEventBySlug(req, res) {
 
 async function createPublicTicketRequest(req, res) {
   const eventSlug = String(req.body?.eventSlug || "").trim();
-  const name = String(req.body?.name || "").trim();
+  const name = sanitizeText(req.body?.name, LIMITS.NAME);
   const emailRaw = String(req.body?.email || "").trim().toLowerCase();
   const email = EMAIL_PATTERN.test(emailRaw) ? emailRaw : null;
   const promoterCode = String(req.body?.promoterCode || "").trim().toLowerCase();
@@ -424,7 +425,7 @@ async function createPublicTicketRequest(req, res) {
   try {
     clientAccessToken = await createUniqueClientAccessToken();
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message || "Could not create request token." });
+    res.status(error.statusCode || 500).json({ error: safeError(error, "Could not create request token.") });
     return;
   }
 

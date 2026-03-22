@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const prisma = require("../utils/prisma");
+const { LIMITS, sanitizeText, safeError } = require("../utils/sanitize");
 const {
   CHAT_ACTOR,
   CHAT_CONVERSATION_TYPE,
@@ -124,7 +125,7 @@ async function organizerListConversations(req, res) {
     });
     res.json({ items });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message || "Could not load conversations." });
+    res.status(error.statusCode || 500).json({ error: safeError(error, "Could not load conversations.") });
   }
 }
 
@@ -141,7 +142,7 @@ async function organizerStartConversation(req, res) {
     });
     res.status(201).json({ conversationId });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message || "Could not start conversation." });
+    res.status(error.statusCode || 500).json({ error: safeError(error, "Could not start conversation.") });
   }
 }
 
@@ -152,7 +153,7 @@ async function organizerGetConversationMessages(req, res) {
     const payload = await listMessagesForActor(actor, req.params.conversationId);
     res.json(payload);
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message || "Could not load conversation messages." });
+    res.status(error.statusCode || 500).json({ error: safeError(error, "Could not load conversation messages.") });
   }
 }
 
@@ -166,7 +167,7 @@ async function organizerSendConversationMessage(req, res) {
     });
     res.status(201).json({ message });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message || "Could not send message." });
+    res.status(error.statusCode || 500).json({ error: safeError(error, "Could not send message.") });
   }
 }
 
@@ -177,7 +178,7 @@ async function organizerMarkConversationRead(req, res) {
     const payload = await markConversationReadForActor(actor, req.params.conversationId, req.body?.readThroughMessageId);
     res.json(payload);
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message || "Could not mark conversation as read." });
+    res.status(error.statusCode || 500).json({ error: safeError(error, "Could not mark conversation as read.") });
   }
 }
 
@@ -192,7 +193,7 @@ async function organizerDownloadAttachment(req, res) {
     }
     await sendAttachmentResponse(attachment, res);
   } catch (error) {
-    res.status(500).json({ error: error.message || "Could not download attachment." });
+    res.status(500).json({ error: safeError(error, "Could not download attachment.") });
   }
 }
 
@@ -208,7 +209,7 @@ async function clientListConversations(req, res) {
     });
     res.json({ items });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message || "Could not load conversations." });
+    res.status(error.statusCode || 500).json({ error: safeError(error, "Could not load conversations.") });
   }
 }
 
@@ -225,7 +226,7 @@ async function clientStartConversation(req, res) {
     });
     res.status(201).json({ conversationId });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message || "Could not start conversation." });
+    res.status(error.statusCode || 500).json({ error: safeError(error, "Could not start conversation.") });
   }
 }
 
@@ -236,7 +237,7 @@ async function clientGetConversationMessages(req, res) {
     const payload = await listMessagesForActor(actor, req.params.conversationId);
     res.json(payload);
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message || "Could not load conversation messages." });
+    res.status(error.statusCode || 500).json({ error: safeError(error, "Could not load conversation messages.") });
   }
 }
 
@@ -250,7 +251,7 @@ async function clientSendConversationMessage(req, res) {
     });
     res.status(201).json({ message });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message || "Could not send message." });
+    res.status(error.statusCode || 500).json({ error: safeError(error, "Could not send message.") });
   }
 }
 
@@ -261,7 +262,7 @@ async function clientMarkConversationRead(req, res) {
     const payload = await markConversationReadForActor(actor, req.params.conversationId, req.body?.readThroughMessageId);
     res.json(payload);
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message || "Could not mark conversation as read." });
+    res.status(error.statusCode || 500).json({ error: safeError(error, "Could not mark conversation as read.") });
   }
 }
 
@@ -276,7 +277,7 @@ async function clientDownloadAttachment(req, res) {
     }
     await sendAttachmentResponse(attachment, res);
   } catch (error) {
-    res.status(500).json({ error: error.message || "Could not download attachment." });
+    res.status(500).json({ error: safeError(error, "Could not download attachment.") });
   }
 }
 
@@ -290,7 +291,7 @@ async function adminListConversations(req, res) {
     });
     res.json({ items });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message || "Could not load conversations." });
+    res.status(error.statusCode || 500).json({ error: safeError(error, "Could not load conversations.") });
   }
 }
 
@@ -307,7 +308,7 @@ async function adminStartConversation(req, res) {
     });
     res.status(201).json({ conversationId });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message || "Could not start conversation." });
+    res.status(error.statusCode || 500).json({ error: safeError(error, "Could not start conversation.") });
   }
 }
 
@@ -316,7 +317,7 @@ async function adminGetConversationMessages(req, res) {
     const payload = await listMessagesForActor(adminActor(), req.params.conversationId);
     res.json(payload);
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message || "Could not load conversation messages." });
+    res.status(error.statusCode || 500).json({ error: safeError(error, "Could not load conversation messages.") });
   }
 }
 
@@ -328,7 +329,7 @@ async function adminSendConversationMessage(req, res) {
     });
     res.status(201).json({ message });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message || "Could not send message." });
+    res.status(error.statusCode || 500).json({ error: safeError(error, "Could not send message.") });
   }
 }
 
@@ -337,7 +338,7 @@ async function adminMarkConversationRead(req, res) {
     const payload = await markConversationReadForActor(adminActor(), req.params.conversationId, req.body?.readThroughMessageId);
     res.json(payload);
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message || "Could not mark conversation as read." });
+    res.status(error.statusCode || 500).json({ error: safeError(error, "Could not mark conversation as read.") });
   }
 }
 
@@ -346,7 +347,7 @@ async function adminUpdateConversationStatus(req, res) {
     const conversation = await updateConversationStatusForAdmin(req.params.conversationId, req.body?.status);
     res.json({ conversation });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message || "Could not update conversation status." });
+    res.status(error.statusCode || 500).json({ error: safeError(error, "Could not update conversation status.") });
   }
 }
 
@@ -359,16 +360,16 @@ async function adminDownloadAttachment(req, res) {
     }
     await sendAttachmentResponse(attachment, res);
   } catch (error) {
-    res.status(500).json({ error: error.message || "Could not download attachment." });
+    res.status(500).json({ error: safeError(error, "Could not download attachment.") });
   }
 }
 
 // Legacy compatibility wrappers
 async function createSupportConversation(req, res) {
-  const displayName = String(req.body?.name || "").trim();
-  const email = String(req.body?.email || "").trim().toLowerCase();
+  const displayName = sanitizeText(req.body?.name, LIMITS.NAME);
+  const email = sanitizeText(req.body?.email, LIMITS.EMAIL).toLowerCase();
   const accessCode = String(req.body?.accessCode || "").trim();
-  const message = String(req.body?.message || "").trim();
+  const message = sanitizeText(req.body?.message, LIMITS.MESSAGE);
   const evidenceImageDataUrl = String(req.body?.evidenceImageDataUrl || "").trim();
 
   if (!message) {
@@ -377,7 +378,7 @@ async function createSupportConversation(req, res) {
   }
 
   try {
-    const subject = String(req.body?.subject || "").trim() || `Support (${displayName || email || "visitor"})`;
+    const subject = sanitizeText(req.body?.subject, LIMITS.SUBJECT) || `Support (${displayName || email || "visitor"})`;
     const conversation = await ensureLegacySupportConversation({
       displayName,
       email,
@@ -417,7 +418,7 @@ async function createSupportConversation(req, res) {
       messages: payload.messages,
     });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message || "Could not create support conversation." });
+    res.status(error.statusCode || 500).json({ error: safeError(error, "Could not create support conversation.") });
   }
 }
 
@@ -458,7 +459,7 @@ async function getSupportConversationMessages(req, res) {
       messages: payload.messages,
     });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message || "Could not load support conversation." });
+    res.status(error.statusCode || 500).json({ error: safeError(error, "Could not load support conversation.") });
   }
 }
 
@@ -504,7 +505,7 @@ async function sendSupportConversationMessage(req, res) {
 
     res.status(201).json({ message: created });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message || "Could not send support message." });
+    res.status(error.statusCode || 500).json({ error: safeError(error, "Could not send support message.") });
   }
 }
 
@@ -522,7 +523,7 @@ async function listAdminSupportConversations(req, res) {
       })),
     });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message || "Could not load support conversations." });
+    res.status(error.statusCode || 500).json({ error: safeError(error, "Could not load support conversations.") });
   }
 }
 
@@ -531,7 +532,7 @@ async function getAdminSupportConversationMessages(req, res) {
     const payload = await listMessagesForActor(adminActor(), req.params.id);
     res.json(payload);
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message || "Could not load support conversation messages." });
+    res.status(error.statusCode || 500).json({ error: safeError(error, "Could not load support conversation messages.") });
   }
 }
 
@@ -544,7 +545,7 @@ async function sendAdminSupportMessage(req, res) {
     });
     res.status(201).json({ message });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message || "Could not send admin support message." });
+    res.status(error.statusCode || 500).json({ error: safeError(error, "Could not send admin support message.") });
   }
 }
 
@@ -574,7 +575,7 @@ async function getTicketRequestMessages(req, res) {
     const payload = await listMessagesForActor(actor, conversationId);
     res.json({ requestId, conversationId, messages: payload.messages });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message || "Could not load request messages." });
+    res.status(error.statusCode || 500).json({ error: safeError(error, "Could not load request messages.") });
   }
 }
 
@@ -604,7 +605,7 @@ async function sendTicketRequestMessage(req, res) {
     });
     res.status(201).json({ message, conversationId });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message || "Could not send request message." });
+    res.status(error.statusCode || 500).json({ error: safeError(error, "Could not send request message.") });
   }
 }
 
@@ -631,7 +632,7 @@ async function getClientRequestMessagesByToken(req, res) {
     const payload = await listMessagesForActor(actor, conversationId);
     res.json({ requestId: request.id, conversationId, messages: payload.messages });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message || "Could not load organizer chat." });
+    res.status(error.statusCode || 500).json({ error: safeError(error, "Could not load organizer chat.") });
   }
 }
 
@@ -663,7 +664,7 @@ async function createClientRequestMessageByToken(req, res) {
 
     res.status(201).json({ message, conversationId });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message || "Could not send organizer message." });
+    res.status(error.statusCode || 500).json({ error: safeError(error, "Could not send organizer message.") });
   }
 }
 
