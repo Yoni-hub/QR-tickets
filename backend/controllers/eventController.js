@@ -3,6 +3,7 @@ const QRCode = require("qrcode");
 const { PDFDocument, StandardFonts, rgb } = require("pdf-lib");
 const prisma = require("../utils/prisma");
 const { generateAccessCode } = require("../utils/accessCode");
+const { LIMITS, sanitizeText, safeError } = require("../utils/sanitize");
 const { createEvent, buildQrPayload } = require("../services/eventService");
 const { generateTicketPublicId } = require("../utils/ticketPublicId");
 const {
@@ -219,7 +220,7 @@ async function createLiveEvent(req, res) {
     const data = await createEvent(req.body || {}, false);
     res.status(201).json(data);
   } catch (error) {
-    res.status(500).json({ error: error.message || "Failed to create event." });
+    res.status(500).json({ error: safeError(error, "Failed to create event.") });
   }
 }
 
@@ -228,7 +229,7 @@ async function createDemoEvent(req, res) {
     const data = await createEvent(req.body || {}, true);
     res.status(201).json(data);
   } catch (error) {
-    res.status(500).json({ error: error.message || "Failed to create demo event." });
+    res.status(500).json({ error: safeError(error, "Failed to create demo event.") });
   }
 }
 
@@ -378,16 +379,16 @@ async function generateTicketsByAccessCode(req, res) {
     return;
   }
 
-  const eventName = String(req.body?.eventName || "").trim();
-  const organizerName = String(req.body?.organizerName || "").trim();
-  const eventAddress = String(req.body?.eventAddress || "").trim();
+  const eventName = sanitizeText(req.body?.eventName, LIMITS.EVENT_NAME);
+  const organizerName = sanitizeText(req.body?.organizerName, LIMITS.NAME);
+  const eventAddress = sanitizeText(req.body?.eventAddress, LIMITS.EVENT_ADDRESS);
   const rawEventDate = String(req.body?.eventDateTime || req.body?.dateTimeText || "").trim();
   const parsedEventDate = rawEventDate ? new Date(rawEventDate) : null;
   const designJson = req.body?.designJson && typeof req.body.designJson === "object" ? req.body.designJson : null;
   const designGroups = Array.isArray(designJson?.ticketGroups) ? designJson.ticketGroups : [];
 
   const fallbackQuantity = Math.max(0, Number.parseInt(String(req.body?.quantity || "0"), 10) || 0);
-  const fallbackType = String(req.body?.ticketType || "").trim();
+  const fallbackType = sanitizeText(req.body?.ticketType, LIMITS.TICKET_TYPE);
   const fallbackPriceRaw = String(req.body?.ticketPrice || "").trim();
 
   const normalizedGroups = (designGroups.length ? designGroups : [{
@@ -505,13 +506,13 @@ async function updateEventInline(req, res) {
     return;
   }
 
-  const eventName = String(req.body?.eventName || "").trim();
-  const organizerName = String(req.body?.organizerName || "").trim();
-  const eventAddress = String(req.body?.eventAddress || "").trim();
-  const paymentInstructions = String(req.body?.paymentInstructions || "").trim();
+  const eventName = sanitizeText(req.body?.eventName, LIMITS.EVENT_NAME);
+  const organizerName = sanitizeText(req.body?.organizerName, LIMITS.NAME);
+  const eventAddress = sanitizeText(req.body?.eventAddress, LIMITS.EVENT_ADDRESS);
+  const paymentInstructions = sanitizeText(req.body?.paymentInstructions, LIMITS.PAYMENT_INSTRUCTIONS);
   const eventDateRaw = String(req.body?.eventDate || "").trim();
   const parsedEventDate = eventDateRaw ? new Date(eventDateRaw) : null;
-  const ticketType = String(req.body?.ticketType || "").trim();
+  const ticketType = sanitizeText(req.body?.ticketType, LIMITS.TICKET_TYPE);
   const hasTicketPrice = Object.prototype.hasOwnProperty.call(req.body || {}, "ticketPrice");
   const ticketPriceRaw = String(req.body?.ticketPrice ?? "").trim();
   const parsedTicketPrice = ticketPriceRaw === "" ? null : Number(ticketPriceRaw);
@@ -639,10 +640,10 @@ async function createEventForAccessCode(req, res) {
     return;
   }
 
-  const eventName = String(req.body?.eventName || "").trim();
-  const organizerName = String(req.body?.organizerName || "").trim();
-  const eventAddress = String(req.body?.eventAddress || "").trim();
-  const paymentInstructions = String(req.body?.paymentInstructions || "").trim();
+  const eventName = sanitizeText(req.body?.eventName, LIMITS.EVENT_NAME);
+  const organizerName = sanitizeText(req.body?.organizerName, LIMITS.NAME);
+  const eventAddress = sanitizeText(req.body?.eventAddress, LIMITS.EVENT_ADDRESS);
+  const paymentInstructions = sanitizeText(req.body?.paymentInstructions, LIMITS.PAYMENT_INSTRUCTIONS);
   const eventDateRaw = String(req.body?.eventDate || "").trim();
   const parsedEventDate = eventDateRaw ? new Date(eventDateRaw) : null;
 

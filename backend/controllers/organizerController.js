@@ -1,4 +1,5 @@
 const prisma = require("../utils/prisma");
+const { LIMITS, sanitizeText, safeError } = require("../utils/sanitize");
 const { getPublicBaseUrl } = require("../services/eventService");
 const {
   CHAT_CONVERSATION_TYPE,
@@ -303,7 +304,7 @@ async function approveTicketRequest(req, res) {
   try {
     tickets = await createTicketsForRequest({ event, request });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message || "Could not allocate tickets." });
+    res.status(error.statusCode || 500).json({ error: safeError(error, "Could not allocate tickets.") });
     return;
   }
 
@@ -536,7 +537,7 @@ async function cancelOrganizerTicket(req, res) {
   const accessCode = parseAccessCode(req.body?.accessCode || req.query?.accessCode);
   const eventId = parseEventId(req.body?.eventId || req.query?.eventId);
   const cancellationReason = normalizeCancellationReason(req.body?.reason);
-  const cancellationOtherReason = String(req.body?.otherReason || "").trim();
+  const cancellationOtherReason = sanitizeText(req.body?.otherReason, LIMITS.CANCELLATION_REASON);
   const evidenceImageDataUrl = String(req.body?.evidenceImageDataUrl || "").trim() || null;
 
   if (!ticketPublicId || !accessCode || !eventId) {
@@ -738,7 +739,7 @@ async function listPromoters(req, res) {
 
 async function createPromoter(req, res) {
   const accessCode = parseAccessCode(req.body?.accessCode);
-  const name = String(req.body?.name || "").trim();
+  const name = sanitizeText(req.body?.name, LIMITS.NAME);
   const code = normalizePromoterCode(req.body?.code || name);
 
   if (!accessCode || !name || !code) {

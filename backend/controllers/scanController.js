@@ -1,4 +1,5 @@
 const prisma = require("../utils/prisma");
+const { LIMITS, sanitizeText } = require("../utils/sanitize");
 
 function resolveScanOutcomeLabel(outcome) {
   if (outcome === "VALID") return "VALID";
@@ -108,8 +109,8 @@ async function scanTicket(req, res) {
   const organizerAccessCode = (req.body?.organizerAccessCode || req.body?.accessCode || "").trim();
   const selectedEventId = String(req.body?.eventId || "").trim();
   const ticketPublicId = (req.body?.ticketPublicId || "").trim();
-  const rawScannedValue = String(req.body?.rawScannedValue || ticketPublicId || "").trim();
-  const scannerSource = String(req.body?.scannerSource || "manual").trim() || "manual";
+  const rawScannedValue = sanitizeText(req.body?.rawScannedValue || ticketPublicId, LIMITS.SCAN_VALUE);
+  const scannerSource = sanitizeText(req.body?.scannerSource || "manual", LIMITS.SCANNER_SOURCE) || "manual";
   const enforceEventDate = Boolean(req.body?.enforceEventDate);
 
   if (!organizerAccessCode || !ticketPublicId) {
