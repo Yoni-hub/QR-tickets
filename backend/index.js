@@ -1,6 +1,8 @@
 const express = require("express");
 const http = require("http");
 const cors = require("cors");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
 const dotenv = require("dotenv");
 const { Server } = require("socket.io");
 const apiRoutes = require("./routes/apiRoutes");
@@ -25,8 +27,30 @@ const io = new Server(server, {
 socketManager.init(io);
 registerSocketHandlers(io);
 
+app.use(helmet());
 app.use(cors({ origin: ALLOWED_ORIGIN }));
 app.use(express.json({ limit: "12mb" }));
+
+// Rate limiters
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests, please try again later." },
+});
+
+const strictLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests, please try again later." },
+});
+
+app.use("/api", generalLimiter);
+app.use("/api/scans", strictLimiter);
+app.use("/api/public/ticket-request", strictLimiter);
 
 app.get("/health", (_req, res) => {
   res.status(200).json({ status: "ok" });

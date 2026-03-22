@@ -430,9 +430,10 @@ export default function Dashboard() {
   });
 
   // Preview data for email digest sample (previewTicketLinks depends on deliveryTicketTypeOptions — defined below)
-  const previewEventName = summary?.event?.eventName || "Your Event";
-  const previewEventDate = summary?.event?.eventDate ? new Date(summary.event.eventDate).toLocaleString() : "Event date";
-  const previewEventAddress = summary?.event?.eventAddress || "Event address";
+  const escapeHtml = (str) => String(str ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  const previewEventName = escapeHtml(summary?.event?.eventName || "Your Event");
+  const previewEventDate = escapeHtml(summary?.event?.eventDate ? new Date(summary.event.eventDate).toLocaleString() : "Event date");
+  const previewEventAddress = escapeHtml(summary?.event?.eventAddress || "Event address");
 
   const accessCode = useMemo(() => code.trim(), [code]);
   const organizerChatAccessCode = useMemo(() => {
@@ -497,8 +498,8 @@ export default function Dashboard() {
   }, [ticketTypeOptions, summary?.event?.ticketType]);
 
   const previewTicketLinks = deliveryTicketTypeOptions.map((type) => ({
-    ticketType: type,
-    ticketUrl: `${window.location.origin}/t/SAMPLE-${type.toUpperCase()}`,
+    ticketType: escapeHtml(type),
+    ticketUrl: escapeHtml(`${window.location.origin}/t/SAMPLE-${type.toUpperCase()}`),
   }));
 
   // Initialise emailQuantities when ticket types become available
