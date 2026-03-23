@@ -1,6 +1,7 @@
 const prisma = require("../utils/prisma");
 const crypto = require("crypto");
 const sharp = require("sharp");
+const { uploadDataUrlToS3, isS3Configured } = require("../utils/s3");
 const { LIMITS, sanitizeText, safeError } = require("../utils/sanitize");
 const { getPublicBaseUrl } = require("../services/eventService");
 const {
@@ -429,6 +430,17 @@ async function createPublicTicketRequest(req, res) {
     return;
   }
 
+  // Upload evidence to S3 if configured, otherwise keep in DB
+  let evidenceImageDataUrl = null;
+  let evidenceS3Key = null;
+  if (evidenceValidation.value) {
+    if (isS3Configured()) {
+      evidenceS3Key = await uploadDataUrlToS3(evidenceValidation.value, "evidence");
+    } else {
+      evidenceImageDataUrl = evidenceValidation.value;
+    }
+  }
+
   const TOKEN_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
   const request = await prisma.ticketRequest.create({
     data: {
@@ -441,7 +453,8 @@ async function createPublicTicketRequest(req, res) {
       ticketPrice: normalizedSelections.length === 1 ? normalizedSelections[0].unitPrice : null,
       totalPrice,
       ticketSelections: normalizedSelections,
-      evidenceImageDataUrl: evidenceValidation.value,
+      evidenceImageDataUrl,
+      evidenceS3Key,
       quantity: totalQuantity,
       promoterId: promoter?.id || null,
       status: "PENDING_VERIFICATION",

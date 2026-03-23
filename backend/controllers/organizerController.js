@@ -1,6 +1,7 @@
 const { Prisma } = require("@prisma/client");
 const prisma = require("../utils/prisma");
 const { LIMITS, sanitizeText, safeError } = require("../utils/sanitize");
+const { resolveImageUrl, uploadDataUrlToS3, isS3Configured } = require("../utils/s3");
 const { getPublicBaseUrl } = require("../services/eventService");
 const {
   CHAT_CONVERSATION_TYPE,
@@ -120,11 +121,13 @@ async function getOrganizerTicketRequests(req, res) {
       totalPrice: true,
       ticketSelections: true,
       evidenceImageDataUrl: true,
+      evidenceS3Key: true,
       organizerMessage: true,
       cancelledAt: true,
       cancellationReason: true,
       cancellationOtherReason: true,
       cancellationEvidenceImageDataUrl: true,
+      cancellationEvidenceS3Key: true,
       quantity: true,
       status: true,
       createdAt: true,
@@ -154,7 +157,7 @@ async function getOrganizerTicketRequests(req, res) {
     },
   });
 
-  const items = requests.map((request) => {
+  const items = await Promise.all(requests.map(async (request) => {
     const tickets = Array.isArray(request.tickets) ? request.tickets : [];
     const latestStatuses = tickets
       .map((ticket) => ticket.deliveries?.[0]?.status || null)
@@ -178,15 +181,24 @@ async function getOrganizerTicketRequests(req, res) {
     const unreadClientMessages = (request.messages || []).filter(
       (message) => message.senderType === "CLIENT" && !message.readAt,
     ).length;
-    const { tickets: _tickets, messages: _messages, ...requestWithoutTickets } = request;
+
+    // Resolve evidence URLs (presigned S3 URL for new records, data URL for old records)
+    const [evidenceImageDataUrl, cancellationEvidenceImageDataUrl] = await Promise.all([
+      resolveImageUrl(request.evidenceS3Key, request.evidenceImageDataUrl),
+      resolveImageUrl(request.cancellationEvidenceS3Key, request.cancellationEvidenceImageDataUrl),
+    ]);
+
+    const { tickets: _tickets, messages: _messages, evidenceS3Key: _esk, cancellationEvidenceS3Key: _cesk, ...requestWithoutTickets } = request;
     return {
       ...requestWithoutTickets,
+      evidenceImageDataUrl,
+      cancellationEvidenceImageDataUrl,
       deliveryStatus,
       unreadClientMessages,
       ticketIds: tickets.map((ticket) => ticket.ticketPublicId).filter(Boolean),
       cancelledTicketIds: tickets.filter((ticket) => ticket.cancelledAt).map((ticket) => ticket.ticketPublicId),
     };
-  });
+  }));
 
   res.json({
     event: {
@@ -624,6 +636,14 @@ async function cancelOrganizerTicket(req, res) {
     return;
   }
 
+  // Upload cancellation evidence to S3 if configured
+  let cancellationEvidenceS3Key = null;
+  let cancellationEvidenceDataUrl = evidenceImageDataUrl || null;
+  if (evidenceImageDataUrl && isS3Configured()) {
+    cancellationEvidenceS3Key = await uploadDataUrlToS3(evidenceImageDataUrl, "cancellation-evidence");
+    cancellationEvidenceDataUrl = null;
+  }
+
   const cancelledAt = new Date();
   const organizerMessage = buildCancellationMessage({
     ticketPublicId,
@@ -641,7 +661,8 @@ async function cancelOrganizerTicket(req, res) {
         cancelledAt,
         cancellationReason,
         cancellationOtherReason: cancellationReason === "OTHER" ? cancellationOtherReason || "Other" : null,
-        cancellationEvidenceImageDataUrl: evidenceImageDataUrl,
+        cancellationEvidenceImageDataUrl: cancellationEvidenceDataUrl,
+        cancellationEvidenceS3Key,
       },
       select: {
         ticketPublicId: true,
@@ -663,7 +684,8 @@ async function cancelOrganizerTicket(req, res) {
           cancelledAt,
           cancellationReason,
           cancellationOtherReason: cancellationReason === "OTHER" ? cancellationOtherReason || "Other" : null,
-          cancellationEvidenceImageDataUrl: evidenceImageDataUrl,
+          cancellationEvidenceImageDataUrl: cancellationEvidenceDataUrl,
+          cancellationEvidenceS3Key,
         },
         select: {
           id: true,

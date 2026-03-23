@@ -62,6 +62,7 @@ model Ticket {
   cancellationReason String?
   cancellationOtherReason String?
   cancellationEvidenceImageDataUrl String?
+  cancellationEvidenceS3Key        String?
   scannedAt      DateTime?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
@@ -158,6 +159,8 @@ model TicketRequest {
   id         String   @id @default(cuid())
   clientAccessToken    String?  @unique
   clientTokenExpiresAt DateTime?
+  evidenceS3Key                    String?
+  cancellationEvidenceS3Key        String?
   eventId    String
   name       String
   phone      String?
