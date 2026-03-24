@@ -32,23 +32,7 @@ app.use(helmet());
 app.use(cors({ origin: ALLOWED_ORIGIN }));
 app.use(express.json({ limit: "12mb" }));
 
-// Rate limiters
-const generalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: "Too many requests, please try again later." },
-});
-
-const strictLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: "Too many requests, please try again later." },
-});
-
+// Rate limiters — only on truly open/unauthenticated endpoints
 const scanLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 300,
@@ -57,11 +41,28 @@ const scanLimiter = rateLimit({
   message: { error: "Too many scan requests, please try again later." },
 });
 
+// 5 OTP sends per IP per hour — prevents email bombing
+const otpLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many verification requests. Try again later." },
+});
 
-// Failed scan tracker — blocks IPs that repeatedly send invalid scans
-const failedScanCounts = new Map(); // ip -> { count, blockedUntil }
-const FAILED_SCAN_THRESHOLD = 20;        // consecutive INVALID_TICKET before block
-const FAILED_SCAN_BLOCK_DURATION = 15 * 60 * 1000; // 15 min block
+// 10 support conversations per IP per hour
+const supportLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests. Try again later." },
+});
+
+// Failed scan tracker — blocks IPs that repeatedly send invalid ticket IDs
+const failedScanCounts = new Map();
+const FAILED_SCAN_THRESHOLD = 20;
+const FAILED_SCAN_BLOCK_DURATION = 15 * 60 * 1000;
 
 function failedScanGuard(req, res, next) {
   const ip = req.ip;
@@ -77,22 +78,10 @@ app.failedScanCounts = failedScanCounts;
 app.FAILED_SCAN_THRESHOLD = FAILED_SCAN_THRESHOLD;
 app.FAILED_SCAN_BLOCK_DURATION = FAILED_SCAN_BLOCK_DURATION;
 
-// 5 OTP sends per IP per hour
-const otpLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000,
-  max: 5,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: "Too many verification requests. Try again later." },
-});
-
-app.use("/api", generalLimiter);
 app.use("/api/scans", scanLimiter, failedScanGuard);
-app.use("/api/public/ticket-request", strictLimiter);
 app.use("/api/public/send-otp", otpLimiter);
 app.use("/api/public/verify-otp", otpLimiter);
-app.use("/api/public/support/conversations", strictLimiter);
-// Event creation limiters applied per-route in apiRoutes.js
+app.use("/api/public/support/conversations", supportLimiter);
 
 app.get("/health", (_req, res) => {
   res.status(200).json({ status: "ok" });
