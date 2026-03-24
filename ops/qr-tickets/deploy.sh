@@ -66,6 +66,10 @@ SMTP_USER=${SMTP_USER}
 SMTP_PASS=${SMTP_PASS}
 MAIL_FROM=${MAIL_FROM:-no-reply@connsura.com}
 TURNSTILE_SECRET=${TURNSTILE_SECRET}
+AWS_REGION=${AWS_REGION:-us-east-1}
+AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+S3_BUCKET_NAME=${S3_BUCKET_NAME}
 EOF
 
 # ─── Write postgres env ─────────────────────────────────────────────────────
@@ -75,12 +79,42 @@ POSTGRES_USER=${DB_USER:-qr_user}
 POSTGRES_PASSWORD=${DB_PASSWORD}
 EOF
 
+# ─── Write backup env ───────────────────────────────────────────────────────
+cat > "$ENV_DIR/backup.env" <<EOF
+AWS_REGION=${AWS_REGION:-us-east-1}
+AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+S3_BUCKET_NAME=${S3_BUCKET_NAME}
+DB_USER=${DB_USER:-qr_user}
+DB_NAME=${DB_NAME:-qr_tickets}
+EOF
+chmod 600 "$ENV_DIR/backup.env"
+
 # ─── Write compose .env (docker-compose reads this automatically, even under sudo) ───
 cat > "$APP_DIR/.env" <<EOF
 DB_NAME=${DB_NAME:-qr_tickets}
 DB_USER=${DB_USER:-qr_user}
 DB_PASSWORD=${DB_PASSWORD}
 EOF
+
+# ─── Install AWS CLI (idempotent) ───────────────────────────────────────────
+if ! command -v aws &>/dev/null; then
+  echo "[deploy] Installing AWS CLI..."
+  sudo apt-get install -y --no-install-recommends awscli
+fi
+
+# ─── Install backup script and cron job ─────────────────────────────────────
+echo "[deploy] Installing backup script..."
+sudo cp "$APP_DIR/ops/qr-tickets/backup.sh" /opt/qr-tickets/backup.sh
+sudo chown ubuntu:ubuntu /opt/qr-tickets/backup.sh
+chmod +x /opt/qr-tickets/backup.sh
+
+CRON_JOB="0 2 * * * /opt/qr-tickets/backup.sh >> /opt/qr-tickets/backup.log 2>&1"
+# Install cron only if not already present
+if ! crontab -l 2>/dev/null | grep -qF "backup.sh"; then
+  ( crontab -l 2>/dev/null; echo "$CRON_JOB" ) | crontab -
+  echo "[deploy] Backup cron installed (daily 02:00 UTC)"
+fi
 
 # ─── Build & start containers ───────────────────────────────────────────────
 echo "[deploy] Building and starting containers..."
