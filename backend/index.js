@@ -5,6 +5,7 @@ const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const dotenv = require("dotenv");
 const { Server } = require("socket.io");
+const morgan = require("morgan");
 const apiRoutes = require("./routes/apiRoutes");
 const socketManager = require("./socket/socketManager");
 const { registerSocketHandlers } = require("./socket/socketHandler");
@@ -29,6 +30,7 @@ socketManager.init(io);
 registerSocketHandlers(io);
 
 app.use(helmet());
+app.use(morgan("combined"));
 app.use(cors({ origin: ALLOWED_ORIGIN }));
 app.use(express.json({ limit: "12mb" }));
 
