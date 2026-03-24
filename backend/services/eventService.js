@@ -48,9 +48,31 @@ async function generateEventSlug(eventName) {
   }
 }
 
+function normalizeSelections(payload) {
+  const rawSelections = Array.isArray(payload.ticketSelections) ? payload.ticketSelections : [];
+  const normalized = rawSelections
+    .map((item) => {
+      const ticketType = String(item?.ticketType || "").trim() || null;
+      const qty = Math.max(0, Number.parseInt(String(item?.quantity || "0"), 10) || 0);
+      const priceRaw = String(item?.ticketPrice ?? "").trim();
+      const parsedPrice = priceRaw === "" ? null : Number(priceRaw);
+      const ticketPrice = Number.isFinite(parsedPrice) ? parsedPrice : null;
+      return { ticketType, quantity: qty, ticketPrice };
+    })
+    .filter((item) => item.quantity > 0 && item.ticketType);
+  return normalized;
+}
+
 async function createEvent(payload, isDemo = false) {
-  const requestedQuantity = Number.parseInt(payload.quantity, 10);
+  const selections = normalizeSelections(payload);
+  const useSelections = selections.length > 0;
+
+  const totalQuantityFromSelections = selections.reduce((sum, s) => sum + s.quantity, 0);
+  const requestedQuantity = useSelections
+    ? totalQuantityFromSelections
+    : Number.parseInt(payload.quantity, 10);
   const quantity = payload.generateAccessOnly ? 0 : Math.max(1, Number.isFinite(requestedQuantity) ? requestedQuantity : 1);
+
   const accessCode = await generateAccessCode(async (code) => {
     const existing = await prisma.userEvent.findUnique({ where: { accessCode: code } });
     return !existing;
@@ -68,6 +90,13 @@ async function createEvent(payload, isDemo = false) {
     return !existing;
   });
 
+  const primaryTicketType = useSelections
+    ? (selections[0].ticketType || null)
+    : (String(payload.ticketType || "").trim() || null);
+  const primaryTicketPrice = useSelections
+    ? selections[0].ticketPrice
+    : (payload.ticketPrice ? Number(payload.ticketPrice) : null);
+
   const slug = await generateEventSlug(payload.eventSlug || payload.eventName || "event");
   const event = await prisma.userEvent.create({
     data: {
@@ -76,11 +105,10 @@ async function createEvent(payload, isDemo = false) {
       eventDate: resolveEventDate(payload),
       eventAddress: payload.eventAddress || "Demo Venue",
       slug,
-      ticketType: payload.ticketType || null,
-      ticketPrice: payload.ticketPrice ? Number(payload.ticketPrice) : null,
+      ticketType: primaryTicketType,
+      ticketPrice: primaryTicketPrice,
       paymentInstructions: String(payload.paymentInstructions || "").trim() || null,
-      designJson:
-        payload.designJson && typeof payload.designJson === "object" ? payload.designJson : null,
+      designJson: { currency: String(payload.currency || "$").trim() || "$" },
       quantity,
       accessCode,
       organizerAccessCode,
@@ -90,26 +118,45 @@ async function createEvent(payload, isDemo = false) {
 
   const ids = new Set();
   const tickets = [];
-  const ticketType = String(payload.ticketType || "").trim() || null;
-  const ticketPriceRaw = String(payload.ticketPrice ?? "").trim();
-  const parsedTicketPrice = ticketPriceRaw === "" ? null : Number(ticketPriceRaw);
-  const ticketPrice = Number.isFinite(parsedTicketPrice) ? parsedTicketPrice : null;
-  const designJson = payload.designJson && typeof payload.designJson === "object" ? payload.designJson : null;
-  for (let index = 0; index < quantity; index += 1) {
-    let ticketPublicId = generateTicketPublicId();
-    while (ids.has(ticketPublicId)) {
-      ticketPublicId = generateTicketPublicId();
+
+  if (useSelections) {
+    for (const selection of selections) {
+      for (let index = 0; index < selection.quantity; index += 1) {
+        let ticketPublicId = generateTicketPublicId();
+        while (ids.has(ticketPublicId)) {
+          ticketPublicId = generateTicketPublicId();
+        }
+        ids.add(ticketPublicId);
+        tickets.push({
+          eventId: event.id,
+          ticketPublicId,
+          qrPayload: buildQrPayload(ticketPublicId),
+          status: "UNUSED",
+          ticketType: selection.ticketType,
+          ticketPrice: selection.ticketPrice,
+          designJson: null,
+        });
+      }
     }
-    ids.add(ticketPublicId);
-    tickets.push({
-      eventId: event.id,
-      ticketPublicId,
-      qrPayload: buildQrPayload(ticketPublicId),
-      status: "UNUSED",
-      ticketType,
-      ticketPrice,
-      designJson,
-    });
+  } else {
+    const ticketType = primaryTicketType;
+    const ticketPrice = primaryTicketPrice;
+    for (let index = 0; index < quantity; index += 1) {
+      let ticketPublicId = generateTicketPublicId();
+      while (ids.has(ticketPublicId)) {
+        ticketPublicId = generateTicketPublicId();
+      }
+      ids.add(ticketPublicId);
+      tickets.push({
+        eventId: event.id,
+        ticketPublicId,
+        qrPayload: buildQrPayload(ticketPublicId),
+        status: "UNUSED",
+        ticketType,
+        ticketPrice,
+        designJson: null,
+      });
+    }
   }
 
   if (tickets.length) {

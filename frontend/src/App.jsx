@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import Dashboard from "./pages/Dashboard";
 import Scanner from "./pages/Scanner";
@@ -14,7 +14,6 @@ import AdminDashboardPage from "./pages/admin/AdminDashboardPage";
 import AdminEventsPage from "./pages/admin/AdminEventsPage";
 import AdminEventDetailPage from "./pages/admin/AdminEventDetailPage";
 import AdminTicketsPage from "./pages/admin/AdminTicketsPage";
-import AdminDeliveriesPage from "./pages/admin/AdminDeliveriesPage";
 import AdminScansPage from "./pages/admin/AdminScansPage";
 import AdminOrganizersPage from "./pages/admin/AdminOrganizersPage";
 import AdminSettingsPage from "./pages/admin/AdminSettingsPage";
@@ -68,17 +67,72 @@ export default function App() {
   }, []);
 
 
+  const [menuOpen, setMenuOpen] = useState(false);
+  const closeMenu = () => setMenuOpen(false);
+
   return (
       <div className="min-h-screen w-full overflow-x-clip bg-slate-50 text-slate-900">
       {!isEmbedPreview ? (
-        <nav className="border-b bg-white px-4 py-3">
-          <ul className="flex flex-wrap items-center gap-3 text-sm font-semibold">
-            <li><Link to="/">Home</Link></li>
-            <li><Link to="/dashboard">Organizer</Link></li>
-            <li><Link to="/client">Customer</Link></li>
-            <li><Link to="/scanner">Scanner</Link></li>
-            <li><Link to="/help">Help</Link></li>
-          </ul>
+        <nav className="sticky top-0 z-50 bg-white border-b border-gray-100">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6">
+            <div className="flex h-20 items-center justify-between">
+
+              {/* Hamburger — mobile only, left */}
+              <button
+                type="button"
+                onClick={() => setMenuOpen((o) => !o)}
+                className="relative z-50 md:hidden flex flex-col justify-center gap-1.5 p-2"
+                aria-label="Toggle menu"
+              >
+                <span className={`block h-0.5 w-6 bg-slate-800 transition-transform duration-200 ${menuOpen ? "translate-y-2 rotate-45" : ""}`} />
+                <span className={`block h-0.5 w-6 bg-slate-800 transition-opacity duration-200 ${menuOpen ? "opacity-0" : ""}`} />
+                <span className={`block h-0.5 w-6 bg-slate-800 transition-transform duration-200 ${menuOpen ? "-translate-y-2 -rotate-45" : ""}`} />
+              </button>
+
+              {/* Logo — left on desktop, right on mobile */}
+              <Link to="/" onClick={closeMenu} className="flex-shrink-0 -ml-12 md:ml-0 md:order-first order-last md:mr-0 -mr-[42px]">
+                <img src="/ticket-logo1.png" alt="QR Tickets" className="h-40 w-auto" />
+              </Link>
+
+              {/* Desktop nav links — right side, hidden on mobile */}
+              <ul className="hidden md:flex items-center gap-8 text-sm font-semibold">
+                <li><Link to="/dashboard" className="text-slate-700 transition-colors hover:text-indigo-600">Organizer</Link></li>
+                <li><Link to="/client" className="text-slate-700 transition-colors hover:text-indigo-600">Customer</Link></li>
+                <li><Link to="/scanner" className="text-slate-700 transition-colors hover:text-indigo-600">Scanner</Link></li>
+                <li><Link to="/help" className="text-slate-700 transition-colors hover:text-indigo-600">Help</Link></li>
+              </ul>
+            </div>
+          </div>
+
+          {/* Backdrop — darkens page, click to close */}
+          <div
+            className={`fixed inset-0 z-40 transition-opacity duration-300 md:hidden ${menuOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
+            onClick={closeMenu}
+            aria-hidden="true"
+          />
+
+          {/* Slide-in panel from right */}
+          <div
+            className={`fixed top-0 left-0 z-50 w-64 bg-white shadow-2xl transition-transform duration-300 md:hidden ${menuOpen ? "translate-x-0" : "-translate-x-full"}`}
+          >
+            <div className="flex items-center justify-between border-b border-gray-100 px-4 py-4">
+              <div>
+                <p className="text-2xl font-bold text-slate-900">Connsura</p>
+                <p className="text-sm text-blue-600">QR Tickets</p>
+              </div>
+              <button type="button" onClick={closeMenu} className="p-1 text-slate-500 hover:text-slate-800" aria-label="Close menu">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <ul className="flex flex-col gap-2 p-4 text-sm font-semibold">
+              <li><Link to="/dashboard" onClick={closeMenu} className="block rounded-lg bg-slate-100 px-3 py-2.5 text-slate-700 hover:bg-slate-200 hover:text-indigo-600">Organizer</Link></li>
+              <li><Link to="/client" onClick={closeMenu} className="block rounded-lg bg-slate-100 px-3 py-2.5 text-slate-700 hover:bg-slate-200 hover:text-indigo-600">Customer</Link></li>
+              <li><Link to="/scanner" onClick={closeMenu} className="block rounded-lg bg-slate-100 px-3 py-2.5 text-slate-700 hover:bg-slate-200 hover:text-indigo-600">Scanner</Link></li>
+              <li><Link to="/help" onClick={closeMenu} className="block rounded-lg bg-slate-100 px-3 py-2.5 text-slate-700 hover:bg-slate-200 hover:text-indigo-600">Help</Link></li>
+            </ul>
+          </div>
         </nav>
       ) : null}
       <Routes>
@@ -101,7 +155,6 @@ export default function App() {
           <Route path="events" element={<AdminEventsPage />} />
           <Route path="events/:eventId" element={<AdminEventDetailPage />} />
           <Route path="tickets" element={<AdminTicketsPage />} />
-          <Route path="deliveries" element={<AdminDeliveriesPage />} />
           <Route path="scans" element={<AdminScansPage />} />
           <Route path="organizers" element={<AdminOrganizersPage />} />
           <Route path="client-dash-tokens" element={<AdminClientDashTokensPage />} />

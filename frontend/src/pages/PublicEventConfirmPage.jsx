@@ -39,51 +39,41 @@ export default function PublicEventConfirmPage() {
   };
 
   return (
-    <main className="mx-auto w-full max-w-2xl px-4 py-6 sm:px-6">
+    <main className="mx-auto w-full max-w-lg px-4 py-6 sm:px-6">
       <h1 className="text-2xl font-bold">Request Received</h1>
-      <p className="mt-2 text-slate-700">
-        {isFreeRequest
-          ? "Thanks for the request. The organizer will send your tickets in a few minutes."
-          : "Thank you for your payment. The organizer will process your payment and send the tickets to your client dashboard in a few minutes."}
+      <p className="mt-1 text-sm text-slate-600">
+        {isFreeRequest ? "Your request is pending organizer approval." : "Payment received. Pending organizer approval."}
       </p>
-      {clientAccessToken ? (
-        <div className="mt-2 space-y-1 text-sm font-bold text-black">
-          <p>✔ Save your client access token.</p>
-          <p>✔ Never share it with people you don&apos;t know.</p>
-          <p>✔ You will use it to access your dashboard and see your tickets.</p>
-        </div>
-      ) : null}
 
-      <div className="mt-4 rounded border bg-white p-4 text-sm">
-        <p><span className="font-semibold">Status:</span> {requestStatus}</p>
-        <p><span className="font-semibold">Ticket types:</span> {selections.length ? selections.map((item) => `${item.ticketType} x${item.quantity}`).join(", ") : request?.ticketType || "-"}</p>
-        <p><span className="font-semibold">Quantity:</span> {payment?.totalQuantity || request?.quantity || "-"}</p>
-        <p><span className="font-semibold">Total payment:</span> {isFreeRequest ? "FREE" : `${currency}${totalPrice.toFixed(2)}`}</p>
-        <p><span className="font-semibold">Request ID:</span> <span className="font-mono">{request?.id || "-"}</span></p>
-        <p>
-          <span className="font-semibold">Client Access Token:</span>{" "}
-          <span className="font-mono break-all text-green-600">{clientAccessToken || "-"}</span>
-          {clientAccessToken ? (
+      {clientAccessToken ? (
+        <div className="mt-4 rounded border bg-white p-4">
+          <p className="text-sm text-slate-500">Your client access token</p>
+          <p className="mt-1 break-all font-mono text-lg font-bold text-green-700">{clientAccessToken}</p>
+          <div className="mt-2 flex items-center gap-2">
             <button
               type="button"
               onClick={copyClientAccessToken}
-              className="ml-2 inline-flex rounded border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+              className="rounded border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
             >
-              {copied ? "Copied" : "Copy"}
+              {copied ? "Copied!" : "Copy"}
             </button>
-          ) : null}
-        </p>
+            <AppButton variant="indigo" className="px-3 py-1 text-xs" onClick={() => navigate(`/client/${encodeURIComponent(clientAccessToken)}`)}>
+              Open Dashboard
+            </AppButton>
+          </div>
+          <p className="mt-2 text-xs text-amber-700">Save this token — you will need it to access your tickets.</p>
+        </div>
+      ) : null}
+
+      <div className="mt-3 rounded border bg-slate-50 p-3 text-sm text-slate-700">
+        <p>{selections.length ? selections.map((item) => `${item.ticketType} x${item.quantity}`).join(", ") : request?.ticketType || "-"}</p>
+        <p className="mt-1 font-semibold">{isFreeRequest ? "FREE" : `Total: ${currency}${totalPrice.toFixed(2)}`}</p>
       </div>
 
-      <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+      <div className="mt-3">
         <AppButton variant="secondary" onClick={() => navigate(`/e/${eventSlug}`)}>
-          Back to Event Page
+          Back to Event
         </AppButton>
-        {clientAccessToken ? (
-          <AppButton variant="indigo" onClick={() => navigate(`/client/${encodeURIComponent(clientAccessToken)}`)}>
-            Open Client Dashboard
-          </AppButton>
-        ) : null}
       </div>
     </main>
   );

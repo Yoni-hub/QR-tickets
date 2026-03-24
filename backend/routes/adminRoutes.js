@@ -4,7 +4,6 @@ const {
   listAdminEvents,
   getAdminEventDetail,
   listAdminTickets,
-  listAdminDeliveries,
   listAdminScans,
   listAdminOrganizers,
   getAdminSettings,
@@ -17,7 +16,6 @@ const {
   invalidateAdminTicket,
   restoreAdminTicket,
   resetAdminTicketUsage,
-  retryAdminDelivery,
   markScanSuspicious,
 } = require("../controllers/adminController");
 const { requireAdminAccess } = require("../middleware/adminAuth");
@@ -61,9 +59,6 @@ router.get("/tickets", listAdminTickets);
 router.patch("/tickets/:ticketPublicId/invalidate", invalidateAdminTicket);
 router.patch("/tickets/:ticketPublicId/restore", restoreAdminTicket);
 router.patch("/tickets/:ticketPublicId/reset-usage", resetAdminTicketUsage);
-
-router.get("/deliveries", listAdminDeliveries);
-router.post("/deliveries/:deliveryId/retry", retryAdminDelivery);
 
 router.get("/scans", listAdminScans);
 router.patch("/scans/:scanId/mark-suspicious", markScanSuspicious);

@@ -1,6 +1,5 @@
 const prisma = require("../utils/prisma");
 const { generateAccessCode } = require("../utils/accessCode");
-const { sendTicketLinkEmail } = require("../utils/mailer");
 const { getPublicBaseUrl } = require("../services/eventService");
 const { resolveConfiguredAdminKey } = require("../middleware/adminAuth");
 const { writeAdminAuditLog } = require("../utils/adminAudit");
@@ -575,72 +574,6 @@ async function listAdminTickets(req, res) {
   res.json({ items });
 }
 
-async function listAdminDeliveries(req, res) {
-  const limit = normalizeLimit(req.query.limit, 100, 1, 300);
-  const search = String(req.query.search || "").trim();
-  const status = String(req.query.status || "").trim().toUpperCase();
-
-  const where = {
-    ...(search
-      ? {
-          OR: [
-            { email: { contains: search, mode: "insensitive" } },
-            { ticket: { ticketPublicId: { contains: search, mode: "insensitive" } } },
-            { ticket: { event: { eventName: { contains: search, mode: "insensitive" } } } },
-            { ticket: { event: { accessCode: { contains: search, mode: "insensitive" } } } },
-          ],
-        }
-      : {}),
-    ...(status && ["SENT", "FAILED"].includes(status) ? { status } : {}),
-    ...buildDateWhere("sentAt", req.query.dateFrom, req.query.dateTo),
-  };
-
-  const rows = await prisma.ticketDelivery.findMany({
-    where,
-    orderBy: { sentAt: "desc" },
-    take: limit,
-    select: {
-      id: true,
-      email: true,
-      method: true,
-      status: true,
-      errorMessage: true,
-      sentAt: true,
-      createdAt: true,
-      ticket: {
-        select: {
-          id: true,
-          ticketPublicId: true,
-          qrPayload: true,
-          event: {
-            select: {
-              id: true,
-              eventName: true,
-              accessCode: true,
-            },
-          },
-        },
-      },
-    },
-  });
-
-  const items = rows.map((row) => ({
-    deliveryId: row.id,
-    eventId: row.ticket.event.id,
-    eventName: row.ticket.event.eventName,
-    accessCode: row.ticket.event.accessCode,
-    ticketPublicId: row.ticket.ticketPublicId,
-    recipientName: null,
-    recipientEmail: row.email,
-    deliveryStatus: row.status,
-    providerMessage: row.errorMessage,
-    attemptedAt: row.createdAt,
-    sentAt: row.sentAt,
-    ticketUrl: row.ticket.qrPayload || buildTicketUrl(row.ticket.ticketPublicId),
-  }));
-
-  res.json({ items });
-}
 
 async function listAdminScans(req, res) {
   const limit = normalizeLimit(req.query.limit, 100, 1, 300);
@@ -1194,119 +1127,6 @@ async function resetAdminTicketUsage(req, res) {
   res.json({ ticket: updated });
 }
 
-async function retryAdminDelivery(req, res) {
-  const deliveryId = String(req.params.deliveryId || "").trim();
-  if (!deliveryId) {
-    res.status(400).json({ error: "deliveryId is required." });
-    return;
-  }
-
-  const delivery = await prisma.ticketDelivery.findUnique({
-    where: { id: deliveryId },
-    select: {
-      id: true,
-      email: true,
-      ticket: {
-        select: {
-          id: true,
-          ticketPublicId: true,
-          qrPayload: true,
-          event: {
-            select: {
-              id: true,
-              organizerName: true,
-              eventName: true,
-              eventDate: true,
-              eventAddress: true,
-              ticketType: true,
-            },
-          },
-        },
-      },
-    },
-  });
-
-  if (!delivery) {
-    res.status(404).json({ error: "Delivery not found." });
-    return;
-  }
-
-  const ticketUrl = delivery.ticket.qrPayload || buildTicketUrl(delivery.ticket.ticketPublicId);
-
-  try {
-    await sendTicketLinkEmail({
-      to: delivery.email,
-      organizerName: delivery.ticket.event.organizerName,
-      eventName: delivery.ticket.event.eventName,
-      eventDate: delivery.ticket.event.eventDate,
-      eventAddress: delivery.ticket.event.eventAddress,
-      ticketType: delivery.ticket.event.ticketType || "General",
-      ticketUrl,
-    });
-
-    const newDelivery = await prisma.ticketDelivery.create({
-      data: {
-        ticketId: delivery.ticket.id,
-        email: delivery.email,
-        method: "EMAIL_LINK",
-        status: "SENT",
-      },
-      select: {
-        id: true,
-        status: true,
-        sentAt: true,
-      },
-    });
-
-    await writeAdminAuditLog({
-      action: "admin.retried-delivery",
-      targetType: "delivery",
-      targetId: newDelivery.id,
-      eventId: delivery.ticket.event.id,
-      metadata: {
-        originalDeliveryId: delivery.id,
-        ticketPublicId: delivery.ticket.ticketPublicId,
-        recipientEmail: delivery.email,
-        status: newDelivery.status,
-      },
-    });
-
-    res.json({ delivery: newDelivery, retried: true });
-  } catch (error) {
-    const errorMessage = error?.message || "Unknown email error.";
-    const failedDelivery = await prisma.ticketDelivery.create({
-      data: {
-        ticketId: delivery.ticket.id,
-        email: delivery.email,
-        method: "EMAIL_LINK",
-        status: "FAILED",
-        errorMessage,
-      },
-      select: {
-        id: true,
-        status: true,
-        sentAt: true,
-        errorMessage: true,
-      },
-    });
-
-    await writeAdminAuditLog({
-      action: "admin.retried-delivery",
-      targetType: "delivery",
-      targetId: failedDelivery.id,
-      eventId: delivery.ticket.event.id,
-      metadata: {
-        originalDeliveryId: delivery.id,
-        ticketPublicId: delivery.ticket.ticketPublicId,
-        recipientEmail: delivery.email,
-        status: failedDelivery.status,
-        errorMessage,
-      },
-    });
-
-    res.status(500).json({ error: "Delivery retry failed.", delivery: failedDelivery });
-  }
-}
 
 async function markScanSuspicious(req, res) {
   const scanId = String(req.params.scanId || "").trim();
@@ -1356,7 +1176,6 @@ module.exports = {
   listAdminEvents,
   getAdminEventDetail,
   listAdminTickets,
-  listAdminDeliveries,
   listAdminScans,
   listAdminOrganizers,
   getAdminSettings,
@@ -1369,6 +1188,5 @@ module.exports = {
   invalidateAdminTicket,
   restoreAdminTicket,
   resetAdminTicketUsage,
-  retryAdminDelivery,
   markScanSuspicious,
 };

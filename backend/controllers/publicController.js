@@ -20,7 +20,6 @@ const MAX_EVIDENCE_OUTPUT_BYTES = 900 * 1024;
 const MAX_EVIDENCE_DIMENSION = 1600;
 const SUPPORTED_EVIDENCE_MIME = new Set(["image/png", "image/jpeg", "image/webp"]);
 const MAX_CHAT_MESSAGE_LENGTH = 1200;
-const SOLD_DELIVERY_METHODS = ["EMAIL_LINK", "PDF_DOWNLOAD"];
 
 function normalizeTicketType(value) {
   return String(value || "").trim();
@@ -187,7 +186,6 @@ async function buildTicketTypeStats(event) {
         OR: [
           { ticketRequestId: { not: null } },
           { status: "USED" },
-          { deliveries: { some: { status: "SENT", method: { in: SOLD_DELIVERY_METHODS } } } },
         ],
       },
       _count: { _all: true },

@@ -140,141 +140,6 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
-function renderEmailHtml(textBody, ticketUrl) {
-  const buttonToken = "__VIEW_TICKET_BUTTON__";
-  const safeText = escapeHtml(textBody).replaceAll("[ View Your Ticket ]", buttonToken);
-  const safeTicketUrl = escapeHtml(ticketUrl);
-  const buttonHtml = `<div style="text-align:center;margin:14px 0;"><a href="${safeTicketUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:10px 18px;background:#1d4ed8;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">View Your Ticket</a></div>`;
-  const content = safeText.replaceAll("\n", "<br />").replaceAll(buttonToken, buttonHtml);
-  return `<div style="font-family:Arial,sans-serif;line-height:1.45;color:#0f172a;">${content}</div>`;
-}
-
-function buildTicketLinkEmailContent({
-  to,
-  organizerName,
-  eventName,
-  eventDate,
-  eventAddress,
-  ticketType,
-  ticketUrl,
-  subjectTemplate,
-  bodyTemplate,
-}) {
-  const templateValues = {
-    to,
-    organizerName,
-    eventName,
-    eventDate,
-    eventAddress,
-    ticketType,
-    ticketUrl,
-  };
-  const resolvedBodyTemplate = bodyTemplate || DEFAULT_BODY_TEMPLATE;
-  const resolvedText = renderEmailTemplate(resolvedBodyTemplate, templateValues);
-  const useDefaultHtmlTemplate = resolvedBodyTemplate === DEFAULT_BODY_TEMPLATE;
-
-  return {
-    subject: renderEmailTemplate(subjectTemplate || DEFAULT_SUBJECT_TEMPLATE, templateValues),
-    text: resolvedText,
-    html: useDefaultHtmlTemplate
-      ? renderEmailTemplate(DEFAULT_HTML_TEMPLATE, templateValues)
-      : renderEmailHtml(resolvedText, ticketUrl),
-  };
-}
-
-async function sendTicketLinkEmail({
-  to,
-  organizerName,
-  eventName,
-  eventDate,
-  eventAddress,
-  ticketType,
-  ticketUrl,
-  subjectTemplate,
-  bodyTemplate,
-}) {
-  const transporter = getTransporter();
-  const from = process.env.MAIL_FROM || "no-reply@localhost";
-  const content = buildTicketLinkEmailContent({
-    to,
-    organizerName,
-    eventName,
-    eventDate,
-    eventAddress,
-    ticketType,
-    ticketUrl,
-    subjectTemplate,
-    bodyTemplate,
-  });
-
-  return transporter.sendMail({
-    from,
-    to,
-    subject: content.subject,
-    text: content.text,
-    html: content.html,
-  });
-}
-
-async function sendTicketLinksDigestEmail({
-  to,
-  eventName,
-  eventDate,
-  eventAddress,
-  ticketLinks,
-}) {
-  const transporter = getTransporter();
-  const from = process.env.MAIL_FROM || "no-reply@localhost";
-  const safeLinks = Array.isArray(ticketLinks) ? ticketLinks : [];
-  const formattedDate = new Date(eventDate).toLocaleString();
-  const lines = safeLinks.map((item) => `${String(item.ticketType || "General")}: ${String(item.ticketUrl || "")}`);
-  const subject = `Your tickets for ${String(eventName || "your event")} are ready`;
-  const text = [
-    "Hello,",
-    "",
-    `Your tickets for ${String(eventName || "")} are ready.`,
-    "",
-    `Event: ${String(eventName || "")}`,
-    `Date: ${formattedDate}`,
-    `Location: ${String(eventAddress || "")}`,
-    "",
-    "Use the links below to view your tickets:",
-    ...lines,
-    "",
-    `The tickets were sent to ${String(to || "")}.`,
-    "Please present the QR codes at the entrance.",
-  ].join("\n");
-  const htmlLines = lines
-    .map((line) => {
-      const [type, ...rest] = line.split(": ");
-      const url = rest.join(": ");
-      const safeType = escapeHtml(type);
-      const safeUrl = escapeHtml(url);
-      return `<li style="margin:6px 0;"><strong>${safeType}</strong>: <a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${safeUrl}</a></li>`;
-    })
-    .join("");
-  const html = `
-    <div style="font-family:Arial,sans-serif;line-height:1.45;color:#0f172a;">
-      <p>Hello,</p>
-      <p>Your tickets for <strong>${escapeHtml(eventName)}</strong> are ready.</p>
-      <p><strong>Event:</strong> ${escapeHtml(eventName)}<br />
-      <strong>Date:</strong> ${escapeHtml(formattedDate)}<br />
-      <strong>Location:</strong> ${escapeHtml(eventAddress)}</p>
-      <p>Use the links below to view your tickets:</p>
-      <ul style="padding-left:18px;margin:8px 0 16px 0;">${htmlLines}</ul>
-      <p>The tickets were sent to <strong>${escapeHtml(to)}</strong>.<br />Please present the QR codes at the entrance.</p>
-    </div>
-  `;
-
-  return transporter.sendMail({
-    from,
-    to,
-    subject,
-    text,
-    html,
-  });
-}
-
 async function sendTicketApprovedEmail({ to, eventName, eventDate, eventAddress, dashboardUrl }) {
   const transporter = getTransporter();
   const from = process.env.MAIL_FROM || "no-reply@localhost";
@@ -409,14 +274,9 @@ async function sendOrganizerNewMessageEmail({ to, eventName, senderName, dashboa
 }
 
 module.exports = {
-  sendTicketLinkEmail,
-  sendTicketLinksDigestEmail,
   sendTicketApprovedEmail,
   sendTicketCancelledEmail,
   sendNewChatMessageEmail,
   sendOrganizerNewRequestEmail,
   sendOrganizerNewMessageEmail,
-  DEFAULT_SUBJECT_TEMPLATE,
-  DEFAULT_BODY_TEMPLATE,
-  renderEmailTemplate,
 };

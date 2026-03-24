@@ -6,14 +6,12 @@ const {
   getEventByCode,
   getEventTickets,
   generateTicketsByAccessCode,
-  getTicketsPdf,
   updateEventInline,
   getOrganizerNotifications,
   updateOrganizerNotifications,
 } = require("../controllers/eventController");
 const { scanTicket } = require("../controllers/scanController");
 const { getTicketByPublicId, getPublicTicketByPublicId } = require("../controllers/ticketController");
-const { sendOrderTicketLinks } = require("../controllers/orderController");
 const adminRoutes = require("./adminRoutes");
 const {
   getPublicEventBySlug,
@@ -65,10 +63,8 @@ router.post("/events/by-code/:accessCode/create-new", createEventForAccessCode);
 router.post("/events/by-code/:accessCode/generate-tickets", generateTicketsByAccessCode);
 router.patch("/events/:eventId", updateEventInline);
 router.get("/events/:eventId/tickets", getEventTickets);
-router.get("/events/:eventId/tickets.pdf", getTicketsPdf);
 router.get("/tickets/:ticketPublicId", getTicketByPublicId);
 router.get("/tickets/public/:ticketPublicId", getPublicTicketByPublicId);
-router.post("/orders/:accessCode/send-links", sendOrderTicketLinks);
 router.post("/scans", scanTicket);
 
 router.get("/public/events/:eventSlug", getPublicEventBySlug);

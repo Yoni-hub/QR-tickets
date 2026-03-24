@@ -24,16 +24,9 @@ function useFeedback(autoClearMs = 5000) {
   return [fb, set];
 }
 
-const DELIVERY_METHODS = {
-  PDF: "PDF",
-  EMAIL_LINK: "EMAIL_LINK",
-  PUBLIC_EVENT_LINK: "PUBLIC_EVENT_LINK",
-};
-
 const DASHBOARD_MENUS_ALL = [
   { id: "events", label: "Events" },
   { id: "tickets", label: "Tickets" },
-  { id: "delivery", label: "Delivery Method" },
   { id: "requests", label: "Ticket Requests" },
   { id: "chat", label: "Chat" },
   { id: "promoters", label: "Promoters" },
@@ -44,72 +37,13 @@ const DASHBOARD_MENUS_PRELOAD = [
   { id: "events", label: "Events" },
 ];
 
-const PDF_TICKETS_PER_PAGE_OPTIONS = [1, 2, 3, 4];
 const TICKET_STATUS_FILTERS = {
   TOTAL: "TOTAL",
   SOLD: "SOLD",
   SCANNED: "SCANNED",
   REMAINING: "REMAINING",
 };
-const DEFAULT_EMAIL_SUBJECT = "Your ticket for {{eventName}}";
-const DEFAULT_EMAIL_BODY = [
-  "Hello,",
-  "",
-  "Your {{ticketType}} ticket for {{eventName}} is ready.",
-  "",
-  "Organizer: {{organizerName}}",
-  "Event: {{eventName}}",
-  "Date: {{eventDate}}",
-  "Location: {{eventAddress}}",
-  "",
-  "Click the button below to view your ticket.",
-  "[ View Your Ticket ]",
-  "",
-  "If the button does not work, use this link:",
-  "{{ticketUrl}}",
-  "",
-  "This ticket was sent to {{recipientEmail}}.",
-  "Please present the QR code at the entrance.",
-].join("\n");
 
-const DEFAULT_EMAIL_HTML_TEMPLATE = `
-<table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#ffffff;padding:16px 0;">
-  <tr>
-    <td align="center">
-      <table width="520" cellpadding="24" cellspacing="0" role="presentation" style="background:#f5f7fb;border-radius:8px;font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
-        <tr>
-          <td align="center">
-            <p style="margin:0 0 18px 0;font-size:20px;font-weight:700;">Ticket Confirmed</p>
-            <p style="margin:0 0 16px 0;">Hello,</p>
-            <p style="margin:0 0 20px 0;">Your <strong>{{ticketType}}</strong> ticket for <strong>{{eventName}}</strong> is ready.</p>
-            <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto 20px auto;text-align:left;">
-              <tr>
-                <td style="padding:4px 10px 4px 0;">Organizer:</td>
-                <td><strong>{{organizerName}}</strong></td>
-              </tr>
-              <tr>
-                <td style="padding:4px 10px 4px 0;">Event:</td>
-                <td><strong>{{eventName}}</strong></td>
-              </tr>
-              <tr>
-                <td style="padding:4px 10px 4px 0;">Date:</td>
-                <td><strong>{{eventDate}}</strong></td>
-              </tr>
-              <tr>
-                <td style="padding:4px 10px 4px 0;">Location:</td>
-                <td><strong>{{eventAddress}}</strong></td>
-              </tr>
-            </table>
-            <p style="text-align:center;margin:20px 0;"><a href="{{ticketUrl}}" target="_blank" rel="noopener noreferrer" style="background:#2d5bd1;color:#ffffff;padding:12px 22px;border-radius:6px;text-decoration:none;font-weight:600;display:inline-block;">View Your Ticket</a></p>
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
-</table>
-`;
-
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DEFAULT_TICKET_TYPE = "General";
 const EVENT_EDIT_MODES = {
   EDIT: "EDIT",
@@ -125,52 +59,6 @@ const LOCAL_SAVED_CODE_KEY = "qr-dashboard:saved-code";
 
 function getSelectedEventStorageKey(accessCode) {
   return `qr-dashboard:selected-event:${String(accessCode || "").trim()}`;
-}
-
-function getDeliveryWarningAckStorageKey(accessCode) {
-  return `qr-dashboard:delivery-warning-ack:${String(accessCode || "").trim()}`;
-}
-
-function parseRecipientEmails(rawValue) {
-  return String(rawValue || "")
-    .split(/[\n,]+/)
-    .map((entry) => entry.trim().toLowerCase())
-    .filter((entry, index, arr) => EMAIL_PATTERN.test(entry) && arr.indexOf(entry) === index);
-}
-
-function renderEmailTemplate(template, values) {
-  const replacements = {
-    "{{organizerName}}": String(values.organizerName || ""),
-    "{{eventName}}": String(values.eventName || ""),
-    "{{eventDate}}": String(values.eventDate || ""),
-    "{{eventAddress}}": String(values.eventAddress || ""),
-    "{{ticketType}}": String(values.ticketType || "General"),
-    "{{ticketUrl}}": String(values.ticketUrl || ""),
-    "{{recipientEmail}}": String(values.recipientEmail || ""),
-  };
-
-  return Object.entries(replacements).reduce(
-    (acc, [token, tokenValue]) => acc.split(token).join(tokenValue),
-    String(template || ""),
-  );
-}
-
-function escapeHtml(value) {
-  return String(value || "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
-function renderEmailHtmlPreview(textBody, ticketUrl) {
-  const buttonToken = "__VIEW_TICKET_BUTTON__";
-  const safeText = escapeHtml(textBody).replaceAll("[ View Your Ticket ]", buttonToken);
-  const safeTicketUrl = escapeHtml(ticketUrl);
-  const buttonHtml = `<div style="text-align:center;margin:14px 0;"><a href="${safeTicketUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:10px 18px;background:#1d4ed8;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">View Your Ticket</a></div>`;
-  const content = safeText.replaceAll("\n", "<br />").replaceAll(buttonToken, buttonHtml);
-  return `<div style="text-align:center;line-height:1.5;">${content}</div>`;
 }
 
 function formatDate(value) {
@@ -190,38 +78,8 @@ function resolveDefaultTicketType(value) {
   return String(value || "").trim() || DEFAULT_TICKET_TYPE;
 }
 
-function buildDefaultEmailSubject(ticketType) {
-  return `Your ${resolveDefaultTicketType(ticketType)} ticket for {{eventName}}`;
-}
-
-function buildDefaultEmailBody(ticketType) {
-  return DEFAULT_EMAIL_BODY.replace(
-    "Your {{ticketType}} ticket for {{eventName}} is ready.",
-    `Your ${resolveDefaultTicketType(ticketType)} ticket for {{eventName}} is ready.`,
-  );
-}
-
-function resolveDeliveryMethodLabel(ticket) {
-  const method = String(ticket?.deliveryMethod || "NOT_DELIVERED").trim();
-  if (method === "PDF_DOWNLOAD") return "PDF";
-  if (method === "EMAIL_LINK") return "EMAIL";
-  if (method === "PUBLIC_EVENT_PAGE") return "PUBLIC EVENT PAGE";
-  return "NOT_DELIVERED";
-}
-
-function resolveDeliveryMethodErrorLabel(method) {
-  if (method === "PDF") return "PDF download";
-  if (method === "EMAIL") return "email";
-  if (method === "PUBLIC EVENT PAGE") return "public event page";
-  return String(method || "delivery").toLowerCase();
-}
-
 function isTicketSold(ticket) {
-  const deliveryMethod = String(ticket?.deliveryMethod || "").trim();
-  return Boolean(ticket?.ticketRequestId)
-    || ticket?.status === "USED"
-    || deliveryMethod === "EMAIL_LINK"
-    || deliveryMethod === "PDF_DOWNLOAD";
+  return Boolean(ticket?.ticketRequestId) || ticket?.status === "USED";
 }
 
 function isTicketCancelled(ticket) {
@@ -324,7 +182,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const location = useLocation();
   const [params, setParams] = useSearchParams();
-  const VALID_MENU_IDS = ["events", "tickets", "delivery", "requests", "chat", "promoters", "notifications"];
+  const VALID_MENU_IDS = ["events", "tickets", "requests", "chat", "promoters", "notifications"];
   const activeMenu = VALID_MENU_IDS.includes(String(params.get("menu") || "").toLowerCase())
     ? String(params.get("menu")).toLowerCase()
     : "events";
@@ -349,11 +207,6 @@ export default function Dashboard() {
   const [savingEvent, setSavingEvent] = useState(false);
   const [savingTicketDraft, setSavingTicketDraft] = useState(false);
   const [tickets, setTickets] = useState([]);
-  const [ticketDeliverySummary, setTicketDeliverySummary] = useState({
-    undeliveredTickets: 0,
-    pendingRequestedTickets: 0,
-    downloadableTickets: 0,
-  });
   const [ticketRequests, setTicketRequests] = useState([]);
   const [autoApprove, setAutoApprove] = useState(false);
   const [togglingAutoApprove, setTogglingAutoApprove] = useState(false);
@@ -361,22 +214,9 @@ export default function Dashboard() {
   const [leaderboard, setLeaderboard] = useState([]);
 
   const [loading, setLoading] = useState(false);
-  const [downloading, setDownloading] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [deliveryMethod, setDeliveryMethod] = useState(DELIVERY_METHODS.PDF);
-  const [pdfTicketCount, setPdfTicketCount] = useState("");
-  const [pdfTicketsPerPage, setPdfTicketsPerPage] = useState(2);
-  const [emailMode, setEmailMode] = useState("single"); // 'single' | 'bulk-same' | 'bulk-table'
-  const [singleEmail, setSingleEmail] = useState("");
-  const [emailQuantities, setEmailQuantities] = useState({}); // {[ticketType]: number}
-  const [bulkEmails, setBulkEmails] = useState("");
-  const [tableRecipients, setTableRecipients] = useState([{ id: 1, email: "", quantities: {} }]);
-  const [showEmailPreview, setShowEmailPreview] = useState(false);
-  const [sendSummary, setSendSummary] = useState(null);
   const [loadFb, setLoadFb] = useFeedback();
   const [eventFb, setEventFb] = useFeedback();
   const [ticketFb, setTicketFb] = useFeedback(10000);
-  const [deliveryFb, setDeliveryFb] = useFeedback();
   const [requestFb, setRequestFb] = useFeedback();
   const [promoterFb, setPromoterFb] = useFeedback();
   const [chatFb, setChatFb] = useFeedback();
@@ -413,12 +253,6 @@ export default function Dashboard() {
   const [copiedPublicEventLink, setCopiedPublicEventLink] = useState(false);
   const [copiedTicketPublicId, setCopiedTicketPublicId] = useState("");
   const [copiedPromoterId, setCopiedPromoterId] = useState("");
-  const [deliveryWarningAcknowledged, setDeliveryWarningAcknowledged] = useState(false);
-  const [deliveryWarningModal, setDeliveryWarningModal] = useState({
-    open: false,
-    action: "",
-    payload: null,
-  });
   const ticketEditorDraftRef = useRef(null);
   const organizerNameRef = useRef(null);
   const [showGetStartedHint, setShowGetStartedHint] = useState(false);
@@ -428,12 +262,6 @@ export default function Dashboard() {
     ticketPublicId: null,
     promoterId: null,
   });
-
-  // Preview data for email digest sample (previewTicketLinks depends on deliveryTicketTypeOptions — defined below)
-  const escapeHtml = (str) => String(str ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-  const previewEventName = escapeHtml(summary?.event?.eventName || "Your Event");
-  const previewEventDate = escapeHtml(summary?.event?.eventDate ? new Date(summary.event.eventDate).toLocaleString() : "Event date");
-  const previewEventAddress = escapeHtml(summary?.event?.eventAddress || "Event address");
 
   const accessCode = useMemo(() => code.trim(), [code]);
   const organizerChatAccessCode = useMemo(() => {
@@ -492,27 +320,6 @@ export default function Dashboard() {
       ),
     [tickets, summary?.event?.ticketType],
   );
-  const deliveryTicketTypeOptions = useMemo(() => {
-    if (ticketTypeOptions.length) return ticketTypeOptions;
-    return [resolveDefaultTicketType(summary?.event?.ticketType)];
-  }, [ticketTypeOptions, summary?.event?.ticketType]);
-
-  const previewTicketLinks = deliveryTicketTypeOptions.map((type) => ({
-    ticketType: escapeHtml(type),
-    ticketUrl: escapeHtml(`${window.location.origin}/t/SAMPLE-${type.toUpperCase()}`),
-  }));
-
-  // Initialise emailQuantities when ticket types become available
-  useEffect(() => {
-    if (!deliveryTicketTypeOptions.length) return;
-    setEmailQuantities((prev) => {
-      const next = { ...prev };
-      for (const type of deliveryTicketTypeOptions) {
-        if (!(type in next)) next[type] = "";
-      }
-      return next;
-    });
-  }, [deliveryTicketTypeOptions]);
   const filteredTickets = useMemo(() => {
     return tickets.filter((ticket) => {
       const ticketTypeMatches =
@@ -540,38 +347,6 @@ export default function Dashboard() {
     () => tickets.filter((ticket) => !isTicketSold(ticket)).length,
     [tickets],
   );
-  const deliverableTickets = useMemo(
-    () =>
-      tickets.filter(
-        (ticket) =>
-          !ticket.ticketRequestId &&
-          ticket.status === "UNUSED" &&
-          !ticket.isInvalidated &&
-          resolveDeliveryMethodLabel(ticket) === "NOT_DELIVERED",
-      ),
-    [tickets],
-  );
-  const deliverableCount = Number.isFinite(ticketDeliverySummary?.downloadableTickets)
-    ? Number(ticketDeliverySummary.downloadableTickets)
-    : deliverableTickets.length;
-  const pendingRequestedCount = Number.isFinite(ticketDeliverySummary?.pendingRequestedTickets)
-    ? Number(ticketDeliverySummary.pendingRequestedTickets)
-    : 0;
-  const pdfDeliveredCount = useMemo(
-    () => tickets.filter((ticket) => resolveDeliveryMethodLabel(ticket) === "PDF").length,
-    [tickets],
-  );
-  const noDeliverableTickets = tickets.length > 0 && deliverableCount < 1;
-
-  // Available count per ticket type (for inline email delivery validation)
-  const availableCountByType = useMemo(() => {
-    const map = {};
-    for (const ticket of deliverableTickets) {
-      const type = String(ticket.ticketType || summary?.event?.ticketType || DEFAULT_TICKET_TYPE).trim();
-      map[type] = (map[type] || 0) + 1;
-    }
-    return map;
-  }, [deliverableTickets, summary?.event?.ticketType]);
 
   useEffect(() => {
     if (!shouldOpenHomeMode) return;
@@ -581,7 +356,6 @@ export default function Dashboard() {
     setEvents([]);
     setSelectedEventId("");
     setTickets([]);
-    setTicketDeliverySummary({ undeliveredTickets: 0, pendingRequestedTickets: 0, downloadableTickets: 0 });
     setTicketRequests([]);
     setPromoters([]);
     setLeaderboard([]);
@@ -596,13 +370,6 @@ export default function Dashboard() {
     setCopiedPublicEventLink(false);
     setCopiedTicketPublicId("");
     setCopiedPromoterId("");
-    if (!accessCode) {
-      setDeliveryWarningAcknowledged(false);
-      return;
-    }
-    const storageKey = getDeliveryWarningAckStorageKey(accessCode);
-    const savedValue = localStorage.getItem(storageKey);
-    setDeliveryWarningAcknowledged(savedValue === "1");
   }, [accessCode]);
 
   useEffect(() => {
@@ -671,10 +438,6 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [accessCode, summary?.event?.id, activeMenu]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    setPdfTicketCount("");
-  }, [deliverableCount]);
-
   const applySummaryEvent = useCallback((payload) => {
     const nextEvents = Array.isArray(payload?.events) ? payload.events : [];
     setEvents(nextEvents);
@@ -725,13 +488,6 @@ export default function Dashboard() {
   const loadTicketsForEvent = async (eventId) => {
     const ticketsRes = await api.get(`/events/${eventId}/tickets`);
     setTickets(ticketsRes.data.tickets || []);
-    setTicketDeliverySummary(
-      ticketsRes.data.summary || {
-        undeliveredTickets: 0,
-        pendingRequestedTickets: 0,
-        downloadableTickets: 0,
-      },
-    );
   };
 
   const loadDashboard = useCallback(async (targetCode, requestedEventId = "") => {
@@ -739,7 +495,6 @@ export default function Dashboard() {
     if (!trimmedCode || loading) return;
     setLoading(true);
     setLoadFb("", "");
-    setSendSummary(null);
     if (location.pathname === "/") {
       navigate(`/dashboard?code=${encodeURIComponent(trimmedCode)}&menu=events`, { replace: true });
     } else {
@@ -779,7 +534,6 @@ export default function Dashboard() {
       setEvents([]);
       setSelectedEventId("");
       setTickets([]);
-      setTicketDeliverySummary({ undeliveredTickets: 0, pendingRequestedTickets: 0, downloadableTickets: 0 });
       setTicketRequests([]);
       setPromoters([]);
       setLeaderboard([]);
@@ -824,22 +578,9 @@ export default function Dashboard() {
     }, 1800);
   };
 
-  const copyTicketUrl = async (ticket, skipWarning = false) => {
-    const method = resolveDeliveryMethodLabel(ticket);
-    if (method !== "NOT_DELIVERED") {
-      const inlineMessage = `cant copy! ticket already delivered through ${resolveDeliveryMethodErrorLabel(method)}.`;
-      setTicketCopyError({
-        ticketPublicId: String(ticket?.ticketPublicId || ""),
-        message: inlineMessage,
-      });
-      return;
-    }
+  const copyTicketUrl = async (ticket) => {
     const ticketPublicId = ticket?.ticketPublicId;
     if (!ticketPublicId) return;
-    if (!deliveryWarningAcknowledged && skipWarning !== true) {
-      openDeliveryWarningModal("copy-ticket-url", { ticketPublicId });
-      return;
-    }
     try {
       const url = `${window.location.origin}/t/${ticketPublicId}`;
       await navigator.clipboard.writeText(url);
@@ -942,14 +683,13 @@ export default function Dashboard() {
   };
 
   const continueCancelModal = () => {
-    const ticket = cancelModal.ticket;
-    const requiresEvidence = resolveDeliveryMethodLabel(ticket) === "PUBLIC EVENT PAGE";
     if (!cancelModal.reason) {
       setCancelModal((prev) => ({ ...prev, error: "Select a cancellation reason." }));
       return;
     }
+    const requiresEvidence = Boolean(cancelModal.ticket?.ticketRequestId);
     if (requiresEvidence && !cancelModal.evidenceImageDataUrl) {
-      setCancelModal((prev) => ({ ...prev, error: "Evidence is required for public event page cancellations." }));
+      setCancelModal((prev) => ({ ...prev, error: "Refund evidence is required." }));
       return;
     }
     setCancelModal((prev) => ({ ...prev, step: "confirm", error: "" }));
@@ -1121,242 +861,12 @@ export default function Dashboard() {
     }
   };
 
-  const downloadPdf = async (skipWarning = false) => {
-    if (!summary?.event?.id || downloading) return;
-    if (deliverableCount < 1) {
-      setDeliveryFb("error", "No tickets available. Go to the Tickets menu to generate more.");
-      return;
-    }
-    const requestedCount = Number.parseInt(String(pdfTicketCount || ""), 10);
-    if (Number.isNaN(requestedCount) || requestedCount < 1) {
-      setDeliveryFb("error", "Enter how many tickets you want to download.");
-      return;
-    }
-    if (requestedCount > deliverableCount) {
-      setDeliveryFb("error", `You only have ${deliverableCount} ticket${deliverableCount !== 1 ? "s" : ""} available. Update the number and try again.`);
-      return;
-    }
-    if (!deliveryWarningAcknowledged && skipWarning !== true) {
-      openDeliveryWarningModal("download-pdf");
-      return;
-    }
-    const safeCount = requestedCount;
-    setDownloading(true);
-    setDeliveryFb("", "");
-    try {
-      const response = await withMinDelay(
-        api.get(`/events/${summary.event.id}/tickets.pdf`, {
-          responseType: "blob",
-          params: { perPage: pdfTicketsPerPage, count: safeCount },
-        }),
-      );
-      const contentType = String(response.headers?.["content-type"] || "");
-      if (!contentType.includes("application/pdf") || response.data.size < 500) {
-        const text = await response.data.text();
-        throw new Error(text || "PDF generation failed.");
-      }
-      const url = window.URL.createObjectURL(new Blob([response.data], { type: "application/pdf" }));
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = "tickets.pdf";
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-
-      const downloadedCount = Number.parseInt(String(response.headers?.["x-tickets-downloaded"] || safeCount), 10) || safeCount;
-      const remainingAfterDownload = Number.parseInt(String(response.headers?.["x-tickets-remaining-deliverable"] || 0), 10) || 0;
-      await loadTicketsForEvent(summary.event.id);
-      if (remainingAfterDownload < 1) {
-        setDeliveryFb("info", "All tickets downloaded.");
-      } else {
-        setDeliveryFb("success", `Downloaded ${downloadedCount} ticket(s). You have ${remainingAfterDownload} tickets left to deliver.`);
-      }
-    } catch (requestError) {
-      setDeliveryFb("error", requestError.response?.data?.error || requestError.message || "Could not download tickets PDF.");
-    } finally {
-      setDownloading(false);
-    }
-  };
-
-  const buildRecipients = () => {
-    const selections = Object.entries(emailQuantities)
-      .map(([ticketType, raw]) => ({ ticketType, quantity: parseInt(raw || "0", 10) || 0 }))
-      .filter(({ quantity }) => quantity > 0);
-
-    if (emailMode === "single") {
-      const email = singleEmail.trim().toLowerCase();
-      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return null;
-      if (!selections.length) return null;
-      return [{ email, selections }];
-    }
-
-    if (emailMode === "bulk-same") {
-      if (!selections.length) return null;
-      const emails = bulkEmails
-        .split(/[\n,]+/)
-        .map((e) => e.trim().toLowerCase())
-        .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
-      const unique = [...new Set(emails)];
-      if (!unique.length) return null;
-      return unique.map((email) => ({ email, selections }));
-    }
-
-    if (emailMode === "bulk-table") {
-      const result = [];
-      for (const row of tableRecipients) {
-        const email = row.email.trim().toLowerCase();
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) continue;
-        const rowSelections = Object.entries(row.quantities)
-          .map(([ticketType, raw]) => ({ ticketType, quantity: parseInt(raw || "0", 10) || 0 }))
-          .filter(({ quantity }) => quantity > 0);
-        if (rowSelections.length) result.push({ email, selections: rowSelections });
-      }
-      return result.length ? result : null;
-    }
-
-    return null;
-  };
-
-  // Compute total requested per type across all table rows (for inline validation)
-  const tableRequestedByType = useMemo(() => {
-    if (emailMode !== "bulk-table") return {};
-    const map = {};
-    for (const row of tableRecipients) {
-      for (const [type, raw] of Object.entries(row.quantities)) {
-        const qty = parseInt(raw || "0", 10) || 0;
-        if (qty > 0) map[type] = (map[type] || 0) + qty;
-      }
-    }
-    return map;
-  }, [emailMode, tableRecipients]);
-
-  // Same for single/bulk-same modes
-  const emailRequestedByType = useMemo(() => {
-    if (emailMode === "bulk-table") return {};
-    const multiplier = emailMode === "bulk-same"
-      ? Math.max(1, bulkEmails.split(/[\n,]+/).filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e.trim())).length)
-      : 1;
-    const map = {};
-    for (const [type, raw] of Object.entries(emailQuantities)) {
-      const qty = parseInt(raw || "0", 10) || 0;
-      if (qty > 0) map[type] = qty * multiplier;
-    }
-    return map;
-  }, [emailMode, emailQuantities, bulkEmails]);
-
-  const addTableRow = () => setTableRecipients((prev) => [
-    ...prev,
-    { id: Date.now(), email: "", quantities: {} },
-  ]);
-
-  const removeTableRow = (id) => setTableRecipients((prev) => prev.filter((r) => r.id !== id));
-
-  const updateTableRow = (id, field, value) => setTableRecipients((prev) =>
-    prev.map((r) => r.id === id ? { ...r, [field]: value } : r),
-  );
-
-  const updateTableRowQty = (id, type, value) => setTableRecipients((prev) =>
-    prev.map((r) => r.id === id ? { ...r, quantities: { ...r.quantities, [type]: value.replace(/[^0-9]/g, "") } } : r),
-  );
-
-  const sendTicketLinks = async (skipWarning = false) => {
-    if (!accessCode || sending) return;
-
-    const recipients = buildRecipients();
-    if (!recipients || !recipients.length) {
-      if (emailMode === "single") {
-        setDeliveryFb("error", "Enter a valid email and at least one ticket quantity.");
-      } else if (emailMode === "bulk-same") {
-        setDeliveryFb("error", "Add at least one valid email and set ticket quantities.");
-      } else {
-        setDeliveryFb("error", "Add at least one valid row with an email and ticket quantity.");
-      }
-      return;
-    }
-
-    if (!deliveryWarningAcknowledged && skipWarning !== true) {
-      openDeliveryWarningModal("send-ticket-links");
-      return;
-    }
-
-    setSending(true);
-    setDeliveryFb("", "");
-    setSendSummary(null);
-    try {
-      const response = await withMinDelay(
-        api.post(`/orders/${encodeURIComponent(accessCode)}/send-links`, {
-          recipients,
-          eventId: summary?.event?.id,
-          baseUrl: window.location.origin,
-        }),
-      );
-      setSendSummary(response.data);
-      setSingleEmail("");
-      setBulkEmails("");
-      setTableRecipients([{ id: 1, email: "", quantities: {} }]);
-      await loadTicketsForEvent(summary.event.id);
-      const totalSent = response.data.totalSent || 0;
-      const failCount = response.data.failed?.length || 0;
-      if (failCount > 0) {
-        setDeliveryFb("info", `Sent ${totalSent} ticket(s). ${failCount} email(s) failed — check results below.`);
-      } else {
-        setDeliveryFb("success", `Successfully sent ${totalSent} ticket(s) to ${recipients.length} recipient(s).`);
-      }
-    } catch (requestError) {
-      const responseData = requestError.response?.data || {};
-      setDeliveryFb("error", responseData.error || "Could not send ticket links.");
-    } finally {
-      setSending(false);
-    }
-  };
 
   const handleTicketsGenerated = async () => {
     if (!summary?.event?.id || !accessCode) return;
     await loadTicketsForEvent(summary.event.id);
     setTicketPage(1);
-    setTicketFb("success", "Tickets generated! Head to the Delivery menu to start sending tickets to your customers.");
-  };
-
-  const confirmDeliveryWarningModal = async () => {
-    const { action, payload } = deliveryWarningModal;
-    closeDeliveryWarningModal();
-    if (accessCode) {
-      localStorage.setItem(getDeliveryWarningAckStorageKey(accessCode), "1");
-    }
-    setDeliveryWarningAcknowledged(true);
-
-    if (action === "copy-public-event-link") {
-      await copyPublicEventLink(true);
-      return;
-    }
-    if (action === "copy-ticket-url") {
-      const pendingTicketPublicId = String(payload?.ticketPublicId || "").trim();
-      const pendingTicket = tickets.find((ticket) => ticket.ticketPublicId === pendingTicketPublicId);
-      if (pendingTicket) {
-        await copyTicketUrl(pendingTicket, true);
-      } else if (pendingTicketPublicId) {
-        try {
-          await navigator.clipboard.writeText(`${window.location.origin}/t/${pendingTicketPublicId}`);
-          setTicketCopyError({ ticketPublicId: "", message: "" });
-          markCopiedTicketPublicId(pendingTicketPublicId);
-        } catch {
-          setTicketFb("error", "Could not copy ticket URL.");
-        }
-      }
-      return;
-    }
-    if (action === "download-pdf") {
-      await downloadPdf(true);
-      return;
-    }
-    if (action === "send-ticket-links") {
-      await sendTicketLinks(true);
-      return;
-    }
-    if (action === "copy-promoter-link") {
-      await copyPromoterLink(payload?.promoterLink, payload?.promoterId, true);
-    }
+    setTicketFb("success", "Tickets generated! Go to Ticket Requests to manage incoming requests.");
   };
 
   const saveEventInline = async () => {
@@ -1537,28 +1047,9 @@ export default function Dashboard() {
     }
   };
 
-  const openDeliveryWarningModal = (action, payload = null) => {
-    setDeliveryWarningModal({
-      open: true,
-      action,
-      payload,
-    });
-  };
 
-  const closeDeliveryWarningModal = () => {
-    setDeliveryWarningModal({
-      open: false,
-      action: "",
-      payload: null,
-    });
-  };
-
-  const copyPromoterLink = async (promoterLink, promoterId = "", skipWarning = false) => {
+  const copyPromoterLink = async (promoterLink, promoterId = "") => {
     if (!promoterLink) return;
-    if (!deliveryWarningAcknowledged && skipWarning !== true) {
-      openDeliveryWarningModal("copy-promoter-link", { promoterLink, promoterId });
-      return;
-    }
     try {
       await navigator.clipboard.writeText(promoterLink);
       markCopiedPromoterId(promoterId);
@@ -1567,25 +1058,13 @@ export default function Dashboard() {
     }
   };
 
-  const copyPublicEventLink = async (skipWarning = false) => {
+  const copyPublicEventLink = async () => {
     if (!summary?.event?.slug) return;
-    if (noDeliverableTickets) {
-      setDeliveryFb("error",
-        pendingRequestedCount > 0
-          ? "You have no free tickets to deliver right now because pending public requests reserved them."
-          : "You have no more tickets to deliver and downloaded all tickets. Generate more before sharing public link.",
-      );
-      return;
-    }
-    if (!deliveryWarningAcknowledged && skipWarning !== true) {
-      openDeliveryWarningModal("copy-public-event-link");
-      return;
-    }
     try {
       await navigator.clipboard.writeText(`${window.location.origin}/e/${summary.event.slug}`);
       markCopiedPublicEventLink();
     } catch {
-      setDeliveryFb("error", "Could not copy public event link.");
+      setTicketFb("error", "Could not copy public event link.");
     }
   };
 
@@ -1799,8 +1278,7 @@ export default function Dashboard() {
                     <button
                       type="button"
                       className="rounded border px-2 py-1 text-xs disabled:opacity-60"
-                      disabled={noDeliverableTickets}
-                      onClick={() => {
+                        onClick={() => {
                         void copyPublicEventLink();
                       }}
                     >
@@ -1808,13 +1286,7 @@ export default function Dashboard() {
                     </button>
                   ) : null}
                 </div>
-                {noDeliverableTickets ? (
-                  <p className="mt-2 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
-                    {pendingRequestedCount > 0
-                      ? "You have no free tickets to deliver right now because pending public requests reserved them."
-                      : "You have no more tickets to deliver and downloaded all tickets. Please generate more before sharing this link."}
-                  </p>
-                ) : null}
+
                 {summary.event.slug ? (
                   <div className="mt-3">
                     <button
@@ -1841,13 +1313,8 @@ export default function Dashboard() {
                   mode="append_to_event"
                   accessCode={accessCode}
                   eventId={summary.event.id}
-                  initialEventName={summary.event.eventName}
-                  initialEventAddress={summary.event.eventAddress}
-                  initialDateTimeText={formatDate(summary.event.eventDate)}
                   initialTicketType={summary.event.ticketType || "General"}
                   initialTicketPrice={summary.event.ticketPrice || ""}
-                  initialDesignJson={summary.event.designJson || null}
-                  initialOrganizerName={summary.event.organizerName || ""}
                   canDeleteTicketTypes={tickets.length < 1}
                   onGenerated={handleTicketsGenerated}
                   onDraftChange={applyTicketEditorDraft}
@@ -1858,7 +1325,7 @@ export default function Dashboard() {
               <FeedbackBanner className="mb-3" kind={ticketFb.kind} message={ticketFb.message} />
               {ticketFb.kind === "success" && ticketFb.message.startsWith("Tickets generated") ? (
                 <div className="mb-3">
-                  <AppButton variant="primary" onClick={() => setActiveMenu("delivery")}>Go to Delivery →</AppButton>
+                  <AppButton variant="primary" onClick={() => setActiveMenu("requests")}>Go to Ticket Requests →</AppButton>
                 </div>
               ) : null}
               <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -1929,7 +1396,6 @@ export default function Dashboard() {
                       <p><span className="font-semibold">Type:</span> {ticket.ticketType || summary.event.ticketType || "General"}</p>
                       <p><span className="font-semibold">Sold:</span> {isTicketSold(ticket) ? "YES" : "NO"}</p>
                       <p className="col-span-2"><span className="font-semibold">Buyer:</span> <span className="break-all">{ticket.buyer || "-"}</span></p>
-                      <p><span className="font-semibold">Delivery:</span> {resolveDeliveryMethodLabel(ticket)}</p>
                       <p><span className="font-semibold">Scanned At:</span> {formatDate(ticket.scannedAt)}</p>
                       <p className="col-span-2">
                         <span className="font-semibold">Cancellation Reason:</span>{" "}
@@ -1958,9 +1424,9 @@ export default function Dashboard() {
                       )}
                       <AppButton
                         type="button"
-                        className={`px-2 py-1 text-xs ${resolveDeliveryMethodLabel(ticket) !== "NOT_DELIVERED" ? "opacity-70" : ""}`}
+                        className="px-2 py-1 text-xs"
                         variant="secondary"
-                        title={resolveDeliveryMethodLabel(ticket) !== "NOT_DELIVERED" ? `cant copy! ticket already delivered through ${resolveDeliveryMethodErrorLabel(resolveDeliveryMethodLabel(ticket))}.` : "Copy ticket URL"}
+                        title="Copy ticket URL"
                         onClick={() => copyTicketUrl(ticket)}
                       >
                         {copiedTicketPublicId === ticket.ticketPublicId ? "Copied" : "Copy"}
@@ -1978,7 +1444,7 @@ export default function Dashboard() {
               </div>
               <div className="mt-3 hidden overflow-x-auto rounded border lg:block">
                   <table className="w-full min-w-[980px] text-left text-sm">
-                    <thead className="bg-slate-100"><tr><th className="p-2">Ticket ID</th><th className="p-2">Ticket Type</th><th className="p-2">Buyer</th><th className="p-2">Sold</th><th className="p-2">Status</th><th className="p-2">Delivery Method</th><th className="p-2">Scanned At</th><th className="p-2">Cancellations</th><th className="p-2">Copy</th></tr></thead>
+                    <thead className="bg-slate-100"><tr><th className="p-2">Ticket ID</th><th className="p-2">Ticket Type</th><th className="p-2">Buyer</th><th className="p-2">Sold</th><th className="p-2">Status</th><th className="p-2">Scanned At</th><th className="p-2">Cancellations</th><th className="p-2">Copy</th></tr></thead>
                   <tbody>
                     {pagedTickets.map((ticket) => (
                       <tr key={ticket.ticketPublicId} className="border-t">
@@ -1987,7 +1453,6 @@ export default function Dashboard() {
                         <td className="p-2">{ticket.buyer || "-"}</td>
                         <td className="p-2">{isTicketSold(ticket) ? "YES" : "NO"}</td>
                         <td className="p-2">{ticket.status}</td>
-                        <td className="p-2">{resolveDeliveryMethodLabel(ticket)}</td>
                         <td className="p-2">{formatDate(ticket.scannedAt)}</td>
                         <td className="p-2">
                           {ticket.status === "USED" ? (
@@ -2016,8 +1481,8 @@ export default function Dashboard() {
                         </td>
                         <td className="p-2">
                           <button
-                            className={`rounded border px-2 py-1 text-xs ${resolveDeliveryMethodLabel(ticket) !== "NOT_DELIVERED" ? "opacity-60" : ""}`}
-                            title={resolveDeliveryMethodLabel(ticket) !== "NOT_DELIVERED" ? `cant copy! ticket already delivered through ${resolveDeliveryMethodErrorLabel(resolveDeliveryMethodLabel(ticket))}.` : "Copy ticket URL"}
+                            className="rounded border px-2 py-1 text-xs"
+                            title="Copy ticket URL"
                             onClick={() => copyTicketUrl(ticket)}
                           >
                             {copiedTicketPublicId === ticket.ticketPublicId ? "Copied" : "Copy"}
@@ -2030,7 +1495,7 @@ export default function Dashboard() {
                     ))}
                     {!pagedTickets.length ? (
                       <tr className="border-t">
-                        <td className="p-3 text-slate-500" colSpan={9}>No tickets for selected filters.</td>
+                        <td className="p-3 text-slate-500" colSpan={8}>No tickets for selected filters.</td>
                       </tr>
                     ) : null}
                   </tbody>
@@ -2060,319 +1525,6 @@ export default function Dashboard() {
             </section>
           ) : null}
 
-          {activeMenu === "delivery" ? (
-            <section className="mt-4 rounded border p-4">
-              <p className="text-sm font-semibold">Delivery method settings</p>
-              <label className="mt-2 flex items-center gap-2 text-sm">
-                <input type="radio" name="deliveryMethod" value={DELIVERY_METHODS.PDF} checked={deliveryMethod === DELIVERY_METHODS.PDF} onChange={(event) => setDeliveryMethod(event.target.value)} />
-                <span>Download PDF</span>
-              </label>
-              <label className="mt-2 flex items-center gap-2 text-sm">
-                <input type="radio" name="deliveryMethod" value={DELIVERY_METHODS.EMAIL_LINK} checked={deliveryMethod === DELIVERY_METHODS.EMAIL_LINK} onChange={(event) => setDeliveryMethod(event.target.value)} />
-                <span>Send by email (links)</span>
-              </label>
-              <label className="mt-2 flex items-center gap-2 text-sm">
-                <input type="radio" name="deliveryMethod" value={DELIVERY_METHODS.PUBLIC_EVENT_LINK} checked={deliveryMethod === DELIVERY_METHODS.PUBLIC_EVENT_LINK} onChange={(event) => setDeliveryMethod(event.target.value)} />
-                <span>Public event link</span>
-              </label>
-
-              {deliveryMethod === DELIVERY_METHODS.PDF ? (
-                <div className="mt-3">
-                  {deliverableCount < 1 ? (
-                    <div className="rounded border border-amber-300 bg-amber-50 p-4">
-                      <p className="font-semibold text-amber-900">No tickets available to download.</p>
-                      <p className="mt-1 text-sm text-amber-800">
-                        {pdfDeliveredCount > 0
-                          ? `You've already downloaded all ${pdfDeliveredCount} ticket(s) as PDF.`
-                          : "All your tickets have been delivered through other methods."}
-                        {" "}Generate more tickets to continue.
-                      </p>
-                      <AppButton className="mt-3" variant="secondary" onClick={() => setActiveMenu("tickets")}>
-                        Go to Tickets → Generate More
-                      </AppButton>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="mb-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm">
-                        <span className="font-semibold text-emerald-800">{deliverableCount} ticket{deliverableCount !== 1 ? "s" : ""} ready to download.</span>
-                        {pdfDeliveredCount > 0 ? <span className="ml-2 text-emerald-700">{pdfDeliveredCount} already downloaded.</span> : null}
-                      </div>
-                      <label className="mb-1 block text-sm font-medium">How many tickets to download?</label>
-                      <input
-                        className="w-full rounded border p-2 text-sm sm:w-44"
-                        type="number"
-                        min={1}
-                        max={deliverableCount}
-                        placeholder={`1 – ${deliverableCount}`}
-                        value={pdfTicketCount}
-                        onChange={(event) => setPdfTicketCount(event.target.value)}
-                        disabled={downloading}
-                      />
-                      {pendingRequestedCount > 0 ? (
-                        <p className="mt-1 text-xs text-amber-700">
-                          {pendingRequestedCount} ticket(s) are reserved for pending public requests and are not included in your {deliverableCount} available.
-                        </p>
-                      ) : null}
-                      <label className="mb-1 mt-3 block text-sm font-medium">Tickets per page</label>
-                      <select className="w-full rounded border p-2 text-sm sm:w-44" value={pdfTicketsPerPage} onChange={(event) => setPdfTicketsPerPage(Number.parseInt(event.target.value, 10) || 2)} disabled={downloading}>
-                        {PDF_TICKETS_PER_PAGE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
-                      </select>
-                      <AppButton className="mt-3" variant="secondary" onClick={() => void downloadPdf()} loading={downloading} loadingText="Downloading...">Download Tickets PDF</AppButton>
-                    </>
-                  )}
-                </div>
-              ) : null}
-
-              {deliveryMethod === DELIVERY_METHODS.EMAIL_LINK ? (
-                <div className="mt-3 space-y-4">
-
-                  {/* Mode tabs */}
-                  <div className="flex gap-1 rounded border bg-slate-100 p-1 text-xs font-medium sm:w-fit">
-                    {[
-                      { id: "single", label: "Single recipient" },
-                      { id: "bulk-same", label: "Bulk — same tickets" },
-                      { id: "bulk-table", label: "Bulk — per person" },
-                    ].map(({ id, label }) => (
-                      <button
-                        key={id}
-                        type="button"
-                        className={`rounded px-3 py-1.5 transition-colors ${emailMode === id ? "bg-white shadow text-slate-900" : "text-slate-500 hover:text-slate-700"}`}
-                        onClick={() => setEmailMode(id)}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Tickets per recipient — single + bulk-same modes */}
-                  {(emailMode === "single" || emailMode === "bulk-same") ? (
-                    <div>
-                      <p className="mb-2 text-sm font-medium">Tickets per recipient</p>
-                      <div className="flex flex-wrap gap-3">
-                        {deliveryTicketTypeOptions.map((type) => {
-                          const available = availableCountByType[type] || 0;
-                          const requested = emailRequestedByType[type] || 0;
-                          const exceeded = requested > 0 && requested > available;
-                          const remaining = Math.max(0, available - requested);
-                          return (
-                            <div key={type} className={`flex flex-col gap-1 rounded border px-3 py-2 bg-white ${exceeded ? "border-red-400" : ""}`}>
-                              <div className="flex items-center gap-2">
-                                <label className="text-sm font-medium text-slate-700 min-w-[60px]">{type}</label>
-                                <input
-                                  type="text"
-                                  inputMode="numeric"
-                                  className="w-16 rounded border p-1 text-center text-sm"
-                                  value={emailQuantities[type] ?? ""}
-                                  placeholder="0"
-                                  onChange={(e) => setEmailQuantities((prev) => ({ ...prev, [type]: e.target.value.replace(/[^0-9]/g, "") }))}
-                                />
-                              </div>
-                              {exceeded
-                                ? <p className="text-xs text-red-600">Only {available} available</p>
-                                : <p className="text-xs text-slate-400">{remaining} available</p>
-                              }
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {/* Single recipient email input */}
-                  {emailMode === "single" ? (
-                    <div>
-                      <label className="mb-1 block text-sm font-medium">Recipient email</label>
-                      <input
-                        type="email"
-                        className="w-full rounded border p-2 text-sm"
-                        placeholder="alice@example.com"
-                        value={singleEmail}
-                        onChange={(e) => setSingleEmail(e.target.value)}
-                      />
-                    </div>
-                  ) : null}
-
-                  {/* Bulk same — email list */}
-                  {emailMode === "bulk-same" ? (
-                    <div>
-                      <label className="mb-1 block text-sm font-medium">Recipient emails (one per line)</label>
-                      <textarea
-                        className="w-full rounded border p-2 text-sm"
-                        rows={5}
-                        placeholder={"alice@example.com\nbob@example.com\ncharlie@example.com"}
-                        value={bulkEmails}
-                        onChange={(e) => setBulkEmails(e.target.value)}
-                      />
-                      <p className="mt-1 text-xs text-slate-500">
-                        {bulkEmails.split(/[\n,]+/).filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e.trim())).length} valid email(s) detected
-                      </p>
-                    </div>
-                  ) : null}
-
-                  {/* Bulk table — one row per recipient, different quantities */}
-                  {emailMode === "bulk-table" ? (
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium">Recipients</p>
-                      {/* Rows */}
-                      {tableRecipients.map((row) => (
-                        <div key={row.id} className="rounded border bg-white p-2 space-y-2">
-                          {/* Row 1: email + remove button */}
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="email"
-                              className="flex-1 min-w-0 rounded border p-2 text-sm"
-                              placeholder="alice@example.com"
-                              value={row.email}
-                              onChange={(e) => updateTableRow(row.id, "email", e.target.value)}
-                            />
-                            <button
-                              type="button"
-                              className="flex-none rounded text-slate-400 hover:text-red-500 text-lg leading-none px-1"
-                              onClick={() => removeTableRow(row.id)}
-                              disabled={tableRecipients.length === 1}
-                            >
-                              ✕
-                            </button>
-                          </div>
-                          {/* Row 2: quantity inputs per ticket type */}
-                          <div className="flex flex-wrap gap-2">
-                            {deliveryTicketTypeOptions.map((type) => {
-                              const available = availableCountByType[type] || 0;
-                              const totalRequested = tableRequestedByType[type] || 0;
-                              const exceeded = totalRequested > available;
-                              return (
-                                <div key={type} className="flex items-center gap-1">
-                                  <span className="text-xs text-slate-500 whitespace-nowrap">{type}</span>
-                                  <input
-                                    type="text"
-                                    inputMode="numeric"
-                                    className={`w-14 rounded border p-1 text-center text-sm ${exceeded ? "border-red-400 bg-red-50" : ""}`}
-                                    value={row.quantities[type] ?? ""}
-                                    placeholder="0"
-                                    onChange={(e) => updateTableRowQty(row.id, type, e.target.value)}
-                                  />
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ))}
-                      {/* Per-type availability summary */}
-                      <div className="flex flex-wrap gap-3 pt-1">
-                        {deliveryTicketTypeOptions.map((type) => {
-                          const available = availableCountByType[type] || 0;
-                          const requested = tableRequestedByType[type] || 0;
-                          if (requested === 0) return null;
-                          return requested > available
-                            ? <p key={type} className="text-xs text-red-600">{type}: {requested} requested — only {available} available</p>
-                            : <p key={type} className="text-xs text-slate-500">{type}: {available - requested} available</p>;
-                        })}
-                      </div>
-                      <button
-                        type="button"
-                        className="mt-1 text-sm text-indigo-600 hover:text-indigo-800 font-medium"
-                        onClick={addTableRow}
-                      >
-                        + Add recipient
-                      </button>
-                    </div>
-                  ) : null}
-
-                  {/* Email preview */}
-                  <div className="rounded border bg-slate-50 p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-medium text-slate-700">Email preview (sample)</p>
-                      <AppButton type="button" variant="secondary" className="px-2 py-1 text-xs" onClick={() => setShowEmailPreview((prev) => !prev)}>
-                        {showEmailPreview ? "Hide" : "View preview"}
-                      </AppButton>
-                    </div>
-                    {showEmailPreview ? (
-                      <div className="mt-3 rounded border bg-white p-2">
-                        <p className="mb-1 text-xs text-slate-500">To: alice@example.com</p>
-                        <p className="mb-2 text-xs text-slate-500">Subject: <strong>Your tickets for {previewEventName} are ready</strong></p>
-                        <div
-                          className="overflow-hidden rounded text-sm [&_a]:break-all [&_table]:max-w-full [&_table]:w-full [&_td]:break-words"
-                          dangerouslySetInnerHTML={{
-                            __html: `
-                              <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#ffffff;padding:8px 0;">
-                                <tr><td align="center">
-                                  <table width="480" cellpadding="20" cellspacing="0" role="presentation" style="background:#f5f7fb;border-radius:8px;font-family:Arial,Helvetica,sans-serif;color:#0f172a;width:100%;max-width:480px;">
-                                    <tr><td>
-                                      <p style="margin:0 0 12px 0;font-size:18px;font-weight:700;text-align:center;">Your Tickets Are Ready</p>
-                                      <p style="margin:0 0 10px 0;">Hello,</p>
-                                      <p style="margin:0 0 14px 0;">Your tickets for <strong>${previewEventName}</strong> are ready.</p>
-                                      <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 16px 0;text-align:left;">
-                                        <tr><td style="padding:3px 10px 3px 0;">Event:</td><td><strong>${previewEventName}</strong></td></tr>
-                                        <tr><td style="padding:3px 10px 3px 0;">Date:</td><td><strong>${previewEventDate}</strong></td></tr>
-                                        <tr><td style="padding:3px 10px 3px 0;">Location:</td><td><strong>${previewEventAddress}</strong></td></tr>
-                                      </table>
-                                      <p style="margin:0 0 8px 0;">Use the links below to view your tickets:</p>
-                                      <ul style="padding-left:18px;margin:0 0 16px 0;">
-                                        ${previewTicketLinks.map((l) => `<li style="margin:5px 0;"><strong>${l.ticketType}:</strong> <a href="${l.ticketUrl}" style="color:#2d5bd1;">${l.ticketUrl}</a></li>`).join("")}
-                                      </ul>
-                                      <p style="margin:0;">Please present the QR code at the entrance.</p>
-                                    </td></tr>
-                                  </table>
-                                </td></tr>
-                              </table>
-                            `,
-                          }}
-                        />
-                      </div>
-                    ) : null}
-                  </div>
-
-                  <AppButton variant="indigo" onClick={() => void sendTicketLinks()} loading={sending} loadingText="Sending...">
-                    Send tickets
-                  </AppButton>
-                </div>
-              ) : null}
-
-              {deliveryMethod === DELIVERY_METHODS.PUBLIC_EVENT_LINK ? (
-                <div className="mt-3">
-                  <p className="text-sm text-slate-700">
-                    Share your public event link so guests can request tickets directly.
-                  </p>
-                  <p className="mt-2 break-all rounded border bg-slate-50 p-2 text-xs text-slate-700">
-                    {summary?.event?.slug ? `${window.location.origin}/e/${summary.event.slug}` : "Public event link is not available yet."}
-                  </p>
-                  <AppButton
-                    className="mt-3"
-                    variant="secondary"
-                    onClick={() => void copyPublicEventLink()}
-                    disabled={!summary?.event?.slug || noDeliverableTickets}
-                  >
-                    {copiedPublicEventLink ? "Copied" : "Copy Public Event Link"}
-                  </AppButton>
-                  {noDeliverableTickets ? (
-                    <p className="mt-2 text-xs text-amber-700">
-                      {pendingRequestedCount > 0
-                        ? "You have no free tickets to deliver right now because pending public requests reserved them."
-                        : "You have no more tickets to deliver and downloaded all tickets. Generate more before sharing this link."}
-                    </p>
-                  ) : null}
-                </div>
-              ) : null}
-
-              <FeedbackBanner className="mt-3" kind={deliveryFb.kind} message={deliveryFb.message} />
-
-              {sendSummary ? (
-                <div className="mt-3 rounded border bg-emerald-50 p-3 text-sm space-y-1">
-                  <p className="font-medium">Send complete — {sendSummary.totalSent} ticket(s) sent to {sendSummary.recipients} recipient(s)</p>
-                  {sendSummary.failed?.length > 0 ? (
-                    <div className="mt-2 text-red-700">
-                      <p className="font-medium">Failed ({sendSummary.failed.length}):</p>
-                      <ul className="mt-1 list-disc pl-4 text-xs">
-                        {sendSummary.failed.map((f, i) => (
-                          <li key={i}>{f.email} — {f.error}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-            </section>
-          ) : null}
 
           {activeMenu === "requests" ? (
             <section className="mt-4 rounded border p-4">
@@ -2410,7 +1562,6 @@ export default function Dashboard() {
                             : item.ticketType || "-"}
                         </p>
                         <p><span className="font-semibold">Quantity:</span> {item.quantity}</p>
-                        <p><span className="font-semibold">Delivery:</span> {item.deliveryStatus || "PENDING"}</p>
                         <p className="col-span-2"><span className="font-semibold">Status:</span> {item.status}</p>
                         <p className="col-span-2">
                           <span className="font-semibold">Evidence:</span>{" "}
@@ -2452,7 +1603,6 @@ export default function Dashboard() {
                       <th className="p-2">Evidence</th>
                       <th className="p-2">Ticket ID</th>
                       <th className="p-2">Status</th>
-                      <th className="p-2">Delivery</th>
                       <th className="p-2">Actions</th>
                     </tr>
                   </thead>
@@ -2486,7 +1636,6 @@ export default function Dashboard() {
                             <p>{item.status}</p>
                             {item.organizerMessage ? <p className="mt-1 text-xs text-slate-600">{item.organizerMessage}</p> : null}
                           </td>
-                          <td className="p-2">{item.deliveryStatus || "PENDING"}</td>
                           <td className="p-2">
                             <div className="flex flex-wrap gap-2">
                               <AppButton
@@ -2664,18 +1813,16 @@ export default function Dashboard() {
                         </div>
                       </div>
 
-                      {resolveDeliveryMethodLabel(cancelModal.ticket) === "PUBLIC EVENT PAGE" ? (
-                        <div>
-                          <p className="font-medium">Cancellation evidence</p>
-                          <input className="mt-2 w-full rounded border p-2 text-sm" type="file" accept="image/png,image/jpeg,image/webp" onChange={onCancelEvidenceFileChange} />
-                          {cancelModal.evidenceName ? <p className="mt-1 text-xs text-slate-600">{cancelModal.evidenceName}</p> : null}
-                          {cancelModal.evidenceImageDataUrl ? (
-                            <button type="button" className="mt-2 inline-block" onClick={() => openEvidenceImage(cancelModal.evidenceImageDataUrl)}>
-                              <img src={cancelModal.evidenceImageDataUrl} alt="Cancellation evidence preview" className="h-16 w-16 rounded border object-cover" />
-                            </button>
-                          ) : null}
-                        </div>
-                      ) : null}
+                      <div>
+                        <p className="font-medium">Refund evidence</p>
+                        <input className="mt-2 w-full rounded border p-2 text-sm" type="file" accept="image/png,image/jpeg,image/webp" onChange={onCancelEvidenceFileChange} />
+                        {cancelModal.evidenceName ? <p className="mt-1 text-xs text-slate-600">{cancelModal.evidenceName}</p> : null}
+                        {cancelModal.evidenceImageDataUrl ? (
+                          <button type="button" className="mt-2 inline-block" onClick={() => openEvidenceImage(cancelModal.evidenceImageDataUrl)}>
+                            <img src={cancelModal.evidenceImageDataUrl} alt="Refund evidence preview" className="h-16 w-16 rounded border object-cover" />
+                          </button>
+                        ) : null}
+                      </div>
                     </div>
                     {cancelModal.error ? <p className="mt-3 text-sm text-red-600">{cancelModal.error}</p> : null}
                     <div className="mt-4 flex justify-end gap-2">
@@ -2773,24 +1920,6 @@ export default function Dashboard() {
             </ModalOverlay>
           ) : null}
 
-          {deliveryWarningModal.open ? (
-            <ModalOverlay>
-              <section className="w-full max-w-lg rounded border bg-white p-4 shadow-xl">
-                <p className="text-sm font-semibold">Before You Continue</p>
-                <p className="mt-2 text-sm text-slate-700">
-                  Once you deliver a ticket, you cannot change organizer, event, or ticket details. Make sure everything is final.
-                </p>
-                <div className="mt-4 flex justify-end gap-2">
-                  <AppButton type="button" variant="secondary" onClick={closeDeliveryWarningModal}>
-                    Go Back
-                  </AppButton>
-                  <AppButton type="button" variant="primary" onClick={() => void confirmDeliveryWarningModal()}>
-                    Understood
-                  </AppButton>
-                </div>
-              </section>
-            </ModalOverlay>
-          ) : null}
 
           {evidencePreview ? (
             <ModalOverlay className="bg-black/70">

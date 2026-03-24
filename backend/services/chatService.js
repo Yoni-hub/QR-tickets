@@ -835,7 +835,7 @@ async function findAttachmentForActor(actor, attachmentIdRaw) {
  * @param {object} [opts.emailArgs] - Extra args merged into email call (to, eventName, dashboardUrl, etc.)
  * @returns {Promise<object|null>} mapped message or null on failure
  */
-async function sendSystemMessageForTicketRequest({ ticketRequestId, body, emailFn = null, emailArgs = {} }) {
+async function sendSystemMessageForTicketRequest({ ticketRequestId, body, emailFn = null, emailArgs = {}, evidenceDataUrl = null, evidenceS3Key = null }) {
   try {
     const context = await resolveTicketRequestContext(ticketRequestId);
     if (!context) return null;
@@ -864,24 +864,59 @@ async function sendSystemMessageForTicketRequest({ ticketRequestId, body, emailF
       }
     }
 
+    const hasEvidence = Boolean(evidenceDataUrl || evidenceS3Key);
     const message = await prisma.chatMessage.create({
       data: {
         conversationId,
         senderType: CHAT_ACTOR.ORGANIZER,
         senderOrganizerAccessCode: context.organizerAccessCode,
         body: String(body || "").trim(),
-        messageType: CHAT_MESSAGE_TYPE.SYSTEM,
+        messageType: hasEvidence ? CHAT_MESSAGE_TYPE.TEXT_WITH_ATTACHMENT : CHAT_MESSAGE_TYPE.SYSTEM,
         emailStatus,
       },
       include: { attachments: true },
     });
+
+    if (hasEvidence) {
+      if (evidenceS3Key) {
+        await prisma.chatAttachment.create({
+          data: {
+            messageId: message.id,
+            kind: "IMAGE",
+            storageType: "LOCAL_FILE",
+            mimeType: "image/webp",
+            originalName: "refund-evidence",
+            storageKey: evidenceS3Key,
+            sizeBytes: 0,
+          },
+        });
+      } else if (evidenceDataUrl) {
+        await prisma.chatAttachment.create({
+          data: {
+            messageId: message.id,
+            kind: "IMAGE",
+            storageType: "LEGACY_DATA_URL",
+            mimeType: "image/webp",
+            originalName: "refund-evidence",
+            storageKey: null,
+            legacyDataUrl: evidenceDataUrl,
+            sizeBytes: evidenceDataUrl.length,
+          },
+        });
+      }
+    }
 
     await prisma.chatConversation.update({
       where: { id: conversationId },
       data: { lastMessageAt: message.createdAt, status: CHAT_CONVERSATION_STATUS.OPEN },
     });
 
-    const mappedMessage = mapMessage(message, {
+    const messageWithAttachments = await prisma.chatMessage.findUnique({
+      where: { id: message.id },
+      include: { attachments: true },
+    });
+
+    const mappedMessage = mapMessage(messageWithAttachments, {
       actorType: CHAT_ACTOR.ORGANIZER,
       accessCode: context.organizerAccessCode,
     });

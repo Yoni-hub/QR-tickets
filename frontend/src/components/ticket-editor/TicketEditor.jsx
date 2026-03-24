@@ -1,72 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../../lib/api";
-import TicketPreview from "./TicketPreview";
 import AppButton from "../ui/AppButton";
 import FeedbackBanner from "../ui/FeedbackBanner";
 import { withMinDelay } from "../../lib/withMinDelay";
-
-const HEADER_IMAGE_WIDTH = 1200;
-const HEADER_IMAGE_HEIGHT = 600;
-const HEADER_IMAGE_QUALITY = 0.82;
-const DEFAULT_OVERLAY = 0.25;
-const DEFAULT_TEXT_COLOR_MODE = "AUTO";
-
-function optimizeHeaderImage(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("Could not read image file."));
-    reader.onload = () => {
-      const sourceImage = new Image();
-      sourceImage.onerror = () => reject(new Error("Could not load selected image."));
-      sourceImage.onload = () => {
-        const canvas = document.createElement("canvas");
-        canvas.width = HEADER_IMAGE_WIDTH;
-        canvas.height = HEADER_IMAGE_HEIGHT;
-        const context = canvas.getContext("2d");
-        if (!context) {
-          reject(new Error("Image processing context unavailable."));
-          return;
-        }
-
-        const srcW = sourceImage.width;
-        const srcH = sourceImage.height;
-        const srcRatio = srcW / srcH;
-        const targetRatio = HEADER_IMAGE_WIDTH / HEADER_IMAGE_HEIGHT;
-        let sx = 0;
-        let sy = 0;
-        let sWidth = srcW;
-        let sHeight = srcH;
-
-        if (srcRatio > targetRatio) {
-          sWidth = Math.round(srcH * targetRatio);
-          sx = Math.max(0, Math.round((srcW - sWidth) / 2));
-        } else if (srcRatio < targetRatio) {
-          sHeight = Math.round(srcW / targetRatio);
-          sy = Math.max(0, Math.round((srcH - sHeight) / 2));
-        }
-
-        context.drawImage(sourceImage, sx, sy, sWidth, sHeight, 0, 0, HEADER_IMAGE_WIDTH, HEADER_IMAGE_HEIGHT);
-        const optimized = canvas.toDataURL("image/webp", HEADER_IMAGE_QUALITY);
-        resolve(optimized || String(reader.result || ""));
-      };
-      sourceImage.src = String(reader.result || "");
-    };
-    reader.readAsDataURL(file);
-  });
-}
 
 export default function TicketEditor({
   mode = "create_event",
   accessCode = "",
   eventId = "",
-  initialOrganizerName = "",
-  initialEventName = "",
-  initialEventAddress = "",
-  initialDateTimeText = "",
   initialTicketType = "",
   initialTicketPrice = "",
-  initialDesignJson = null,
   onGenerated = null,
   onDraftChange = null,
   onSave = null,
@@ -74,65 +18,30 @@ export default function TicketEditor({
   canDeleteTicketTypes = true,
 }) {
   const navigate = useNavigate();
-  const resolveInitialDesign = () => {
-    const design = initialDesignJson && typeof initialDesignJson === "object" ? initialDesignJson : {};
+
+  const resolveInitialSettings = () => {
     return {
-      organizerName: String(design.organizerName || initialOrganizerName || ""),
-      eventName: String(design.eventName || initialEventName || "QR Tickets Demo Event"),
-      location: String(design.location || initialEventAddress || "Sample Venue"),
-      dateTimeText: String(design.dateTimeText || initialDateTimeText || "May 15, 2024 | 7:00 PM"),
-      codeText: "CODE123",
+      ticketGroups: [
+        {
+          ticketType: initialTicketType || "General",
+          ticketPrice: String(initialTicketPrice || "0"),
+          quantity: "0",
+        },
+      ],
     };
   };
 
-  const resolveInitialSettings = () => {
-    const design = initialDesignJson && typeof initialDesignJson === "object" ? initialDesignJson : {};
-    const ticketGroups = Array.isArray(design.ticketGroups) && design.ticketGroups.length
-      ? design.ticketGroups.map((group) => ({
-          ticketType: String(group?.ticketType || "General"),
-          ticketPrice: String(group?.ticketPrice ?? "0"),
-          quantity: mode === "append_to_event"
-            ? "0"
-            : String(Math.max(0, Number.parseInt(String(group?.quantity || "1"), 10) || 0)),
-          headerImageDataUrl: group?.headerImageDataUrl || null,
-          headerOverlay: Number(group?.headerOverlay ?? DEFAULT_OVERLAY),
-          headerTextColorMode: String(group?.headerTextColorMode || DEFAULT_TEXT_COLOR_MODE),
-        }))
-      : [
-          {
-            ticketType: initialTicketType || "General",
-            ticketPrice: String(initialTicketPrice || "0"),
-            quantity: "0",
-            headerImageDataUrl: design?.headerImageDataUrl || null,
-            headerOverlay: Number(design?.headerOverlay ?? DEFAULT_OVERLAY),
-            headerTextColorMode: String(design?.headerTextColorMode || DEFAULT_TEXT_COLOR_MODE),
-          },
-        ];
-    const quantity = Math.max(0, ticketGroups.reduce((sum, group) => sum + (Number.parseInt(group.quantity, 10) || 0), 0));
-    return { quantity, ticketGroups };
-  };
-
   const [loading, setLoading] = useState(false);
-  const [imageLoading, setImageLoading] = useState(false);
   const [feedback, setFeedback] = useState({ kind: "", message: "" });
   const [result, setResult] = useState(null);
-  const [previewQrPayload, setPreviewQrPayload] = useState("");
-  const [ticketDesign, setTicketDesign] = useState(() => resolveInitialDesign());
   const [settings, setSettings] = useState(() => resolveInitialSettings());
-  const [currency, setCurrency] = useState(() => {
-    const design = initialDesignJson && typeof initialDesignJson === "object" ? initialDesignJson : {};
-    return String(design.currency || "$");
-  });
+  const [currency, setCurrency] = useState("$");
 
   useEffect(() => {
-    setTicketDesign(resolveInitialDesign());
     setSettings(resolveInitialSettings());
-    setPreviewQrPayload("");
     setResult(null);
     setFeedback({ kind: "", message: "" });
-    const design = initialDesignJson && typeof initialDesignJson === "object" ? initialDesignJson : {};
-    setCurrency(String(design.currency || "$"));
-  }, [eventId, initialEventName, initialEventAddress, initialDateTimeText, initialTicketType, initialTicketPrice, initialDesignJson]);
+  }, [eventId, initialTicketType, initialTicketPrice]);
 
   const totalQuantity = useMemo(
     () => Math.max(0, settings.ticketGroups.reduce((sum, group) => sum + (Number.parseInt(group.quantity, 10) || 0), 0)),
@@ -142,42 +51,8 @@ export default function TicketEditor({
   const updateSettings = (updater) => {
     setSettings((prev) => {
       const next = typeof updater === "function" ? updater(prev) : updater;
-      const groups = next.ticketGroups || prev.ticketGroups;
-      const nextQuantity = Math.max(0, groups.reduce((sum, group) => sum + (Number.parseInt(group.quantity, 10) || 0), 0));
-      return { ...next, quantity: nextQuantity };
+      return next;
     });
-  };
-
-  const onHeaderImageUpload = async (groupIndex, event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    setImageLoading(true);
-    setFeedback({ kind: "", message: "" });
-    try {
-      const optimizedImage = await withMinDelay(optimizeHeaderImage(file), 300);
-      updateSettings((prev) => ({
-        ...prev,
-        ticketGroups: prev.ticketGroups.map((group, index) =>
-          index === groupIndex ? { ...group, headerImageDataUrl: optimizedImage } : group,
-        ),
-      }));
-      setFeedback({ kind: "success", message: "Header image uploaded." });
-    } catch {
-      const reader = new FileReader();
-      reader.onload = () => {
-        updateSettings((prev) => ({
-          ...prev,
-          ticketGroups: prev.ticketGroups.map((group, index) =>
-            index === groupIndex ? { ...group, headerImageDataUrl: String(reader.result || "") } : group,
-          ),
-        }));
-        setFeedback({ kind: "success", message: "Header image uploaded." });
-      };
-      reader.readAsDataURL(file);
-    } finally {
-      setImageLoading(false);
-    }
-    event.target.value = "";
   };
 
   const updateTicketGroup = (groupIndex, field, value) => {
@@ -198,9 +73,6 @@ export default function TicketEditor({
           ticketType: `Type ${prev.ticketGroups.length + 1}`,
           ticketPrice: "0",
           quantity: "0",
-          headerImageDataUrl: null,
-          headerOverlay: DEFAULT_OVERLAY,
-          headerTextColorMode: DEFAULT_TEXT_COLOR_MODE,
         },
       ],
     }));
@@ -213,6 +85,21 @@ export default function TicketEditor({
       ticketGroups: prev.ticketGroups.filter((_, index) => index !== groupIndex),
     }));
   };
+
+  const buildDraft = (nextSettings = settings) => {
+    const primaryGroup = nextSettings.ticketGroups?.[0] || { ticketType: "", ticketPrice: "" };
+    return {
+      ticketType: String(primaryGroup.ticketType || "").trim(),
+      ticketPrice: String(primaryGroup.ticketPrice || "").trim(),
+      designJson: null,
+    };
+  };
+
+  useEffect(() => {
+    if (typeof onDraftChange === "function") {
+      onDraftChange(buildDraft(settings));
+    }
+  }, [settings, onDraftChange]);
 
   const generate = async () => {
     if (loading) return;
@@ -227,15 +114,15 @@ export default function TicketEditor({
     try {
       const singleGroup = settings.ticketGroups.length === 1 ? settings.ticketGroups[0] : null;
       const payload = {
-        organizerName: ticketDesign.organizerName,
-        eventName: ticketDesign.eventName,
-        eventAddress: ticketDesign.location,
-        eventDateTime: ticketDesign.dateTimeText,
-        dateTimeText: ticketDesign.dateTimeText,
         ticketType: singleGroup ? singleGroup.ticketType : "Mixed",
         ticketPrice: singleGroup ? singleGroup.ticketPrice : "",
         quantity: String(totalQuantity),
-        designJson: buildDraft(ticketDesign, settings).designJson,
+        currency,
+        ticketSelections: settings.ticketGroups.map((g) => ({
+          ticketType: g.ticketType,
+          ticketPrice: g.ticketPrice,
+          quantity: Number.parseInt(g.quantity, 10) || 0,
+        })),
       };
 
       if (mode === "append_to_event") {
@@ -243,26 +130,9 @@ export default function TicketEditor({
         if (eventId) payload.eventId = eventId;
         await withMinDelay(api.post(`/events/by-code/${encodeURIComponent(accessCode)}/generate-tickets`, payload));
 
-        const effectiveEventId = eventId
-          ? eventId
-          : (await api.get(`/events/by-code/${encodeURIComponent(accessCode)}`)).data?.event?.id;
-
-        if (effectiveEventId) {
-          const ticketsRes = await api.get(`/events/${effectiveEventId}/tickets`);
-          const list = ticketsRes.data?.tickets || [];
-          if (list.length) {
-            const randomTicket = list[Math.floor(Math.random() * list.length)];
-            setTicketDesign((prev) => ({ ...prev, codeText: randomTicket.ticketPublicId || prev.codeText }));
-            setPreviewQrPayload(
-              randomTicket.qrPayload || `${window.location.origin}/t/${encodeURIComponent(randomTicket.ticketPublicId)}`,
-            );
-          }
-        }
-
         setFeedback({ kind: "success", message: "Tickets generated for current access code." });
         setSettings((prev) => ({
           ...prev,
-          quantity: 0,
           ticketGroups: prev.ticketGroups.map((group) => ({ ...group, quantity: "0" })),
         }));
         if (typeof onGenerated === "function") {
@@ -273,18 +143,6 @@ export default function TicketEditor({
         const created = response.data;
         setResult(created);
         setFeedback({ kind: "success", message: "Ticket generated." });
-
-        const ticketsRes = await api.get(`/events/${created.eventId}/tickets`);
-        const list = ticketsRes.data?.tickets || [];
-        if (list.length) {
-          const randomTicket = list[Math.floor(Math.random() * list.length)];
-          setTicketDesign((prev) => ({ ...prev, codeText: randomTicket.ticketPublicId || prev.codeText }));
-          setPreviewQrPayload(
-            randomTicket.qrPayload || `${window.location.origin}/t/${encodeURIComponent(randomTicket.ticketPublicId)}`,
-          );
-        } else {
-          setPreviewQrPayload(`${window.location.origin}/t/${encodeURIComponent(created.accessCode)}`);
-        }
       }
     } catch (requestError) {
       const responseData = requestError.response?.data || {};
@@ -301,43 +159,6 @@ export default function TicketEditor({
     }
   };
 
-  const buildDraft = (design = ticketDesign, nextSettings = settings) => {
-    const primaryGroup = nextSettings.ticketGroups?.[0] || { ticketType: "", ticketPrice: "" };
-    const parsedDate = new Date(String(design.dateTimeText || "").replace(/\s*\|\s*/g, " "));
-    const primaryPrice = String(primaryGroup.ticketPrice || "").trim();
-    const parsedPrimaryPrice = Number(primaryPrice);
-    const currencySymbol = String(currency || "$").trim();
-    const resolvedPriceText =
-      primaryPrice && Number.isFinite(parsedPrimaryPrice) && parsedPrimaryPrice > 0
-        ? `${currencySymbol}${parsedPrimaryPrice.toFixed(2)}`
-        : primaryPrice || "Free";
-    return {
-      eventName: String(design.eventName || "").trim(),
-      organizerName: String(design.organizerName || "").trim(),
-      eventAddress: String(design.location || "").trim(),
-      eventDate: Number.isNaN(parsedDate.getTime()) ? null : parsedDate.toISOString(),
-      ticketType: String(primaryGroup.ticketType || "").trim(),
-      ticketPrice: primaryPrice,
-      designJson: {
-        ...design,
-        organizerName: String(design.organizerName || "").trim(),
-        ticketTypeLabel: String(primaryGroup.ticketType || "General").toUpperCase(),
-        priceText: resolvedPriceText,
-        currency: currencySymbol,
-        headerImageDataUrl: primaryGroup.headerImageDataUrl || null,
-        headerOverlay: Number(primaryGroup.headerOverlay ?? DEFAULT_OVERLAY),
-        headerTextColorMode: primaryGroup.headerTextColorMode || DEFAULT_TEXT_COLOR_MODE,
-        ticketGroups: nextSettings.ticketGroups.map((group) => ({ ...group })),
-      },
-    };
-  };
-
-  useEffect(() => {
-    if (typeof onDraftChange === "function") {
-      onDraftChange(buildDraft(ticketDesign, settings));
-    }
-  }, [ticketDesign, settings, currency, onDraftChange]);
-
   const rootClass =
     mode === "append_to_event"
       ? "w-full"
@@ -345,50 +166,72 @@ export default function TicketEditor({
 
   return (
     <main className={rootClass}>
-      <section className="space-y-6">
+      <section className="space-y-4">
         {settings.ticketGroups.map((group, index) => (
-          <div key={`${index}-${group.ticketType}`} className="space-y-3">
-            <TicketPreview
-              ticketDesign={ticketDesign}
-              ticketGroup={group}
-              previewQrPayload={previewQrPayload}
-              onTicketDesignChange={setTicketDesign}
-              onTicketGroupChange={(field, value) => updateTicketGroup(index, field, value)}
-              onHeaderImageUpload={(event) => onHeaderImageUpload(index, event)}
-              onRemoveHeaderImage={() => updateTicketGroup(index, "headerImageDataUrl", null)}
-              imageLoading={imageLoading}
-              currency={currency}
-              title={`Live ticket preview: ${group.ticketType || `Ticket ${index + 1}`}`}
-              helperText="(you can change the event name, location, time, type and price directly on the ticket preview)"
-              showRemoveTicketType={canDeleteTicketTypes && settings.ticketGroups.length > 1}
-              onRemoveTicketType={() => removeTicketType(index)}
-            />
-            {index === 0 ? (
-              <div className="mx-auto w-full max-w-xl">
-                <label className="mb-1 block text-sm font-medium">Currency</label>
-                <input
-                  className="w-full rounded border p-2 text-sm"
-                  type="text"
-                  value={currency}
-                  onChange={(e) => setCurrency(e.target.value)}
-                />
+          <div key={index} className="rounded border bg-white p-4 space-y-3">
+            {canDeleteTicketTypes && settings.ticketGroups.length > 1 ? (
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-slate-700">Ticket Type {index + 1}</p>
+                <button
+                  type="button"
+                  className="text-xs text-red-500 hover:text-red-700"
+                  onClick={() => removeTicketType(index)}
+                >
+                  Remove
+                </button>
               </div>
             ) : null}
-            <div className="mx-auto w-full max-w-xl">
-              <label className="mb-1 block text-sm font-medium">Quantity</label>
+            <div>
+              <label className="mb-1 block text-sm font-medium">Ticket Type</label>
               <input
                 className="w-full rounded border p-2 text-sm"
-                type="number"
-                min="0"
-                value={group.quantity}
-                onChange={(event) => updateTicketGroup(index, "quantity", event.target.value)}
+                type="text"
+                value={group.ticketType}
+                placeholder="e.g. General, VIP"
+                onChange={(e) => updateTicketGroup(index, "ticketType", e.target.value)}
               />
+            </div>
+            <div className="flex gap-3">
+              {index === 0 ? (
+                <div className="w-24">
+                  <label className="mb-1 block text-sm font-medium">Currency</label>
+                  <input
+                    className="w-full rounded border p-2 text-sm"
+                    type="text"
+                    value={currency}
+                    onChange={(e) => setCurrency(e.target.value)}
+                  />
+                </div>
+              ) : <div className="w-24" />}
+              <div className="flex-1">
+                <label className="mb-1 block text-sm font-medium">Price</label>
+                <input
+                  className="w-full rounded border p-2 text-sm"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={group.ticketPrice}
+                  placeholder="0"
+                  onChange={(e) => updateTicketGroup(index, "ticketPrice", e.target.value)}
+                />
+              </div>
+              <div className="flex-1">
+                <label className="mb-1 block text-sm font-medium">Quantity</label>
+                <input
+                  className="w-full rounded border p-2 text-sm"
+                  type="number"
+                  min="0"
+                  value={group.quantity}
+                  placeholder="0"
+                  onChange={(e) => updateTicketGroup(index, "quantity", e.target.value)}
+                />
+              </div>
             </div>
           </div>
         ))}
       </section>
 
-      <div className="mt-6">
+      <div className="mt-4">
         <div className="flex flex-wrap items-center gap-2">
           <AppButton type="button" variant="secondary" onClick={addMoreTicketTypes}>
             Add more ticket types
@@ -397,7 +240,7 @@ export default function TicketEditor({
             <AppButton
               type="button"
               variant="secondary"
-              onClick={() => onSave(buildDraft(ticketDesign, settings))}
+              onClick={() => onSave(buildDraft(settings))}
               loading={saveLoading}
               loadingText="Saving..."
             >
@@ -416,7 +259,6 @@ export default function TicketEditor({
         <section className="mt-6 rounded border bg-white p-4">
           <p className="text-sm text-slate-600">Organizer access code</p>
           <p className="break-all text-3xl font-bold tracking-wider">{result.organizerAccessCode || result.accessCode}</p>
-          <p className="mt-2 text-sm text-blue-700">Tickets generated. Go to Dashboard to start managing tickets and choose delivery methods.</p>
           <p className="mt-2 text-sm text-amber-700">Save this code now. It is very important. Do not share it with anyone. You will use it to access the event dashboard and open the scanner.</p>
           <div className="mt-3 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
             <AppButton variant="indigo" onClick={() => navigate(`/dashboard?code=${encodeURIComponent(result.organizerAccessCode || result.accessCode)}`)}>

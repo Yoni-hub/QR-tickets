@@ -29,6 +29,10 @@ async function getTicketByPublicId(req, res) {
           code: true,
         },
       },
+      isInvalidated: true,
+      cancelledAt: true,
+      cancellationReason: true,
+      cancellationOtherReason: true,
       ticketRequest: {
         select: {
           id: true,

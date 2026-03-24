@@ -632,7 +632,7 @@ async function cancelOrganizerTicket(req, res) {
     return;
   }
   if (deliveryMethod === "PUBLIC_EVENT_PAGE" && !evidenceImageDataUrl) {
-    res.status(400).json({ error: "Evidence is required for public event page ticket cancellations." });
+    res.status(400).json({ error: "Refund evidence is required." });
     return;
   }
 
@@ -708,6 +708,8 @@ async function cancelOrganizerTicket(req, res) {
       ticketRequestId: ticket.ticketRequestId,
       body: organizerMessage,
       emailFn: sendTicketCancelledEmail,
+      evidenceDataUrl: cancellationEvidenceDataUrl || null,
+      evidenceS3Key: cancellationEvidenceS3Key || null,
     });
   }
 

@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const prisma = require("../utils/prisma");
 const { LIMITS, sanitizeText, safeError } = require("../utils/sanitize");
+const { isS3Configured, getPresignedUrl } = require("../utils/s3");
 const {
   CHAT_ACTOR,
   CHAT_CONVERSATION_TYPE,
@@ -59,6 +60,15 @@ async function sendAttachmentResponse(attachment, res) {
     res.setHeader("Content-Disposition", `inline; filename="${attachment.originalName || "attachment"}"`);
     res.status(200).send(decoded.buffer);
     return;
+  }
+
+  // LOCAL_FILE: try S3 first (if configured), then fall back to local filesystem
+  if (isS3Configured() && attachment.storageKey) {
+    const presignedUrl = await getPresignedUrl(attachment.storageKey);
+    if (presignedUrl) {
+      res.redirect(302, presignedUrl);
+      return;
+    }
   }
 
   const absolutePath = resolveAttachmentAbsolutePath(attachment.storageKey);

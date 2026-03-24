@@ -5,7 +5,7 @@ import AppButton from "../components/ui/AppButton";
 
 function resolveStatus(ticket, order) {
   if (!order || order.status !== "ACTIVE") return "DISABLED";
-  if (ticket.isInvalidated) return "DISABLED";
+  if (ticket.cancelledAt || ticket.isInvalidated) return "CANCELLED";
   if (ticket.status === "USED") return "ALREADY_USED";
   return "VALID";
 }
@@ -57,16 +57,20 @@ export default function TicketVerify() {
 
   const statusLabel =
     resolvedStatus === "VALID"
-      ? "valid"
+      ? "Valid"
       : resolvedStatus === "ALREADY_USED"
-        ? "already used"
-        : "disabled";
+        ? "Already Used"
+        : resolvedStatus === "CANCELLED"
+          ? "Cancelled"
+          : "Disabled";
   const statusClass =
     resolvedStatus === "VALID"
       ? "bg-green-100 text-green-800"
       : resolvedStatus === "ALREADY_USED"
         ? "bg-yellow-100 text-yellow-900"
-        : "bg-red-100 text-red-800";
+        : resolvedStatus === "CANCELLED"
+          ? "bg-red-100 text-red-800"
+          : "bg-slate-100 text-slate-600";
 
   const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(
     ticket.qrPayload || `${window.location.origin}/t/${ticket.ticketPublicId}`,
@@ -97,6 +101,12 @@ export default function TicketVerify() {
         <p className="mt-3">
           <span className={`rounded px-2 py-1 text-sm font-semibold ${statusClass}`}>{statusLabel}</span>
         </p>
+        {ticket.cancelledAt ? (
+          <p className="mt-2 text-sm text-slate-600">
+            <span className="font-semibold">Cancelled:</span> {new Date(ticket.cancelledAt).toLocaleString()}
+            {ticket.cancellationReason ? ` — ${ticket.cancellationReason === "EVENT_CANCELLED" ? "Event cancelled" : ticket.cancellationReason === "PAYMENT_REFUNDED_TO_CUSTOMER" ? "Payment refunded" : ticket.cancellationOtherReason || "Other"}` : ""}
+          </p>
+        ) : null}
         {ticket.scannedAt ? (
           <p className="mt-2">
             <span className="font-semibold">Scanned At:</span> {new Date(ticket.scannedAt).toLocaleString()}
