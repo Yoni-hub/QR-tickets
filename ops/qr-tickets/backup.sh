@@ -5,7 +5,7 @@
 set -euo pipefail
 
 BACKUP_ENV="/opt/qr-tickets/env/backup.env"
-CONTAINER="$(docker ps --filter name=qr-tickets-postgres --format '{{.Names}}' | head -1)"
+CONTAINER="$(docker ps --filter name=postgres --format '{{.Names}}' | head -1)"
 TIMESTAMP=$(date -u +"%Y%m%d_%H%M%S")
 DATE=$(date -u +"%Y-%m-%d")
 TMP_FILE="/tmp/qr_tickets_${TIMESTAMP}.sql.gz"
