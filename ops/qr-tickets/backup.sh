@@ -53,14 +53,11 @@ log "Uploaded to s3://${S3_BUCKET_NAME}/${S3_KEY}"
 rm -f "$TMP_FILE"
 
 # Prune backups older than 30 days from S3
-CUTOFF=$(date -u -d "30 days ago" +"%Y-%m-%d" 2>/dev/null || date -u -v-30d +"%Y-%m-%d")
-log "Pruning S3 backups older than ${CUTOFF}..."
-aws s3 ls "s3://${S3_BUCKET_NAME}/db-backups/" --region "$AWS_REGION" | awk '{print $2}' | while read -r prefix; do
-  folder="${prefix%/}"
-  if [[ "$folder" < "$CUTOFF" ]]; then
-    aws s3 rm "s3://${S3_BUCKET_NAME}/db-backups/${folder}/" --recursive --region "$AWS_REGION"
-    log "Pruned s3://${S3_BUCKET_NAME}/db-backups/${folder}/"
-  fi
+# Delete specific date prefixes from day 31 to day 60 (no s3:ListBucket needed)
+log "Pruning S3 backups older than 30 days..."
+for age in $(seq 31 60); do
+  OLD_DATE=$(date -u -d "${age} days ago" +"%Y-%m-%d" 2>/dev/null || date -u -v-${age}d +"%Y-%m-%d")
+  aws s3 rm "s3://${S3_BUCKET_NAME}/db-backups/${OLD_DATE}/" --recursive --region "$AWS_REGION" --quiet 2>/dev/null || true
 done
 
 log "Backup complete."
