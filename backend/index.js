@@ -57,23 +57,6 @@ const scanLimiter = rateLimit({
   message: { error: "Too many scan requests, please try again later." },
 });
 
-// 3 event creations per IP per hour
-const eventCreationLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000,
-  max: 3,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: "Too many events created from this device. Try again later." },
-});
-
-// 5 ticket generation requests per IP per hour
-const ticketGenLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000,
-  max: 5,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: "Too many ticket generation requests from this device. Try again later." },
-});
 
 // Failed scan tracker — blocks IPs that repeatedly send invalid scans
 const failedScanCounts = new Map(); // ip -> { count, blockedUntil }
@@ -109,9 +92,7 @@ app.use("/api/public/ticket-request", strictLimiter);
 app.use("/api/public/send-otp", otpLimiter);
 app.use("/api/public/verify-otp", otpLimiter);
 app.use("/api/public/support/conversations", strictLimiter);
-app.use("/api/events", eventCreationLimiter);
-app.use("/api/demo/events", eventCreationLimiter);
-app.use("/api/events/by-code", ticketGenLimiter);
+// Event creation limiters applied per-route in apiRoutes.js
 
 app.get("/health", (_req, res) => {
   res.status(200).json({ status: "ok" });

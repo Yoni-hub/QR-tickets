@@ -56,13 +56,42 @@ const {
 } = require("../controllers/chatController");
 const { chatAttachmentUpload } = require("../middleware/chatUpload");
 
+const rateLimit = require("express-rate-limit");
+
+// 3 brand-new organizer/event creations per IP per hour
+const newEventLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 3,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many events created from this device. Try again later." },
+});
+
+// 20 add-event-to-existing-organizer per IP per hour (gated by access code, lower risk)
+const addEventLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests from this device. Try again later." },
+});
+
+// 10 ticket generation requests per IP per hour
+const ticketGenLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many ticket generation requests from this device. Try again later." },
+});
+
 const router = express.Router();
 
-router.post("/events", createLiveEvent);
-router.post("/demo/events", createDemoEvent);
+router.post("/events", newEventLimiter, createLiveEvent);
+router.post("/demo/events", newEventLimiter, createDemoEvent);
 router.get("/events/by-code/:accessCode", getEventByCode);
-router.post("/events/by-code/:accessCode/create-new", createEventForAccessCode);
-router.post("/events/by-code/:accessCode/generate-tickets", generateTicketsByAccessCode);
+router.post("/events/by-code/:accessCode/create-new", addEventLimiter, createEventForAccessCode);
+router.post("/events/by-code/:accessCode/generate-tickets", ticketGenLimiter, generateTicketsByAccessCode);
 router.patch("/events/:eventId", updateEventInline);
 router.get("/events/:eventId/tickets", getEventTickets);
 router.get("/tickets/:ticketPublicId", getTicketByPublicId);
