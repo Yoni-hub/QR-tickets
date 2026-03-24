@@ -65,6 +65,7 @@ SMTP_PORT=${SMTP_PORT:-587}
 SMTP_USER=${SMTP_USER}
 SMTP_PASS=${SMTP_PASS}
 MAIL_FROM=${MAIL_FROM:-no-reply@connsura.com}
+TURNSTILE_SECRET=${TURNSTILE_SECRET}
 EOF
 
 # ─── Write postgres env ─────────────────────────────────────────────────────

@@ -74,10 +74,15 @@ export default function App() {
       <div className="min-h-screen w-full overflow-x-clip bg-slate-50 text-slate-900">
       {!isEmbedPreview ? (
         <nav className="sticky top-0 z-50 bg-white border-b border-gray-100">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6">
+          <div className="mx-auto max-w-5xl px-4 sm:px-6">
             <div className="flex h-20 items-center justify-between">
 
-              {/* Hamburger — mobile only, left */}
+              {/* Logo — left on both desktop and mobile */}
+              <Link to="/" onClick={closeMenu} className="flex-shrink-0 -ml-14 sm:-ml-18">
+                <img src="/ticket-logo1.png" alt="QR Tickets" className="h-40 w-auto" />
+              </Link>
+
+              {/* Hamburger — mobile only, right */}
               <button
                 type="button"
                 onClick={() => setMenuOpen((o) => !o)}
@@ -88,11 +93,6 @@ export default function App() {
                 <span className={`block h-0.5 w-6 bg-slate-800 transition-opacity duration-200 ${menuOpen ? "opacity-0" : ""}`} />
                 <span className={`block h-0.5 w-6 bg-slate-800 transition-transform duration-200 ${menuOpen ? "-translate-y-2 -rotate-45" : ""}`} />
               </button>
-
-              {/* Logo — left on desktop, right on mobile */}
-              <Link to="/" onClick={closeMenu} className="flex-shrink-0 -ml-12 md:ml-0 md:order-first order-last md:mr-0 -mr-[42px]">
-                <img src="/ticket-logo1.png" alt="QR Tickets" className="h-40 w-auto" />
-              </Link>
 
               {/* Desktop nav links — right side, hidden on mobile */}
               <ul className="hidden md:flex items-center gap-8 text-sm font-semibold">
@@ -113,7 +113,7 @@ export default function App() {
 
           {/* Slide-in panel from right */}
           <div
-            className={`fixed top-0 left-0 z-50 w-64 bg-white shadow-2xl transition-transform duration-300 md:hidden ${menuOpen ? "translate-x-0" : "-translate-x-full"}`}
+            className={`fixed top-0 right-0 z-50 w-64 bg-white shadow-2xl transition-transform duration-300 md:hidden ${menuOpen ? "translate-x-0" : "translate-x-full"}`}
           >
             <div className="flex items-center justify-between border-b border-gray-100 px-4 py-4">
               <div>

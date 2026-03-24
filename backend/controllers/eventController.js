@@ -3,6 +3,8 @@ const { generateAccessCode } = require("../utils/accessCode");
 const { LIMITS, sanitizeText, safeError } = require("../utils/sanitize");
 const { createEvent, buildQrPayload } = require("../services/eventService");
 const { generateTicketPublicId } = require("../utils/ticketPublicId");
+const { checkDailyTicketCap } = require("../utils/dailyCaps");
+const { verifyTurnstile } = require("../utils/turnstile");
 const {
   DEFAULT_TICKET_TYPE,
   reservePendingTicketIds,
@@ -205,20 +207,30 @@ async function getEventTicketMutationLock(eventId) {
 }
 
 async function createLiveEvent(req, res) {
+  const captchaOk = await verifyTurnstile(req.body?.cfTurnstileToken, req.ip);
+  if (!captchaOk) {
+    res.status(403).json({ error: "CAPTCHA verification failed. Please try again." });
+    return;
+  }
   try {
     const data = await createEvent(req.body || {}, false);
     res.status(201).json(data);
   } catch (error) {
-    res.status(500).json({ error: safeError(error, "Failed to create event.") });
+    res.status(error.statusCode || 500).json({ error: safeError(error, "Failed to create event.") });
   }
 }
 
 async function createDemoEvent(req, res) {
+  const captchaOk = await verifyTurnstile(req.body?.cfTurnstileToken, req.ip);
+  if (!captchaOk) {
+    res.status(403).json({ error: "CAPTCHA verification failed. Please try again." });
+    return;
+  }
   try {
     const data = await createEvent(req.body || {}, true);
     res.status(201).json(data);
   } catch (error) {
-    res.status(500).json({ error: safeError(error, "Failed to create demo event.") });
+    res.status(error.statusCode || 500).json({ error: safeError(error, "Failed to create demo event.") });
   }
 }
 
@@ -426,6 +438,14 @@ async function generateTicketsByAccessCode(req, res) {
     return;
   }
 
+  const totalRequested = normalizedGroups.reduce((sum, g) => sum + g.quantity, 0);
+  try {
+    await checkDailyTicketCap(totalRequested);
+  } catch (capError) {
+    res.status(429).json({ error: capError.message });
+    return;
+  }
+
   const ids = new Set();
   const rows = [];
   for (const group of normalizedGroups) {
@@ -622,6 +642,11 @@ async function updateEventInline(req, res) {
 }
 
 async function createEventForAccessCode(req, res) {
+  const captchaOk = await verifyTurnstile(req.body?.cfTurnstileToken, req.ip);
+  if (!captchaOk) {
+    res.status(403).json({ error: "CAPTCHA verification failed. Please try again." });
+    return;
+  }
   const accessCode = (req.params.accessCode || "").trim();
   if (!accessCode) {
     res.status(400).json({ error: "accessCode is required." });

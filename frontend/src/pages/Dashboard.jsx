@@ -9,6 +9,7 @@ import PublicEventExperience from "../components/public/PublicEventExperience";
 import ChatInboxLayout from "../features/chat/ChatInboxLayout";
 import { organizerChatApi } from "../features/chat/chatApi";
 import ModalOverlay from "../components/ui/ModalOverlay";
+import { useTurnstile } from "../hooks/useTurnstile";
 
 function useFeedback(autoClearMs = 5000) {
   const [fb, setFb] = useState({ kind: "", message: "" });
@@ -179,6 +180,7 @@ function DateTimeInput({ value, onChange, className = "" }) {
 }
 
 export default function Dashboard() {
+  const { containerRef: turnstileRef, getToken: getTurnstileToken } = useTurnstile();
   const navigate = useNavigate();
   const location = useLocation();
   const [params, setParams] = useSearchParams();
@@ -880,6 +882,14 @@ export default function Dashboard() {
       return;
     }
     setSavingEvent(true);
+    let cfTurnstileToken = "";
+    try {
+      cfTurnstileToken = await getTurnstileToken();
+    } catch {
+      setEventFb("error", "CAPTCHA verification failed. Please try again.");
+      setSavingEvent(false);
+      return;
+    }
     try {
       if (eventEditMode === EVENT_EDIT_MODES.CREATE) {
         if (!accessCode) {
@@ -890,6 +900,7 @@ export default function Dashboard() {
             eventAddress: eventDraft.eventAddress,
             paymentInstructions: eventDraft.paymentInstructions,
             generateAccessOnly: true,
+            cfTurnstileToken,
           });
           const nextOrganizerCode = String(
             response.data?.organizerAccessCode || response.data?.accessCode || "",
@@ -914,6 +925,7 @@ export default function Dashboard() {
           eventDate: eventDraft.eventDate,
           eventAddress: eventDraft.eventAddress,
           paymentInstructions: eventDraft.paymentInstructions,
+          cfTurnstileToken,
         });
         await loadDashboard(accessCode, response.data?.event?.id);
         setEventFb("success", "New event created.");
@@ -1088,6 +1100,7 @@ export default function Dashboard() {
 
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-4 sm:px-6 sm:py-6">
+      <div ref={turnstileRef} className="hidden" />
       {showHeroSection ? (
         <section className="mt-4 rounded border p-4">
           <h1 className="text-3xl font-black leading-tight sm:text-4xl">Stop Signing Up For Ticket Platforms</h1>

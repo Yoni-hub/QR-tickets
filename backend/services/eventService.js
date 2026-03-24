@@ -1,6 +1,7 @@
 ﻿const prisma = require("../utils/prisma");
 const { generateAccessCode, generateOrganizerAccessCode } = require("../utils/accessCode");
 const { generateTicketPublicId } = require("../utils/ticketPublicId");
+const { checkDailyEventCap, checkDailyTicketCap } = require("../utils/dailyCaps");
 
 function getPublicBaseUrl() {
   return (process.env.PUBLIC_BASE_URL || "http://localhost:5174").replace(/\/$/, "");
@@ -72,6 +73,9 @@ async function createEvent(payload, isDemo = false) {
     ? totalQuantityFromSelections
     : Number.parseInt(payload.quantity, 10);
   const quantity = payload.generateAccessOnly ? 0 : Math.max(1, Number.isFinite(requestedQuantity) ? requestedQuantity : 1);
+
+  await checkDailyEventCap();
+  if (quantity > 0) await checkDailyTicketCap(quantity);
 
   const accessCode = await generateAccessCode(async (code) => {
     const existing = await prisma.userEvent.findUnique({ where: { accessCode: code } });

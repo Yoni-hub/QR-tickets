@@ -77,14 +77,7 @@ const FAQ_SECTIONS = [
       {
         question: "How do I deliver tickets to customers?",
         answer: (
-          <>
-            <p>Tickets can be delivered in several ways:</p>
-            <ul className="list-disc pl-5">
-              <li>Email ticket links</li>
-              <li>PDF downloads</li>
-              <li>Public event page where customers can request tickets</li>
-            </ul>
-          </>
+          <p>Tickets can be delivered via the public event page where customers can request tickets.</p>
         ),
       },
       {
@@ -144,17 +137,6 @@ const FAQ_SECTIONS = [
             <p>QR Tickets only provides the platform for <strong>creating, sending, and scanning tickets</strong>.</p>
             <p>We <strong>do not handle payments</strong>, and all payments are made directly to the organizer.</p>
           </>
-        ),
-      },
-    ],
-  },
-  {
-    title: "Support",
-    items: [
-      {
-        question: "Can I send images in support chat?",
-        answer: (
-          <p>Yes. Both you and the admin can attach images (PNG, JPEG, WEBP) when using the support chat.</p>
         ),
       },
     ],

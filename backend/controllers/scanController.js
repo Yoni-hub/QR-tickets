@@ -1,6 +1,26 @@
 const prisma = require("../utils/prisma");
 const { LIMITS, sanitizeText } = require("../utils/sanitize");
 
+function trackFailedScan(req, wasInvalid) {
+  const map = req.app.failedScanCounts;
+  if (!map) return;
+  const ip = req.ip;
+  const threshold = req.app.FAILED_SCAN_THRESHOLD;
+  const blockDuration = req.app.FAILED_SCAN_BLOCK_DURATION;
+
+  if (!wasInvalid) {
+    map.delete(ip);
+    return;
+  }
+  const entry = map.get(ip) || { count: 0, blockedUntil: null };
+  entry.count += 1;
+  if (entry.count >= threshold) {
+    entry.blockedUntil = Date.now() + blockDuration;
+    entry.count = 0;
+  }
+  map.set(ip, entry);
+}
+
 function resolveScanOutcomeLabel(outcome) {
   if (outcome === "VALID") return "VALID";
   if (outcome === "ALREADY_USED") return "ALREADY USED";
@@ -167,16 +187,7 @@ async function scanTicket(req, res) {
   const scannedAt = new Date();
 
   if (!ticket) {
-    await logScan({
-      selectedEventId: selectedEvent.id,
-      ticket: null,
-      ticketPublicId,
-      rawScannedValue,
-      scannerSource,
-      outcome,
-      note: "OUTCOME:INVALID_TICKET",
-    });
-
+    trackFailedScan(req, true);
     res.json({
       result: outcome,
       statusText: resolveScanOutcomeLabel(outcome),
@@ -243,6 +254,7 @@ async function scanTicket(req, res) {
     note: `OUTCOME:${outcome}${outcomeNote ? ` | ${outcomeNote}` : ""}`,
   });
 
+  trackFailedScan(req, outcome === "INVALID_TICKET");
   res.json({
     result: outcome,
     statusText: resolveScanOutcomeLabel(outcome),
