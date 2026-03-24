@@ -12,6 +12,7 @@ const { registerSocketHandlers } = require("./socket/socketHandler");
 dotenv.config();
 
 const app = express();
+app.set("trust proxy", 1);
 const server = http.createServer(app);
 const PORT = process.env.PORT || 4100;
 
@@ -93,9 +94,20 @@ app.failedScanCounts = failedScanCounts;
 app.FAILED_SCAN_THRESHOLD = FAILED_SCAN_THRESHOLD;
 app.FAILED_SCAN_BLOCK_DURATION = FAILED_SCAN_BLOCK_DURATION;
 
+// 5 OTP sends per IP per hour
+const otpLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many verification requests. Try again later." },
+});
+
 app.use("/api", generalLimiter);
 app.use("/api/scans", scanLimiter, failedScanGuard);
 app.use("/api/public/ticket-request", strictLimiter);
+app.use("/api/public/send-otp", otpLimiter);
+app.use("/api/public/verify-otp", otpLimiter);
 app.use("/api/public/support/conversations", strictLimiter);
 app.use("/api/events", eventCreationLimiter);
 app.use("/api/demo/events", eventCreationLimiter);

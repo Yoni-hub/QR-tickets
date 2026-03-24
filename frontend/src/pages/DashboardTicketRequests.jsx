@@ -142,8 +142,13 @@ export default function DashboardTicketRequestsPage() {
             const isApproved = item.status === "APPROVED";
             const isApproving = approvingRequestIds.has(item.id);
             return (
-              <article key={item.id} className="rounded border p-3 text-sm">
-                <p className="font-semibold">{item.name}</p>
+              <article key={item.id} className={`rounded border p-3 text-sm ${item.duplicateEmailWarning ? "border-amber-300 bg-amber-50" : ""}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <p className="font-semibold">{item.name}</p>
+                  {item.duplicateEmailWarning ? (
+                    <span className="shrink-0 rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">⚠ Duplicate email</span>
+                  ) : null}
+                </div>
                 <p className="mt-1">Quantity: {item.quantity}</p>
                 <p className="mt-1">Promoter: {item.promoter?.name || "-"}</p>
                 <p className="mt-1">Status: {item.status}</p>

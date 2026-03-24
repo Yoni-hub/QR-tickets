@@ -177,6 +177,8 @@ model TicketRequest {
   cancellationEvidenceImageDataUrl String?
   quantity   Int
   promoterId String?
+  emailVerified         Boolean @default(false)
+  duplicateEmailWarning Boolean @default(false)
   status     TicketRequestStatus @default(PENDING_VERIFICATION)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -341,6 +343,22 @@ model ChatAttachment {
 
   @@index([messageId])
   @@index([storageKey])
+}
+
+model EmailVerification {
+  id        String   @id @default(cuid())
+  email     String
+  eventSlug String
+  code      String
+  attempts  Int      @default(0)
+  expiresAt DateTime
+  verified  Boolean  @default(false)
+  token     String?  @unique
+  tokenUsed Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([email, eventSlug])
+  @@index([token])
 }
 
 enum SupportConversationStatus {

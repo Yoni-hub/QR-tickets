@@ -129,6 +129,8 @@ async function getOrganizerTicketRequests(req, res) {
       cancellationEvidenceImageDataUrl: true,
       cancellationEvidenceS3Key: true,
       quantity: true,
+      emailVerified: true,
+      duplicateEmailWarning: true,
       status: true,
       createdAt: true,
       updatedAt: true,

@@ -273,10 +273,36 @@ async function sendOrganizerNewMessageEmail({ to, eventName, senderName, dashboa
   return transporter.sendMail({ from, to, subject, text, html });
 }
 
+async function sendOtpEmail({ to, code, eventName }) {
+  const transporter = getTransporter();
+  const from = process.env.MAIL_FROM || "no-reply@localhost";
+  const subject = `Your verification code${eventName ? ` for ${String(eventName)}` : ""}`;
+  const text = [
+    "Hello,",
+    "",
+    `Your verification code is: ${code}`,
+    "",
+    "This code expires in 10 minutes.",
+    "Do not share this code with anyone.",
+  ].join("\n");
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.45;color:#0f172a;">
+      <p>Hello,</p>
+      <p>Your verification code${eventName ? ` for <strong>${escapeHtml(eventName)}</strong>` : ""} is:</p>
+      <p style="text-align:center;margin:24px 0;">
+        <span style="display:inline-block;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;padding:16px 32px;font-size:32px;font-weight:700;letter-spacing:0.25em;color:#1e293b;">${escapeHtml(code)}</span>
+      </p>
+      <p style="color:#64748b;font-size:13px;">This code expires in 10 minutes. Do not share it with anyone.</p>
+    </div>
+  `;
+  return transporter.sendMail({ from, to, subject, text, html });
+}
+
 module.exports = {
   sendTicketApprovedEmail,
   sendTicketCancelledEmail,
   sendNewChatMessageEmail,
   sendOrganizerNewRequestEmail,
   sendOrganizerNewMessageEmail,
+  sendOtpEmail,
 };

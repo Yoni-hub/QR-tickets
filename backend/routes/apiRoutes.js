@@ -15,6 +15,8 @@ const { getTicketByPublicId, getPublicTicketByPublicId } = require("../controlle
 const adminRoutes = require("./adminRoutes");
 const {
   getPublicEventBySlug,
+  sendOtp,
+  verifyOtp,
   createPublicTicketRequest,
   getClientDashboardByToken,
 } = require("../controllers/publicController");
@@ -68,6 +70,8 @@ router.get("/tickets/public/:ticketPublicId", getPublicTicketByPublicId);
 router.post("/scans", scanTicket);
 
 router.get("/public/events/:eventSlug", getPublicEventBySlug);
+router.post("/public/send-otp", sendOtp);
+router.post("/public/verify-otp", verifyOtp);
 router.post("/public/ticket-request", createPublicTicketRequest);
 router.get("/public/client-dashboard/:clientAccessToken", getClientDashboardByToken);
 router.get("/public/client-dashboard/:clientAccessToken/messages", getClientRequestMessagesByToken);

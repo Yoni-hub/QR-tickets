@@ -10,7 +10,7 @@ const {
   startConversationForActor,
   sendSystemMessageForTicketRequest,
 } = require("../services/chatService");
-const { sendTicketApprovedEmail, sendOrganizerNewRequestEmail, sendOrganizerNewMessageEmail } = require("../utils/mailer");
+const { sendTicketApprovedEmail, sendOrganizerNewRequestEmail, sendOrganizerNewMessageEmail, sendOtpEmail } = require("../utils/mailer");
 const { createTicketsForRequest } = require("./organizerController");
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -337,6 +337,7 @@ async function createPublicTicketRequest(req, res) {
   const name = sanitizeText(req.body?.name, LIMITS.NAME);
   const emailRaw = String(req.body?.email || "").trim().toLowerCase();
   const email = EMAIL_PATTERN.test(emailRaw) ? emailRaw : null;
+  const otpToken = String(req.body?.otpToken || "").trim();
   const promoterCode = String(req.body?.promoterCode || "").trim().toLowerCase();
   const ticketSelections = parseTicketSelections(req.body?.ticketSelections || []);
   const evidenceValidation = await sanitizeEvidenceDataUrl(req.body?.evidenceImageDataUrl);
@@ -345,6 +346,25 @@ async function createPublicTicketRequest(req, res) {
     res.status(400).json({ error: "eventSlug and name are required." });
     return;
   }
+  if (!email) {
+    res.status(400).json({ error: "A valid email address is required." });
+    return;
+  }
+  if (!otpToken) {
+    res.status(400).json({ error: "Email verification is required." });
+    return;
+  }
+
+  // Validate OTP token
+  const otpRecord = await prisma.emailVerification.findUnique({
+    where: { token: otpToken },
+  });
+  if (!otpRecord || !otpRecord.verified || otpRecord.tokenUsed || otpRecord.email !== email || otpRecord.eventSlug !== eventSlug) {
+    res.status(400).json({ error: "Invalid or expired verification token. Please verify your email again." });
+    return;
+  }
+  // Mark token as used immediately to prevent replay
+  await prisma.emailVerification.update({ where: { id: otpRecord.id }, data: { tokenUsed: true } });
   if (!ticketSelections.length) {
     res.status(400).json({ error: "Select at least one ticket type with quantity." });
     return;
@@ -439,6 +459,16 @@ async function createPublicTicketRequest(req, res) {
     }
   }
 
+  // Check for duplicate email on this event (warn organizer, don't block)
+  const duplicateEmailWarning = await prisma.ticketRequest.findFirst({
+    where: {
+      eventId: event.id,
+      email,
+      status: { in: ["PENDING_VERIFICATION", "APPROVED"] },
+    },
+    select: { id: true },
+  }).then(Boolean);
+
   const TOKEN_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
   const request = await prisma.ticketRequest.create({
     data: {
@@ -447,6 +477,8 @@ async function createPublicTicketRequest(req, res) {
       eventId: event.id,
       name,
       email,
+      emailVerified: true,
+      duplicateEmailWarning,
       ticketType: normalizedSelections.length === 1 ? normalizedSelections[0].ticketType : "MIXED",
       ticketPrice: normalizedSelections.length === 1 ? normalizedSelections[0].unitPrice : null,
       totalPrice,
@@ -748,8 +780,112 @@ async function createClientRequestMessageByToken(req, res) {
   }
 }
 
+const OTP_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes
+const OTP_MAX_ATTEMPTS = 3;
+
+async function sendOtp(req, res) {
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  const eventSlug = String(req.body?.eventSlug || "").trim();
+
+  if (!EMAIL_PATTERN.test(email)) {
+    res.status(400).json({ error: "A valid email address is required." });
+    return;
+  }
+  if (!eventSlug) {
+    res.status(400).json({ error: "eventSlug is required." });
+    return;
+  }
+
+  const event = await prisma.userEvent.findUnique({
+    where: { slug: eventSlug },
+    select: { id: true, eventName: true, adminStatus: true },
+  });
+  if (!event || event.adminStatus !== "ACTIVE") {
+    res.status(404).json({ error: "Event not found." });
+    return;
+  }
+
+  // Invalidate any existing unused OTPs for this email+event
+  await prisma.emailVerification.updateMany({
+    where: { email, eventSlug, verified: false, tokenUsed: false },
+    data: { expiresAt: new Date(0) },
+  });
+
+  const code = String(Math.floor(100000 + crypto.randomInt(900000))).padStart(6, "0");
+  await prisma.emailVerification.create({
+    data: {
+      email,
+      eventSlug,
+      code,
+      expiresAt: new Date(Date.now() + OTP_EXPIRY_MS),
+    },
+  });
+
+  try {
+    await sendOtpEmail({ to: email, code, eventName: event.eventName });
+  } catch (err) {
+    console.error("sendOtpEmail failed", err);
+    res.status(500).json({ error: "Could not send verification email. Please try again." });
+    return;
+  }
+
+  res.json({ sent: true });
+}
+
+async function verifyOtp(req, res) {
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  const eventSlug = String(req.body?.eventSlug || "").trim();
+  const code = String(req.body?.code || "").trim();
+
+  if (!email || !eventSlug || !code) {
+    res.status(400).json({ error: "email, eventSlug and code are required." });
+    return;
+  }
+
+  const record = await prisma.emailVerification.findFirst({
+    where: {
+      email,
+      eventSlug,
+      verified: false,
+      tokenUsed: false,
+      expiresAt: { gt: new Date() },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (!record) {
+    res.status(400).json({ error: "Verification code expired or not found. Please request a new one." });
+    return;
+  }
+
+  if (record.attempts >= OTP_MAX_ATTEMPTS) {
+    res.status(400).json({ error: "Too many incorrect attempts. Please request a new code." });
+    return;
+  }
+
+  if (record.code !== code) {
+    await prisma.emailVerification.update({
+      where: { id: record.id },
+      data: { attempts: { increment: 1 } },
+    });
+    const remaining = OTP_MAX_ATTEMPTS - record.attempts - 1;
+    res.status(400).json({ error: `Incorrect code. ${remaining} attempt${remaining !== 1 ? "s" : ""} remaining.` });
+    return;
+  }
+
+  const token = crypto.randomBytes(32).toString("hex");
+  await prisma.emailVerification.update({
+    where: { id: record.id },
+    data: { verified: true, token },
+  });
+
+  res.json({ token });
+}
+
 module.exports = {
   getPublicEventBySlug,
+  sendOtp,
+  verifyOtp,
   createPublicTicketRequest,
   getClientDashboardByToken,
   getClientRequestMessagesByToken,

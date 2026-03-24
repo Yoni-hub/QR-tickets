@@ -24,6 +24,9 @@ export default function PublicEventExperience({
   const [evidenceImageDataUrl, setEvidenceImageDataUrl] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState({ kind: "", message: "" });
+  const [otpStep, setOtpStep] = useState(false); // true = show OTP entry
+  const [otpCode, setOtpCode] = useState("");
+  const [otpToken, setOtpToken] = useState(""); // received after successful OTP verify
 
   useEffect(() => {
     let alive = true;
@@ -117,47 +120,84 @@ export default function PublicEventExperience({
     event.target.value = "";
   };
 
-  const submitRequest = async () => {
+  const validateForm = () => {
     if (!form.name.trim()) {
       setFeedback({ kind: "error", message: "Name is required." });
-      return;
+      return false;
     }
     if (!form.email.trim()) {
       setFeedback({ kind: "error", message: "Email is required so we can send you your ticket." });
-      return;
+      return false;
     }
     if (totalQuantity < 1) {
       setFeedback({ kind: "error", message: "Please add quantity for at least one ticket type." });
-      return;
+      return false;
     }
     if (!isFreeSelection && !evidenceImageDataUrl) {
       setFeedback({ kind: "error", message: "Payment evidence is required." });
-      return;
+      return false;
     }
     for (const selection of selectedSelections) {
       if (selection.quantity > selection.remaining) {
         setFeedback({ kind: "error", message: `Only ${selection.remaining} tickets left for ${selection.ticketType}.` });
-        return;
+        return false;
       }
     }
+    return true;
+  };
 
+  const requestOtp = async () => {
+    if (!validateForm()) return;
     if (previewMode) {
       setFeedback({ kind: "success", message: "Preview only. Open the public link to submit a real request." });
       return;
     }
+    setSubmitting(true);
+    setFeedback({ kind: "", message: "" });
+    try {
+      await api.post("/public/send-otp", { email: form.email.trim(), eventSlug });
+      setOtpStep(true);
+      setOtpCode("");
+      setFeedback({ kind: "success", message: `Verification code sent to ${form.email.trim()}` });
+    } catch (err) {
+      setFeedback({ kind: "error", message: err.response?.data?.error || "Could not send verification code." });
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
+  const verifyOtp = async () => {
+    if (!otpCode.trim()) {
+      setFeedback({ kind: "error", message: "Please enter the verification code." });
+      return;
+    }
+    setSubmitting(true);
+    setFeedback({ kind: "", message: "" });
+    try {
+      const res = await api.post("/public/verify-otp", { email: form.email.trim(), eventSlug, code: otpCode.trim() });
+      setOtpToken(res.data.token);
+      setFeedback({ kind: "", message: "" });
+      // Auto-submit the request now that email is verified
+      await submitRequest(res.data.token);
+    } catch (err) {
+      setFeedback({ kind: "error", message: err.response?.data?.error || "Verification failed." });
+      setSubmitting(false);
+    }
+  };
+
+  const submitRequest = async (verifiedToken) => {
     setSubmitting(true);
     setFeedback({ kind: "", message: "" });
     try {
       const response = await api.post("/public/ticket-request", {
         eventSlug,
         name: form.name,
-        email: form.email.trim() || undefined,
+        email: form.email.trim(),
+        otpToken: verifiedToken,
         ticketSelections: selectedSelections.map((item) => ({ ticketType: item.ticketType, quantity: item.quantity })),
         evidenceImageDataUrl: isFreeSelection ? null : evidenceImageDataUrl,
         promoterCode,
       });
-
       if (typeof onRequestSuccess === "function") {
         onRequestSuccess(response.data, eventData?.event?.currency || "$");
       }
@@ -168,6 +208,7 @@ export default function PublicEventExperience({
           ? responseData
           : responseData?.error || requestError.message || "Request failed.";
       setFeedback({ kind: "error", message: responseMessage });
+      setOtpStep(false); // go back to form on submit failure
     } finally {
       setSubmitting(false);
     }
@@ -309,9 +350,35 @@ export default function PublicEventExperience({
 
         <FeedbackBanner className="mt-3" kind={feedback.kind} message={feedback.message} />
 
-        <AppButton className="mt-3" onClick={submitRequest} loading={submitting} loadingText="Submitting...">
-          Request Tickets
-        </AppButton>
+        {otpStep ? (
+          <div className="mt-3 space-y-2">
+            <p className="text-sm text-slate-600">Enter the 6-digit code sent to <strong>{form.email}</strong></p>
+            <input
+              className="w-full rounded border p-2 text-center text-xl font-bold tracking-widest"
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
+              placeholder="000000"
+              value={otpCode}
+              onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            />
+            <div className="flex gap-2">
+              <AppButton className="flex-1" onClick={verifyOtp} loading={submitting} loadingText="Verifying...">
+                Verify &amp; Submit
+              </AppButton>
+              <AppButton variant="secondary" onClick={() => { setOtpStep(false); setFeedback({ kind: "", message: "" }); }}>
+                Back
+              </AppButton>
+            </div>
+            <button type="button" className="text-xs text-blue-600 underline" onClick={requestOtp}>
+              Resend code
+            </button>
+          </div>
+        ) : (
+          <AppButton className="mt-3" onClick={requestOtp} loading={submitting} loadingText="Sending code...">
+            Request Tickets
+          </AppButton>
+        )}
       </section>
     </main>
   );
