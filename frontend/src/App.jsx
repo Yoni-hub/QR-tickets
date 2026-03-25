@@ -26,6 +26,7 @@ export default function App() {
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
   const isEmbedPreview = searchParams.get("embed") === "1" && location.pathname.startsWith("/e/");
+  const isAdminPage = location.pathname.startsWith("/admin");
 
   useEffect(() => {
     const timerByElement = new WeakMap();
@@ -72,7 +73,7 @@ export default function App() {
 
   return (
       <div className="min-h-screen w-full overflow-x-clip bg-slate-50 text-slate-900">
-      {!isEmbedPreview ? (
+      {!isEmbedPreview && !isAdminPage ? (
         <nav className="sticky top-0 z-50 bg-white border-b border-gray-100">
           <div className="mx-auto max-w-5xl px-4 sm:px-6">
             <div className="flex h-20 items-center justify-between">
