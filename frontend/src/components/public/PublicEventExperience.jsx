@@ -312,7 +312,14 @@ export default function PublicEventExperience({
       </div>
       {promoterCode ? <p className="mt-1 text-xs text-slate-500">Referral: {promoterCode}</p> : null}
 
-      <section className="mt-5 rounded border bg-white p-4">
+      {eventData.event.ticketsRemaining === 0 && (eventData.event.ticketTypes || []).length > 0 ? (
+        <div className="mt-5 rounded border border-red-300 bg-red-50 p-4 text-center">
+          <p className="text-lg font-bold text-red-700">Sold Out</p>
+          <p className="mt-1 text-sm text-red-600">All tickets for this event have been reserved. No more requests can be submitted.</p>
+        </div>
+      ) : null}
+
+      <section className={`mt-5 rounded border bg-white p-4 ${eventData.event.ticketsRemaining === 0 && (eventData.event.ticketTypes || []).length > 0 ? "hidden" : ""}`}>
         <h2 className="text-lg font-semibold">Request Tickets</h2>
         <div className="mt-3 grid grid-cols-1 gap-2">
           <input className="rounded border p-2" placeholder="Name (required)" value={form.name} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} />

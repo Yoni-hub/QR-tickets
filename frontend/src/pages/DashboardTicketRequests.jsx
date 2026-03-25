@@ -32,6 +32,7 @@ export default function DashboardTicketRequestsPage() {
   const [promoters, setPromoters] = useState([]);
   const [csvText, setCsvText] = useState("");
   const [approvingRequestIds, setApprovingRequestIds] = useState(() => new Set());
+  const [rejectingRequestIds, setRejectingRequestIds] = useState(() => new Set());
 
   const load = async () => {
     if (!accessCode) return;
@@ -77,6 +78,28 @@ export default function DashboardTicketRequestsPage() {
       setFeedback({ kind: "error", message: requestError.response?.data?.error || "Approve failed." });
     } finally {
       setApprovingRequestIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
+
+  const reject = async (id) => {
+    if (rejectingRequestIds.has(id)) return;
+    setRejectingRequestIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+    try {
+      await api.post(`/ticket-requests/${encodeURIComponent(id)}/reject`, { accessCode });
+      setFeedback({ kind: "success", message: "Request rejected." });
+      await load();
+    } catch (requestError) {
+      setFeedback({ kind: "error", message: requestError.response?.data?.error || "Reject failed." });
+    } finally {
+      setRejectingRequestIds((prev) => {
         const next = new Set(prev);
         next.delete(id);
         return next;
@@ -140,7 +163,11 @@ export default function DashboardTicketRequestsPage() {
         <div className="mt-3 space-y-2">
           {items.map((item) => {
             const isApproved = item.status === "APPROVED";
+            const isRejected = item.status === "REJECTED";
+            const isCancelled = item.status === "CANCELLED";
+            const isPending = item.status === "PENDING_VERIFICATION";
             const isApproving = approvingRequestIds.has(item.id);
+            const isRejecting = rejectingRequestIds.has(item.id);
             return (
               <article key={item.id} className={`rounded border p-3 text-sm ${item.duplicateEmailWarning ? "border-amber-300 bg-amber-50" : ""}`}>
                 <div className="flex items-start justify-between gap-2">
@@ -160,9 +187,25 @@ export default function DashboardTicketRequestsPage() {
                     onClick={() => approve(item.id)}
                     loading={isApproving}
                     loadingText="Approving..."
+                    disabled={!isPending}
                   >
                     {isApproved ? "Approved" : "Approve"}
                   </AppButton>
+                  {isPending ? (
+                    <AppButton
+                      className="px-2 py-1 text-xs"
+                      variant="danger"
+                      onClick={() => reject(item.id)}
+                      loading={isRejecting}
+                      loadingText="Rejecting..."
+                    >
+                      Reject
+                    </AppButton>
+                  ) : isRejected ? (
+                    <span className="rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-600">Rejected</span>
+                  ) : isCancelled ? (
+                    <span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-500">Cancelled</span>
+                  ) : null}
                   <Link className="rounded border px-2 py-1 text-xs" to={`/dashboard?code=${encodeURIComponent(accessCode)}&menu=chat`}>
                     Open Chat Inbox
                   </Link>

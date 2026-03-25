@@ -487,6 +487,8 @@ async function createPublicTicketRequest(req, res) {
       evidenceS3Key,
       quantity: totalQuantity,
       promoterId: promoter?.id || null,
+      // PENDING_VERIFICATION means the buyer is waiting for organizer approval.
+      // (Email was already verified before this request was created via the OTP flow.)
       status: "PENDING_VERIFICATION",
     },
     select: {
