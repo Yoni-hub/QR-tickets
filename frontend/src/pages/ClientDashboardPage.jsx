@@ -37,6 +37,7 @@ export default function ClientDashboardPage() {
     const nextToken = String(token || "").trim();
     if (!nextToken || loading) return;
     setLoading(true);
+    setRequestData(null);
     setFeedback({ kind: "", message: "" });
     try {
       const response = await api.get(`/public/client-dashboard/${encodeURIComponent(nextToken)}`);
