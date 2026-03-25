@@ -17,6 +17,7 @@ function resolveRequestStatusLabel(status) {
   const normalized = String(status || "").toUpperCase();
   if (normalized === "APPROVED") return "APPROVED";
   if (normalized === "CANCELLED") return "CANCELLED";
+  if (normalized === "REJECTED") return "REJECTED";
   return "PENDING";
 }
 
