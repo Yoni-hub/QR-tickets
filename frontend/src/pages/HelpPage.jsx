@@ -178,10 +178,17 @@ export default function HelpPage() {
     setRecoveryError("");
   }, [recoveryType]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // new request form
+  // new request form (organizer manual chat)
   const [recoveryForm, setRecoveryForm] = useState({ name: "", eventName: "", description: "" });
   const [recoverySubmitting, setRecoverySubmitting] = useState(false);
   const [recoveryError, setRecoveryError] = useState("");
+
+  // automated client token recovery
+  const [clientRecoveryStep, setClientRecoveryStep] = useState("email"); // "email" | "otp" | "done"
+  const [clientRecoveryEmail, setClientRecoveryEmail] = useState("");
+  const [clientRecoveryCode, setClientRecoveryCode] = useState("");
+  const [clientRecoverySubmitting, setClientRecoverySubmitting] = useState(false);
+  const [clientRecoveryError, setClientRecoveryError] = useState("");
 
   // token entry for returning users on a different device
   const [tokenEntry, setTokenEntry] = useState("");
@@ -247,10 +254,53 @@ export default function HelpPage() {
     return { token, conversationId };
   };
 
+  const handleClientRecoverySendOtp = async () => {
+    const email = clientRecoveryEmail.trim().toLowerCase();
+    if (!email) {
+      setClientRecoveryError("Please enter your email address.");
+      return;
+    }
+    setClientRecoverySubmitting(true);
+    setClientRecoveryError("");
+    try {
+      await api.post("/public/recover-client-token/send-otp", { email });
+      setClientRecoveryStep("otp");
+      setClientRecoveryCode("");
+    } catch {
+      setClientRecoveryError("Could not send verification code. Please try again.");
+    } finally {
+      setClientRecoverySubmitting(false);
+    }
+  };
+
+  const handleClientRecoveryConfirm = async () => {
+    const code = clientRecoveryCode.trim();
+    if (!code) {
+      setClientRecoveryError("Please enter the verification code.");
+      return;
+    }
+    setClientRecoverySubmitting(true);
+    setClientRecoveryError("");
+    try {
+      await api.post("/public/recover-client-token/confirm", { email: clientRecoveryEmail.trim().toLowerCase(), code });
+      setClientRecoveryStep("done");
+    } catch (err) {
+      setClientRecoveryError(err.response?.data?.error || "Verification failed. Please try again.");
+    } finally {
+      setClientRecoverySubmitting(false);
+    }
+  };
+
+  const handleClientRecoveryBack = () => {
+    setClientRecoveryStep("email");
+    setClientRecoveryCode("");
+    setClientRecoveryError("");
+  };
+
   const handleRecoverySubmit = async () => {
     const { name, eventName, description } = recoveryForm;
     if (!name.trim() || !eventName.trim()) {
-      setRecoveryError(`Please fill in your ${recoveryType === "organizer" ? "organizer" : "buyer"} name and event name.`);
+      setRecoveryError("Please fill in your organizer name and event name.");
       return;
     }
     setRecoverySubmitting(true);
@@ -499,11 +549,84 @@ export default function HelpPage() {
             </div>
           ) : null}
 
-          {role === "recovery" ? (
+          {role === "recovery" && recoveryType === "client" ? (
             <div className="rounded border bg-white p-6">
-              <h2 className="text-lg font-semibold">
-                {recoveryType === "organizer" ? "Organizer Access Code Recovery" : "Client Access Token Recovery"}
-              </h2>
+              <h2 className="text-lg font-semibold">Client Access Token Recovery</h2>
+              {clientRecoveryStep === "email" ? (
+                <>
+                  <p className="mt-2 text-sm text-slate-600">
+                    Enter the email address you used when requesting your ticket. We'll send a verification code to confirm it's you, then email you your dashboard link.
+                  </p>
+                  <div className="mt-5 space-y-3">
+                    <input
+                      className="w-full rounded border p-2 text-sm"
+                      type="email"
+                      placeholder="Email address used for your ticket request"
+                      value={clientRecoveryEmail}
+                      onChange={(e) => setClientRecoveryEmail(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && handleClientRecoverySendOtp()}
+                    />
+                    {clientRecoveryError ? <p className="text-sm text-red-600">{clientRecoveryError}</p> : null}
+                    <AppButton onClick={handleClientRecoverySendOtp} loading={clientRecoverySubmitting} loadingText="Sending code…">
+                      Send Verification Code
+                    </AppButton>
+                  </div>
+                  <div className="mt-4">
+                    <button type="button" className="text-sm text-slate-500 underline hover:text-slate-800" onClick={() => setRole("customer")}>
+                      Back
+                    </button>
+                  </div>
+                </>
+              ) : clientRecoveryStep === "otp" ? (
+                <>
+                  <p className="mt-2 text-sm text-slate-600">
+                    Enter the 6-digit code sent to <strong>{clientRecoveryEmail}</strong>.
+                  </p>
+                  <div className="mt-5 space-y-3">
+                    <input
+                      className="w-full rounded border p-2 text-center text-xl font-bold tracking-widest"
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={6}
+                      placeholder="000000"
+                      value={clientRecoveryCode}
+                      onChange={(e) => setClientRecoveryCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    />
+                    {clientRecoveryError ? <p className="text-sm text-red-600">{clientRecoveryError}</p> : null}
+                    <AppButton onClick={handleClientRecoveryConfirm} loading={clientRecoverySubmitting} loadingText="Verifying…">
+                      Verify &amp; Send My Links
+                    </AppButton>
+                  </div>
+                  <div className="mt-4 flex gap-4">
+                    <button type="button" className="text-sm text-slate-500 underline hover:text-slate-800" onClick={handleClientRecoveryBack}>
+                      Back
+                    </button>
+                    <button type="button" className="text-sm text-blue-600 underline hover:text-blue-800" onClick={handleClientRecoverySendOtp}>
+                      Resend code
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="mt-4 rounded border border-emerald-300 bg-emerald-50 p-4">
+                    <p className="font-semibold text-emerald-800">Check your inbox</p>
+                    <p className="mt-1 text-sm text-emerald-700">
+                      If a ticket request was found for <strong>{clientRecoveryEmail}</strong>, we've sent your dashboard link(s) to that address.
+                    </p>
+                  </div>
+                  <div className="mt-4">
+                    <button type="button" className="text-sm text-slate-500 underline hover:text-slate-800" onClick={() => { setRole(null); setClientRecoveryStep("email"); setClientRecoveryEmail(""); setClientRecoveryError(""); }}>
+                      Back to Help
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          ) : null}
+
+          {role === "recovery" && recoveryType === "organizer" ? (
+            <div className="rounded border bg-white p-6">
+              <h2 className="text-lg font-semibold">Organizer Access Code Recovery</h2>
 
               {recoverySession ? (
                 /* ── CHAT THREAD ── */
@@ -520,7 +643,7 @@ export default function HelpPage() {
                         {copiedToken ? "Copied!" : "Copy"}
                       </button>
                     </div>
-                    <p className="mt-1 text-xs text-amber-700">Your {recoveryType === "organizer" ? "access code" : "client access token"} will only be shared here — never by email or phone.</p>
+                    <p className="mt-1 text-xs text-amber-700">Your access code will only be shared here — never by email or phone.</p>
                   </div>
 
                   <div className="mt-4 flex max-h-72 flex-col gap-2 overflow-y-auto rounded border bg-slate-50 p-3">
@@ -603,32 +726,31 @@ export default function HelpPage() {
                 /* ── FORM + TOKEN ENTRY ── */
                 <>
                   <p className="mt-2 text-sm text-slate-600">
-                    Fill in the details below. Our admin team will verify your identity before sharing your{" "}
-                    {recoveryType === "organizer" ? "access code" : "client access token"}.
+                    Fill in the details below. Our admin team will verify your identity before sharing your access code.
                     The more details you provide, the faster we can verify you.
                   </p>
                   <p className="mt-2 text-xs font-medium text-amber-700">
-                    For your security: your {recoveryType === "organizer" ? "access code" : "client access token"} will only be shared via this private support chat — never by email or phone.
+                    For your security: your access code will only be shared via this private support chat — never by email or phone.
                   </p>
                   <div className="mt-5 space-y-3">
                     <div>
                       <label className="block text-sm font-semibold text-slate-700">
-                        {recoveryType === "organizer" ? "Your organizer name" : "Your name"} <span className="text-red-500">*</span>
+                        Your organizer name <span className="text-red-500">*</span>
                       </label>
                       <input
                         className="mt-1 w-full rounded border p-2 text-sm"
-                        placeholder={recoveryType === "organizer" ? "Name or brand you used when creating your account" : "Name you used when requesting the ticket"}
+                        placeholder="Name or brand you used when creating your account"
                         value={recoveryForm.name}
                         onChange={(e) => setRecoveryForm((p) => ({ ...p, name: e.target.value }))}
                       />
                     </div>
                     <div>
                       <label className="block text-sm font-semibold text-slate-700">
-                        {recoveryType === "organizer" ? "Event name" : "Event you bought a ticket for"} <span className="text-red-500">*</span>
+                        Event name <span className="text-red-500">*</span>
                       </label>
                       <input
                         className="mt-1 w-full rounded border p-2 text-sm"
-                        placeholder={recoveryType === "organizer" ? "Name of at least one event you created" : "Name of the event you requested a ticket for"}
+                        placeholder="Name of at least one event you created"
                         value={recoveryForm.eventName}
                         onChange={(e) => setRecoveryForm((p) => ({ ...p, eventName: e.target.value }))}
                       />
@@ -638,9 +760,7 @@ export default function HelpPage() {
                       <textarea
                         className="mt-1 w-full rounded border p-2 text-sm"
                         rows={3}
-                        placeholder={recoveryType === "organizer"
-                          ? "Approximate event date, number of tickets sold, buyer names — anything that proves you own this account"
-                          : "Approximate date you requested the ticket, payment amount, organizer name — anything that confirms your identity"}
+                        placeholder="Approximate event date, number of tickets sold, buyer names — anything that proves you own this account"
                         value={recoveryForm.description}
                         onChange={(e) => setRecoveryForm((p) => ({ ...p, description: e.target.value }))}
                       />

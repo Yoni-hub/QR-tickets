@@ -10,7 +10,7 @@ const {
   startConversationForActor,
   sendSystemMessageForTicketRequest,
 } = require("../services/chatService");
-const { sendTicketApprovedEmail, sendOrganizerNewRequestEmail, sendOrganizerNewMessageEmail, sendOtpEmail } = require("../utils/mailer");
+const { sendTicketApprovedEmail, sendOrganizerNewRequestEmail, sendOrganizerNewMessageEmail, sendOtpEmail, sendClientRecoveryEmail } = require("../utils/mailer");
 const { createTicketsForRequest } = require("./organizerController");
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -884,6 +884,119 @@ async function verifyOtp(req, res) {
   res.json({ token });
 }
 
+const RECOVERY_SLUG = "__recovery__";
+
+async function sendRecoveryOtp(req, res) {
+  const email = String(req.body?.email || "").trim().toLowerCase();
+
+  if (!EMAIL_PATTERN.test(email)) {
+    res.status(400).json({ error: "A valid email address is required." });
+    return;
+  }
+
+  // Check if any ticket request exists for this email — but don't reveal the answer
+  const hasRequest = await prisma.ticketRequest.findFirst({
+    where: { email },
+    select: { id: true },
+  });
+
+  if (hasRequest) {
+    // Invalidate any existing unused recovery OTPs for this email
+    await prisma.emailVerification.updateMany({
+      where: { email, eventSlug: RECOVERY_SLUG, verified: false, tokenUsed: false },
+      data: { expiresAt: new Date(0) },
+    });
+
+    const code = String(Math.floor(100000 + crypto.randomInt(900000))).padStart(6, "0");
+    await prisma.emailVerification.create({
+      data: {
+        email,
+        eventSlug: RECOVERY_SLUG,
+        code,
+        expiresAt: new Date(Date.now() + OTP_EXPIRY_MS),
+      },
+    });
+
+    sendOtpEmail({ to: email, code }).catch((err) => console.error("recovery OTP email failed", err));
+  }
+
+  // Always respond with success to avoid email enumeration
+  res.json({ sent: true });
+}
+
+async function confirmRecoveryOtp(req, res) {
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  const code = String(req.body?.code || "").trim();
+
+  if (!email || !code) {
+    res.status(400).json({ error: "email and code are required." });
+    return;
+  }
+
+  const record = await prisma.emailVerification.findFirst({
+    where: {
+      email,
+      eventSlug: RECOVERY_SLUG,
+      verified: false,
+      tokenUsed: false,
+      expiresAt: { gt: new Date() },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (!record) {
+    res.status(400).json({ error: "Verification code expired or not found. Please request a new one." });
+    return;
+  }
+
+  if (record.attempts >= OTP_MAX_ATTEMPTS) {
+    res.status(400).json({ error: "Too many incorrect attempts. Please request a new code." });
+    return;
+  }
+
+  if (record.code !== code) {
+    await prisma.emailVerification.update({
+      where: { id: record.id },
+      data: { attempts: { increment: 1 } },
+    });
+    const remaining = OTP_MAX_ATTEMPTS - record.attempts - 1;
+    res.status(400).json({ error: `Incorrect code. ${remaining} attempt${remaining !== 1 ? "s" : ""} remaining.` });
+    return;
+  }
+
+  // Mark OTP as used
+  await prisma.emailVerification.update({
+    where: { id: record.id },
+    data: { verified: true, tokenUsed: true },
+  });
+
+  // Find all ticket requests for this email and send dashboard links
+  const requests = await prisma.ticketRequest.findMany({
+    where: { email },
+    select: {
+      clientAccessToken: true,
+      createdAt: true,
+      event: { select: { eventName: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (requests.length > 0) {
+    const baseUrl = getPublicBaseUrl();
+    const dashboardLinks = requests.map((r) => ({
+      eventName: r.event?.eventName || "Unknown Event",
+      dashboardUrl: `${baseUrl}/client/${r.clientAccessToken}`,
+      requestDate: new Date(r.createdAt).toLocaleDateString(),
+    }));
+    sendClientRecoveryEmail({ to: email, dashboardLinks }).catch((err) =>
+      console.error("client recovery email failed", err),
+    );
+  }
+
+  // Always respond with success regardless of whether requests were found
+  res.json({ sent: true });
+}
+
 module.exports = {
   getPublicEventBySlug,
   sendOtp,
@@ -892,5 +1005,7 @@ module.exports = {
   getClientDashboardByToken,
   getClientRequestMessagesByToken,
   createClientRequestMessageByToken,
+  sendRecoveryOtp,
+  confirmRecoveryOtp,
 };
 

@@ -298,6 +298,46 @@ async function sendOtpEmail({ to, code, eventName }) {
   return transporter.sendMail({ from, to, subject, text, html });
 }
 
+async function sendClientRecoveryEmail({ to, dashboardLinks }) {
+  // dashboardLinks: [{ eventName, dashboardUrl, requestDate }]
+  const transporter = getTransporter();
+  const from = process.env.MAIL_FROM || "no-reply@localhost";
+  const subject = "Your QR Tickets dashboard links";
+
+  const textBlocks = dashboardLinks.map((item) =>
+    `Event: ${item.eventName}\nRequested: ${item.requestDate}\nDashboard: ${item.dashboardUrl}`,
+  ).join("\n\n");
+
+  const text = [
+    "Hello,",
+    "",
+    "Here are your QR Tickets dashboard links:",
+    "",
+    textBlocks,
+    "",
+    "If you did not request this, you can ignore this email.",
+  ].join("\n");
+
+  const htmlLinks = dashboardLinks.map((item) => `
+    <div style="margin-bottom:16px;padding:12px;background:#f8fafc;border-radius:6px;border:1px solid #e2e8f0;">
+      <p style="margin:0 0 4px 0;font-weight:700;">${escapeHtml(item.eventName)}</p>
+      <p style="margin:0 0 8px 0;font-size:12px;color:#64748b;">Requested: ${escapeHtml(item.requestDate)}</p>
+      <a href="${escapeHtml(item.dashboardUrl)}" target="_blank" rel="noopener noreferrer" style="background:#2d5bd1;color:#ffffff;padding:8px 16px;border-radius:6px;text-decoration:none;font-weight:600;font-size:13px;display:inline-block;">Open My Dashboard</a>
+    </div>
+  `).join("");
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.45;color:#0f172a;">
+      <p>Hello,</p>
+      <p>Here are your QR Tickets dashboard links:</p>
+      ${htmlLinks}
+      <p style="font-size:12px;color:#94a3b8;margin-top:24px;">If you did not request this recovery, you can ignore this email.</p>
+    </div>
+  `;
+
+  return transporter.sendMail({ from, to, subject, text, html });
+}
+
 module.exports = {
   sendTicketApprovedEmail,
   sendTicketCancelledEmail,
@@ -305,4 +345,5 @@ module.exports = {
   sendOrganizerNewRequestEmail,
   sendOrganizerNewMessageEmail,
   sendOtpEmail,
+  sendClientRecoveryEmail,
 };

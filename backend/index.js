@@ -83,6 +83,7 @@ app.FAILED_SCAN_BLOCK_DURATION = FAILED_SCAN_BLOCK_DURATION;
 app.use("/api/scans", scanLimiter, failedScanGuard);
 app.use("/api/public/send-otp", otpLimiter);
 app.use("/api/public/verify-otp", otpLimiter);
+app.use("/api/public/recover-client-token", otpLimiter);
 app.use("/api/public/support/conversations", supportLimiter);
 
 app.get("/health", (_req, res) => {

@@ -19,6 +19,8 @@ const {
   verifyOtp,
   createPublicTicketRequest,
   getClientDashboardByToken,
+  sendRecoveryOtp,
+  confirmRecoveryOtp,
 } = require("../controllers/publicController");
 const {
   getOrganizerTicketRequests,
@@ -86,6 +88,8 @@ router.post(
 );
 router.post("/public/client-dashboard/:clientAccessToken/chat/conversations/:conversationId/read", clientMarkConversationRead);
 router.get("/public/client-dashboard/:clientAccessToken/chat/attachments/:attachmentId", clientDownloadAttachment);
+router.post("/public/recover-client-token/send-otp", sendRecoveryOtp);
+router.post("/public/recover-client-token/confirm", confirmRecoveryOtp);
 router.post("/public/support/conversations", createSupportConversation);
 router.get("/public/support/conversations/:conversationToken/messages", getSupportConversationMessages);
 router.post("/public/support/conversations/:conversationToken/messages", sendSupportConversationMessage);
