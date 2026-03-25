@@ -784,6 +784,7 @@ async function createClientRequestMessageByToken(req, res) {
 
 const OTP_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes
 const OTP_MAX_ATTEMPTS = 3;
+const OTP_VERIFIED_CACHE_MS = 24 * 60 * 60 * 1000; // 24 hours — skip re-verification if email recently verified
 
 async function sendOtp(req, res) {
   const email = String(req.body?.email || "").trim().toLowerCase();
@@ -804,6 +805,34 @@ async function sendOtp(req, res) {
   });
   if (!event || event.adminStatus !== "ACTIVE") {
     res.status(404).json({ error: "Event not found." });
+    return;
+  }
+
+  // If email was recently verified for this event, skip OTP and issue a new token directly
+  const recentVerified = await prisma.emailVerification.findFirst({
+    where: {
+      email,
+      eventSlug,
+      verified: true,
+      tokenUsed: true,
+      createdAt: { gt: new Date(Date.now() - OTP_VERIFIED_CACHE_MS) },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (recentVerified) {
+    const token = crypto.randomBytes(32).toString("hex");
+    await prisma.emailVerification.create({
+      data: {
+        email,
+        eventSlug,
+        code: "000000", // placeholder — not used
+        verified: true,
+        token,
+        expiresAt: new Date(Date.now() + OTP_EXPIRY_MS),
+      },
+    });
+    res.json({ sent: true, alreadyVerified: true, token });
     return;
   }
 

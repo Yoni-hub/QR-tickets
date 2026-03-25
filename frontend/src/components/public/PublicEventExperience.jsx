@@ -155,7 +155,13 @@ export default function PublicEventExperience({
     setSubmitting(true);
     setFeedback({ kind: "", message: "" });
     try {
-      await api.post("/public/send-otp", { email: form.email.trim(), eventSlug });
+      const res = await api.post("/public/send-otp", { email: form.email.trim(), eventSlug });
+      if (res.data?.alreadyVerified && res.data?.token) {
+        // Email already verified recently — skip OTP step and submit directly
+        setOtpToken(res.data.token);
+        await submitRequest(res.data.token);
+        return;
+      }
       setOtpStep(true);
       setOtpCode("");
       setFeedback({ kind: "success", message: `Verification code sent to ${form.email.trim()}` });

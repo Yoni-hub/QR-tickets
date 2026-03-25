@@ -235,6 +235,7 @@ export default function Dashboard() {
   const [chatSending, setChatSending] = useState(false);
   const [evidencePreview, setEvidencePreview] = useState("");
   const [approvingRequestIds, setApprovingRequestIds] = useState(() => new Set());
+  const [rejectingRequestIds, setRejectingRequestIds] = useState(() => new Set());
   const [ticketCopyError, setTicketCopyError] = useState({ ticketPublicId: "", message: "" });
   const [ticketCancelError, setTicketCancelError] = useState({ ticketPublicId: "", message: "" });
   const [cancelModal, setCancelModal] = useState({
@@ -749,6 +750,23 @@ export default function Dashboard() {
         next.delete(requestId);
         return next;
       });
+    }
+  };
+
+  const rejectRequest = async (requestId) => {
+    if (rejectingRequestIds.has(requestId)) return;
+    setRejectingRequestIds((prev) => { const next = new Set(prev); next.add(requestId); return next; });
+    try {
+      await api.post(`/ticket-requests/${encodeURIComponent(requestId)}/reject`, {
+        accessCode,
+        eventId: summary?.event?.id,
+      });
+      await loadRequestsAndPromoters(accessCode, summary?.event?.id);
+      setRequestFb("success", "Request rejected.");
+    } catch (rejectError) {
+      setRequestFb("error", rejectError.response?.data?.error || "Reject failed.");
+    } finally {
+      setRejectingRequestIds((prev) => { const next = new Set(prev); next.delete(requestId); return next; });
     }
   };
 
@@ -1562,12 +1580,20 @@ export default function Dashboard() {
                   const selections = Array.isArray(item.ticketSelections) ? item.ticketSelections : [];
                   const isApproved = item.status === "APPROVED";
                   const isCancelled = item.status === "CANCELLED";
+                  const isRejected = item.status === "REJECTED";
+                  const isPending = item.status === "PENDING_VERIFICATION";
                   const isApproving = approvingRequestIds.has(item.id);
+                  const isRejecting = rejectingRequestIds.has(item.id);
                   return (
                     <article key={item.id} className="rounded border bg-white p-3 text-sm">
                       <div className="grid grid-cols-2 gap-2 text-xs">
                         <p><span className="font-semibold">Name:</span> {item.name}</p>
                         <p><span className="font-semibold">Email:</span> {item.email || "-"}</p>
+                        {item.duplicateEmailWarning ? (
+                          <p className="col-span-2">
+                            <span className="inline-block rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">⚠ Duplicate email</span>
+                          </p>
+                        ) : null}
                         <p className="col-span-2">
                           <span className="font-semibold">Ticket Types:</span>{" "}
                           {selections.length
@@ -1588,14 +1614,26 @@ export default function Dashboard() {
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2">
                         <AppButton
-                          className={`px-2 py-1 text-xs ${isApproved || isCancelled ? "opacity-70" : ""}`}
-                          variant={isApproved || isCancelled ? "secondary" : "success"}
+                          className={`px-2 py-1 text-xs ${!isPending ? "opacity-70" : ""}`}
+                          variant={isApproved ? "success" : isCancelled || isRejected ? "secondary" : "success"}
                           onClick={() => approveRequest(item.id)}
                           loading={isApproving}
                           loadingText="Approving..."
+                          disabled={!isPending}
                         >
-                          {isCancelled ? "Cancelled" : isApproved ? "Approved" : "Approve"}
+                          {isCancelled ? "Cancelled" : isRejected ? "Rejected" : isApproved ? "Approved" : "Approve"}
                         </AppButton>
+                        {isPending ? (
+                          <AppButton
+                            className="px-2 py-1 text-xs"
+                            variant="danger"
+                            onClick={() => rejectRequest(item.id)}
+                            loading={isRejecting}
+                            loadingText="Rejecting..."
+                          >
+                            Reject
+                          </AppButton>
+                        ) : null}
                         <AppButton className="px-2 py-1 text-xs" variant="secondary" onClick={() => setActiveMenu("chat")}>
                           Open chat inbox
                         </AppButton>
@@ -1624,11 +1662,19 @@ export default function Dashboard() {
                       const selections = Array.isArray(item.ticketSelections) ? item.ticketSelections : [];
                       const isApproved = item.status === "APPROVED";
                       const isCancelled = item.status === "CANCELLED";
+                      const isRejected = item.status === "REJECTED";
+                      const isPending = item.status === "PENDING_VERIFICATION";
                       const isApproving = approvingRequestIds.has(item.id);
+                      const isRejecting = rejectingRequestIds.has(item.id);
                       return (
                         <tr key={item.id} className="border-t align-top">
                           <td className="p-2 font-semibold">{item.name}</td>
-                          <td className="p-2">{item.email || "-"}</td>
+                          <td className="p-2">
+                            <p>{item.email || "-"}</p>
+                            {item.duplicateEmailWarning ? (
+                              <span className="mt-1 inline-block rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">⚠ Duplicate email</span>
+                            ) : null}
+                          </td>
                           <td className="p-2">
                             {selections.length
                               ? selections.map((selection) => `${selection.ticketType} x${selection.quantity}`).join(", ")
@@ -1652,14 +1698,26 @@ export default function Dashboard() {
                           <td className="p-2">
                             <div className="flex flex-wrap gap-2">
                               <AppButton
-                                className={`px-2 py-1 text-xs ${isApproved || isCancelled ? "opacity-70" : ""}`}
-                                variant={isApproved || isCancelled ? "secondary" : "success"}
+                                className={`px-2 py-1 text-xs ${!isPending ? "opacity-70" : ""}`}
+                                variant={isApproved ? "success" : isCancelled || isRejected ? "secondary" : "success"}
                                 onClick={() => approveRequest(item.id)}
                                 loading={isApproving}
                                 loadingText="Approving..."
+                                disabled={!isPending}
                               >
-                                {isCancelled ? "Cancelled" : isApproved ? "Approved" : "Approve"}
+                                {isCancelled ? "Cancelled" : isRejected ? "Rejected" : isApproved ? "Approved" : "Approve"}
                               </AppButton>
+                              {isPending ? (
+                                <AppButton
+                                  className="px-2 py-1 text-xs"
+                                  variant="danger"
+                                  onClick={() => rejectRequest(item.id)}
+                                  loading={isRejecting}
+                                  loadingText="Rejecting..."
+                                >
+                                  Reject
+                                </AppButton>
+                              ) : null}
                               <AppButton className="px-2 py-1 text-xs" variant="secondary" onClick={() => setActiveMenu("chat")}>
                                 Open chat inbox
                               </AppButton>
