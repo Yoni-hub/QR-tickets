@@ -12,6 +12,7 @@ model UserEvent {
   organizerName String?
   eventName   String
   eventDate   DateTime
+  eventEndDate DateTime?
   eventAddress String
   slug        String?     @unique
   ticketType  String?
@@ -155,10 +156,19 @@ model Promoter {
   @@index([eventId])
 }
 
+model ClientProfile {
+  id                String          @id @default(cuid())
+  email             String          @unique
+  clientAccessToken String          @unique
+  tokenExpiresAt    DateTime
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  ticketRequests    TicketRequest[]
+}
+
 model TicketRequest {
   id         String   @id @default(cuid())
-  clientAccessToken    String?  @unique
-  clientTokenExpiresAt DateTime?
+  clientProfileId      String
   evidenceS3Key                    String?
   cancellationEvidenceS3Key        String?
   eventId    String
@@ -182,12 +192,14 @@ model TicketRequest {
   status     TicketRequestStatus @default(PENDING_VERIFICATION)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+  clientProfile ClientProfile @relation(fields: [clientProfileId], references: [id])
   event      UserEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
   promoter   Promoter? @relation(fields: [promoterId], references: [id], onDelete: SetNull)
   tickets    Ticket[]
   messages   TicketRequestMessage[]
   chatConversations ChatConversation[]
 
+  @@index([clientProfileId])
   @@index([eventId])
   @@index([promoterId])
   @@index([status])

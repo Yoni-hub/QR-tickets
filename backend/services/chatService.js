@@ -88,7 +88,7 @@ async function resolveTicketRequestContext(ticketRequestIdRaw) {
     select: {
       id: true,
       eventId: true,
-      clientAccessToken: true,
+      clientProfile: { select: { clientAccessToken: true } },
       event: {
         select: {
           accessCode: true,
@@ -101,7 +101,7 @@ async function resolveTicketRequestContext(ticketRequestIdRaw) {
   return {
     ticketRequestId: request.id,
     eventId: request.eventId,
-    clientAccessToken: normalizeClientAccessToken(request.clientAccessToken || "") || `legacy-request-${request.id}`,
+    clientAccessToken: normalizeClientAccessToken(request.clientProfile?.clientAccessToken || "") || `legacy-request-${request.id}`,
     organizerAccessCode: request.event?.organizerAccessCode || request.event?.accessCode || "",
   };
 }

@@ -21,6 +21,29 @@ function resolveRequestStatusLabel(status) {
   return "PENDING";
 }
 
+function resolveRequestStatusClass(status) {
+  const normalized = String(status || "").toUpperCase();
+  if (normalized === "APPROVED") return "bg-green-100 text-green-800";
+  if (normalized === "CANCELLED") return "bg-red-100 text-red-800";
+  if (normalized === "REJECTED") return "bg-red-100 text-red-800";
+  return "bg-amber-100 text-amber-800";
+}
+
+function resolveTicketStatus(ticket, event) {
+  if (ticket.cancelledAt || ticket.isInvalidated) return "Cancelled";
+  if (ticket.status === "USED") return "Used";
+  const eventOver = new Date(event.eventEndDate ?? event.eventDate) < new Date();
+  if (eventOver) return "Expired";
+  return "Ready to use";
+}
+
+function resolveTicketStatusClass(ticketStatus) {
+  if (ticketStatus === "Cancelled") return "bg-red-100 text-red-800";
+  if (ticketStatus === "Used") return "bg-slate-100 text-slate-700";
+  if (ticketStatus === "Expired") return "bg-slate-100 text-slate-500";
+  return "bg-green-100 text-green-800";
+}
+
 const SESSION_TOKEN_KEY = "qr-client-token";
 
 export default function ClientDashboardPage() {
@@ -43,6 +66,8 @@ export default function ClientDashboardPage() {
     try {
       const response = await api.get(`/public/client-dashboard/${encodeURIComponent(nextToken)}`);
       setRequestData(response.data);
+      sessionStorage.setItem(SESSION_TOKEN_KEY, nextToken);
+      setSessionToken(nextToken);
       setFeedback({ kind: "success", message: "Client dashboard loaded." });
     } catch (requestError) {
       setRequestData(null);
@@ -83,14 +108,17 @@ export default function ClientDashboardPage() {
     };
   }, [normalizedToken, tokenInput]);
 
+  const requests = requestData?.requests || [];
+  const firstRequest = requests[0] || null;
+
   const quickStarts = useMemo(() => {
-    const eventId = requestData?.event?.id;
-    if (!requestData?.request?.id) return [{ label: "Message Admin", payload: { conversationType: "ADMIN_CLIENT", eventId } }];
+    const eventId = firstRequest?.event?.id;
+    if (!firstRequest?.id) return [{ label: "Message Admin", payload: { conversationType: "ADMIN_CLIENT", eventId } }];
     return [
-      { label: "Message Organizer", payload: { conversationType: "ORGANIZER_CLIENT", ticketRequestId: requestData.request.id, eventId } },
-      { label: "Message Admin", payload: { conversationType: "ADMIN_CLIENT", ticketRequestId: requestData.request.id, eventId } },
+      { label: "Message Organizer", payload: { conversationType: "ORGANIZER_CLIENT", ticketRequestId: firstRequest.id, eventId } },
+      { label: "Message Admin", payload: { conversationType: "ADMIN_CLIENT", ticketRequestId: firstRequest.id, eventId } },
     ];
-  }, [requestData]);
+  }, [firstRequest]);
 
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-5 sm:px-6 sm:py-6">
@@ -118,41 +146,83 @@ export default function ClientDashboardPage() {
 
       {requestData ? (
         <>
-          <section className="mt-4 rounded border bg-white p-4 text-sm">
-            <p className="text-xs uppercase tracking-wide text-slate-500">Event Details</p>
-            <h2 className="mt-1 text-lg font-semibold">{requestData.event.eventName || "-"}</h2>
-            <p className="mt-1">{formatDate(requestData.event.eventDate)} | {requestData.event.eventAddress || "-"}</p>
-          </section>
-
-          <section className="mt-4 rounded border bg-white p-4 text-sm">
-            <p className="text-xs uppercase tracking-wide text-slate-500">Your Tickets</p>
-            <p className="mt-2"><span className="font-semibold">Status:</span> {resolveRequestStatusLabel(requestData.request?.status)}</p>
-            {requestData.request?.organizerMessage ? (
-              <p className="mt-1 rounded border bg-amber-50 p-2 text-xs text-amber-900">
-                Organizer message: {requestData.request.organizerMessage}
-              </p>
-            ) : null}
-            {requestData.tickets?.length ? (
-              <div className="mt-2 space-y-2">
-                {requestData.tickets.map((ticket) => (
-                  <article key={ticket.ticketPublicId} className="rounded border bg-slate-50 p-3">
-                    <p><span className="font-semibold">Type:</span> {ticket.ticketType || "General"}</p>
-                    {ticket.cancelledAt ? (
-                      <p className="mt-2 text-xs text-red-700">
-                        Cancelled at {formatDate(ticket.cancelledAt)}: {ticket.cancellationReason === "OTHER" ? ticket.cancellationOtherReason || "Other" : ticket.cancellationReason?.replaceAll("_", " ").toLowerCase()}
+          {requests.length === 0 ? (
+            <p className="mt-4 text-slate-600">No ticket requests found for this dashboard.</p>
+          ) : (
+            <div className="mt-4 space-y-4">
+              {requests.map((request) => (
+                <section key={request.id} className="rounded border bg-white p-4 text-sm">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <h2 className="text-base font-semibold">{request.event?.eventName || "-"}</h2>
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        {formatDate(request.event?.eventDate)}
+                        {request.event?.eventEndDate ? ` – ${formatDate(request.event.eventEndDate)}` : ""}
+                        {request.event?.eventAddress ? ` · ${request.event.eventAddress}` : ""}
                       </p>
-                    ) : (
-                      <a className="mt-2 inline-block text-xs font-semibold text-blue-700 underline break-all" href={ticket.ticketUrl} target="_blank" rel="noreferrer">
-                        Open Ticket Link
-                      </a>
-                    )}
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <p className="mt-2 text-slate-600">No tickets assigned yet. Once approved by the organizer, your tickets will appear here.</p>
-            )}
-          </section>
+                    </div>
+                    <span className={`rounded px-2 py-0.5 text-xs font-semibold ${resolveRequestStatusClass(request.status)}`}>
+                      {resolveRequestStatusLabel(request.status)}
+                    </span>
+                  </div>
+
+                  {request.organizerMessage ? (
+                    <p className="mt-2 rounded border bg-amber-50 p-2 text-xs text-amber-900">
+                      Organizer message: {request.organizerMessage}
+                    </p>
+                  ) : null}
+
+                  {request.status === "APPROVED" && request.tickets?.length ? (
+                    <div className="mt-3 space-y-2">
+                      {request.tickets.map((ticket) => {
+                        const ticketStatus = resolveTicketStatus(ticket, request.event);
+                        return (
+                          <article key={ticket.ticketPublicId} className="rounded border bg-slate-50 p-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="font-semibold">{ticket.ticketType || "General"}</p>
+                              <span className={`rounded px-2 py-0.5 text-xs font-semibold ${resolveTicketStatusClass(ticketStatus)}`}>
+                                {ticketStatus}
+                              </span>
+                            </div>
+
+                            {ticketStatus === "Used" && ticket.scannedAt ? (
+                              <p className="mt-1 text-xs text-slate-500">Scanned at {formatDate(ticket.scannedAt)}</p>
+                            ) : null}
+
+                            {ticketStatus === "Cancelled" ? (
+                              <p className="mt-1 text-xs text-red-700">
+                                Cancelled at {formatDate(ticket.cancelledAt)}
+                                {ticket.cancellationReason
+                                  ? `: ${ticket.cancellationReason === "OTHER" ? ticket.cancellationOtherReason || "Other" : ticket.cancellationReason.replaceAll("_", " ").toLowerCase()}`
+                                  : ""}
+                              </p>
+                            ) : null}
+
+                            {ticketStatus === "Expired" ? (
+                              <p className="mt-1 text-xs text-slate-400">Event has ended</p>
+                            ) : null}
+
+                            {ticketStatus === "Ready to use" ? (
+                              <a
+                                className="mt-2 inline-block text-xs font-semibold text-blue-700 underline break-all"
+                                href={ticket.ticketUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                Open Ticket Link
+                              </a>
+                            ) : null}
+                          </article>
+                        );
+                      })}
+                    </div>
+                  ) : request.status === "APPROVED" ? (
+                    <p className="mt-2 text-slate-600">No tickets assigned yet.</p>
+                  ) : null}
+                </section>
+              ))}
+            </div>
+          )}
 
           <section className="mt-4">
             <ChatInboxLayout

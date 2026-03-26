@@ -205,7 +205,7 @@ export default function Dashboard() {
   const [events, setEvents] = useState([]);
   const [selectedEventId, setSelectedEventId] = useState("");
   const [eventEditMode, setEventEditMode] = useState(EVENT_EDIT_MODES.CREATE);
-  const [eventDraft, setEventDraft] = useState({ organizerName: "", eventName: "", eventDate: "", eventAddress: "", paymentInstructions: "" });
+  const [eventDraft, setEventDraft] = useState({ organizerName: "", eventName: "", eventDate: "", eventEndDate: "", eventAddress: "", paymentInstructions: "" });
   const [savingEvent, setSavingEvent] = useState(false);
   const [savingTicketDraft, setSavingTicketDraft] = useState(false);
   const [tickets, setTickets] = useState([]);
@@ -366,7 +366,7 @@ export default function Dashboard() {
     setActiveMenu("events");
     setShowPublicPreview(false);
     setEventEditMode(EVENT_EDIT_MODES.CREATE);
-    setEventDraft({ organizerName: "", eventName: "", eventDate: "", eventAddress: "", paymentInstructions: "" });
+    setEventDraft({ organizerName: "", eventName: "", eventDate: "", eventEndDate: "", eventAddress: "", paymentInstructions: "" });
   }, [shouldOpenHomeMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -450,6 +450,7 @@ export default function Dashboard() {
       organizerName: String(payload?.event?.organizerName || ""),
       eventName: String(payload?.event?.eventName || ""),
       eventDate: toLocalDateTimeInputValue(payload?.event?.eventDate),
+      eventEndDate: toLocalDateTimeInputValue(payload?.event?.eventEndDate),
       eventAddress: String(payload?.event?.eventAddress || ""),
       paymentInstructions: String(payload?.event?.paymentInstructions || ""),
     });
@@ -915,6 +916,7 @@ export default function Dashboard() {
             organizerName: eventDraft.organizerName,
             eventName: eventDraft.eventName,
             eventDateTime: eventDraft.eventDate,
+            eventEndDate: eventDraft.eventEndDate || undefined,
             eventAddress: eventDraft.eventAddress,
             paymentInstructions: eventDraft.paymentInstructions,
             generateAccessOnly: true,
@@ -941,6 +943,7 @@ export default function Dashboard() {
           organizerName: eventDraft.organizerName,
           eventName: eventDraft.eventName,
           eventDate: eventDraft.eventDate,
+          eventEndDate: eventDraft.eventEndDate || undefined,
           eventAddress: eventDraft.eventAddress,
           paymentInstructions: eventDraft.paymentInstructions,
           cfTurnstileToken,
@@ -959,6 +962,7 @@ export default function Dashboard() {
         organizerName: eventDraft.organizerName,
         eventName: eventDraft.eventName,
         eventDate: eventDraft.eventDate,
+        eventEndDate: eventDraft.eventEndDate,
         eventAddress: eventDraft.eventAddress,
         paymentInstructions: eventDraft.paymentInstructions,
       });
@@ -1006,6 +1010,7 @@ export default function Dashboard() {
       organizerName: String(summary.event.organizerName || ""),
       eventName: String(summary.event.eventName || ""),
       eventDate: toLocalDateTimeInputValue(summary.event.eventDate),
+      eventEndDate: toLocalDateTimeInputValue(summary.event.eventEndDate),
       eventAddress: String(summary.event.eventAddress || ""),
       paymentInstructions: String(summary.event.paymentInstructions || ""),
     });
@@ -1065,6 +1070,7 @@ export default function Dashboard() {
         organizerName: String(response.data?.event?.organizerName || ""),
         eventName: String(response.data?.event?.eventName || ""),
         eventDate: toLocalDateTimeInputValue(response.data?.event?.eventDate),
+        eventEndDate: toLocalDateTimeInputValue(response.data?.event?.eventEndDate),
         eventAddress: String(response.data?.event?.eventAddress || ""),
         paymentInstructions: String(response.data?.event?.paymentInstructions || ""),
       });
@@ -1251,10 +1257,15 @@ export default function Dashboard() {
                     value={eventDraft.eventName}
                     onChange={(e) => setEventDraft((prev) => ({ ...prev, eventName: e.target.value }))}
                   />
-                  <p className="font-semibold">Date:</p>
+                  <p className="font-semibold">Start Date:</p>
                   <DateTimeInput
                     value={eventDraft.eventDate}
                     onChange={(v) => setEventDraft((prev) => ({ ...prev, eventDate: v }))}
+                  />
+                  <p className="font-semibold">End Date <span className="font-normal text-slate-400">(optional)</span>:</p>
+                  <DateTimeInput
+                    value={eventDraft.eventEndDate}
+                    onChange={(v) => setEventDraft((prev) => ({ ...prev, eventEndDate: v }))}
                   />
                   <p className="font-semibold">Location:</p>
                   <input
@@ -2030,10 +2041,15 @@ export default function Dashboard() {
               value={eventDraft.eventName}
               onChange={(e) => setEventDraft((prev) => ({ ...prev, eventName: e.target.value }))}
             />
-            <p className="font-semibold">Date:</p>
+            <p className="font-semibold">Start Date:</p>
             <DateTimeInput
               value={eventDraft.eventDate}
               onChange={(v) => setEventDraft((prev) => ({ ...prev, eventDate: v }))}
+            />
+            <p className="font-semibold">End Date <span className="font-normal text-slate-400">(optional)</span>:</p>
+            <DateTimeInput
+              value={eventDraft.eventEndDate}
+              onChange={(v) => setEventDraft((prev) => ({ ...prev, eventEndDate: v }))}
             />
             <p className="font-semibold">Location:</p>
             <input

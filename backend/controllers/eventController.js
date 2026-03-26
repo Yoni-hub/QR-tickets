@@ -526,6 +526,9 @@ async function updateEventInline(req, res) {
   const paymentInstructions = sanitizeText(req.body?.paymentInstructions, LIMITS.PAYMENT_INSTRUCTIONS);
   const eventDateRaw = String(req.body?.eventDate || "").trim();
   const parsedEventDate = eventDateRaw ? new Date(eventDateRaw) : null;
+  const eventEndDateRaw = String(req.body?.eventEndDate || "").trim();
+  const parsedEventEndDate = eventEndDateRaw ? new Date(eventEndDateRaw) : null;
+  const hasEventEndDate = Object.prototype.hasOwnProperty.call(req.body || {}, "eventEndDate");
   const ticketType = sanitizeText(req.body?.ticketType, LIMITS.TICKET_TYPE);
   const hasTicketPrice = Object.prototype.hasOwnProperty.call(req.body || {}, "ticketPrice");
   const ticketPriceRaw = String(req.body?.ticketPrice ?? "").trim();
@@ -537,6 +540,10 @@ async function updateEventInline(req, res) {
 
   if (eventDateRaw && Number.isNaN(parsedEventDate?.getTime())) {
     res.status(400).json({ error: "Invalid eventDate." });
+    return;
+  }
+  if (eventEndDateRaw && Number.isNaN(parsedEventEndDate?.getTime())) {
+    res.status(400).json({ error: "Invalid eventEndDate." });
     return;
   }
   if (hasTicketPrice && ticketPriceRaw !== "" && Number.isNaN(parsedTicketPrice)) {
@@ -560,6 +567,7 @@ async function updateEventInline(req, res) {
         ? { paymentInstructions: paymentInstructions || null }
         : {}),
       ...(parsedEventDate ? { eventDate: parsedEventDate } : {}),
+      ...(hasEventEndDate ? { eventEndDate: parsedEventEndDate || null } : {}),
       ...(ticketType ? { ticketType } : {}),
       ...(hasTicketPrice ? { ticketPrice: parsedTicketPrice } : {}),
       ...(hasDesignJson ? { designJson: req.body.designJson } : {}),
@@ -570,6 +578,7 @@ async function updateEventInline(req, res) {
       organizerName: true,
       eventName: true,
       eventDate: true,
+      eventEndDate: true,
       eventAddress: true,
       accessCode: true,
       ticketType: true,
@@ -665,6 +674,8 @@ async function createEventForAccessCode(req, res) {
   const paymentInstructions = sanitizeText(req.body?.paymentInstructions, LIMITS.PAYMENT_INSTRUCTIONS);
   const eventDateRaw = String(req.body?.eventDate || "").trim();
   const parsedEventDate = eventDateRaw ? new Date(eventDateRaw) : null;
+  const eventEndDateRaw = String(req.body?.eventEndDate || "").trim();
+  const parsedEventEndDate = eventEndDateRaw ? new Date(eventEndDateRaw) : null;
 
   if (!eventName || !eventAddress || !eventDateRaw) {
     res.status(400).json({ error: "eventName, eventAddress, and eventDate are required." });
@@ -672,6 +683,10 @@ async function createEventForAccessCode(req, res) {
   }
   if (Number.isNaN(parsedEventDate?.getTime())) {
     res.status(400).json({ error: "Invalid eventDate." });
+    return;
+  }
+  if (eventEndDateRaw && Number.isNaN(parsedEventEndDate?.getTime())) {
+    res.status(400).json({ error: "Invalid eventEndDate." });
     return;
   }
 
@@ -686,6 +701,7 @@ async function createEventForAccessCode(req, res) {
       eventName,
       eventAddress,
       eventDate: parsedEventDate,
+      eventEndDate: parsedEventEndDate || null,
       paymentInstructions: paymentInstructions || null,
       quantity: 0,
       accessCode: nextAccessCode,
@@ -699,6 +715,7 @@ async function createEventForAccessCode(req, res) {
       organizerName: true,
       eventName: true,
       eventDate: true,
+      eventEndDate: true,
       eventAddress: true,
       accessCode: true,
       organizerAccessCode: true,

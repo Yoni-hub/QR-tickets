@@ -139,6 +139,22 @@ function generateClientAccessToken() {
   return crypto.randomBytes(24).toString("hex");
 }
 
+const TOKEN_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
+
+async function upsertClientProfile(email) {
+  return prisma.clientProfile.upsert({
+    where: { email },
+    create: {
+      email,
+      clientAccessToken: generateClientAccessToken(),
+      tokenExpiresAt: new Date(Date.now() + TOKEN_TTL_MS),
+    },
+    update: {
+      tokenExpiresAt: new Date(Date.now() + TOKEN_TTL_MS),
+    },
+  });
+}
+
 function mapChatMessage(message) {
   return {
     id: message.id,
@@ -440,11 +456,11 @@ async function createPublicTicketRequest(req, res) {
     promoter = await prisma.promoter.findFirst({ where: { eventId: event.id, code: promoterCode } });
   }
 
-  let clientAccessToken;
+  let clientProfile;
   try {
-    clientAccessToken = await createUniqueClientAccessToken();
+    clientProfile = await upsertClientProfile(email);
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: safeError(error, "Could not create request token.") });
+    res.status(500).json({ error: safeError(error, "Could not create request token.") });
     return;
   }
 
@@ -469,11 +485,9 @@ async function createPublicTicketRequest(req, res) {
     select: { id: true },
   }).then(Boolean);
 
-  const TOKEN_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
   const request = await prisma.ticketRequest.create({
     data: {
-      clientAccessToken,
-      clientTokenExpiresAt: new Date(Date.now() + TOKEN_TTL_MS),
+      clientProfileId: clientProfile.id,
       eventId: event.id,
       name,
       email,
@@ -493,7 +507,8 @@ async function createPublicTicketRequest(req, res) {
     },
     select: {
       id: true,
-      clientAccessToken: true,
+      clientProfileId: true,
+      clientProfile: { select: { clientAccessToken: true } },
       status: true,
       quantity: true,
       ticketType: true,
@@ -507,7 +522,7 @@ async function createPublicTicketRequest(req, res) {
     },
   });
 
-  const clientActor = resolveActorFromClient(request.clientAccessToken);
+  const clientActor = resolveActorFromClient(request.clientProfile.clientAccessToken);
   if (clientActor) {
     try {
       await startConversationForActor(clientActor, {
@@ -584,14 +599,26 @@ async function getClientDashboardByToken(req, res) {
   }
 
   const now = new Date();
-  const request = await prisma.ticketRequest.findFirst({
-    where: {
-      clientAccessToken,
-      OR: [{ clientTokenExpiresAt: null }, { clientTokenExpiresAt: { gt: now } }],
-    },
+  const profile = await prisma.clientProfile.findUnique({
+    where: { clientAccessToken },
+  });
+
+  if (!profile || profile.tokenExpiresAt < now) {
+    res.status(404).json({ error: "Client dashboard not found." });
+    return;
+  }
+
+  // Sliding window — extend expiry on each access (fire and forget)
+  prisma.clientProfile.update({
+    where: { id: profile.id },
+    data: { tokenExpiresAt: new Date(Date.now() + TOKEN_TTL_MS) },
+  }).catch(() => {});
+
+  const requests = await prisma.ticketRequest.findMany({
+    where: { clientProfileId: profile.id },
+    orderBy: { createdAt: "desc" },
     select: {
       id: true,
-      clientAccessToken: true,
       status: true,
       name: true,
       quantity: true,
@@ -602,7 +629,6 @@ async function getClientDashboardByToken(req, res) {
       cancelledAt: true,
       cancellationReason: true,
       cancellationOtherReason: true,
-      cancellationEvidenceImageDataUrl: true,
       createdAt: true,
       updatedAt: true,
       event: {
@@ -610,6 +636,7 @@ async function getClientDashboardByToken(req, res) {
           id: true,
           eventName: true,
           eventDate: true,
+          eventEndDate: true,
           eventAddress: true,
           slug: true,
         },
@@ -624,63 +651,50 @@ async function getClientDashboardByToken(req, res) {
           cancelledAt: true,
           cancellationReason: true,
           cancellationOtherReason: true,
-          cancellationEvidenceImageDataUrl: true,
+          scannedAt: true,
           qrPayload: true,
         },
       },
     },
   });
 
-  if (!request) {
-    res.status(404).json({ error: "Client dashboard not found." });
-    return;
-  }
-
-  // Sliding window — extend expiry on each access (fire and forget)
-  prisma.ticketRequest.update({
-    where: { id: request.id },
-    data: { clientTokenExpiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000) },
-  }).catch(() => {});
-
   const baseUrl = getPublicBaseUrl();
-  const tickets = (request.tickets || []).map((ticket) => ({
-    ticketPublicId: ticket.ticketPublicId,
-    ticketType: ticket.ticketType || "General",
-    status: ticket.status,
-    isInvalidated: ticket.isInvalidated,
-    cancelledAt: ticket.cancelledAt,
-    cancellationReason: ticket.cancellationReason,
-    cancellationOtherReason: ticket.cancellationOtherReason,
-    cancellationEvidenceImageDataUrl: ticket.cancellationEvidenceImageDataUrl,
-    ticketUrl: ticket.qrPayload || `${baseUrl}/t/${ticket.ticketPublicId}`,
-  }));
-
-  res.json({
-    request: {
-      id: request.id,
-      clientAccessToken: request.clientAccessToken,
-      status: request.status,
-      name: request.name,
-      quantity: request.quantity,
-      ticketType: request.ticketType,
-      ticketSelections: request.ticketSelections,
-      organizerMessage: request.organizerMessage,
-      cancelledAt: request.cancelledAt,
-      cancellationReason: request.cancellationReason,
-      cancellationOtherReason: request.cancellationOtherReason,
-      cancellationEvidenceImageDataUrl: request.cancellationEvidenceImageDataUrl,
-      totalPrice: request.totalPrice,
-      createdAt: request.createdAt,
-      updatedAt: request.updatedAt,
-    },
+  const mappedRequests = requests.map((request) => ({
+    id: request.id,
+    status: request.status,
+    name: request.name,
+    quantity: request.quantity,
+    ticketType: request.ticketType,
+    ticketSelections: request.ticketSelections,
+    organizerMessage: request.organizerMessage,
+    cancelledAt: request.cancelledAt,
+    cancellationReason: request.cancellationReason,
+    cancellationOtherReason: request.cancellationOtherReason,
+    totalPrice: request.totalPrice,
+    createdAt: request.createdAt,
+    updatedAt: request.updatedAt,
     event: {
+      id: request.event?.id,
       eventName: request.event?.eventName || "",
       eventDate: request.event?.eventDate || null,
+      eventEndDate: request.event?.eventEndDate || null,
       eventAddress: request.event?.eventAddress || "",
       slug: request.event?.slug || null,
     },
-    tickets,
-  });
+    tickets: (request.tickets || []).map((ticket) => ({
+      ticketPublicId: ticket.ticketPublicId,
+      ticketType: ticket.ticketType || "General",
+      status: ticket.status,
+      isInvalidated: ticket.isInvalidated,
+      cancelledAt: ticket.cancelledAt,
+      cancellationReason: ticket.cancellationReason,
+      cancellationOtherReason: ticket.cancellationOtherReason,
+      scannedAt: ticket.scannedAt,
+      ticketUrl: ticket.qrPayload || `${baseUrl}/t/${ticket.ticketPublicId}`,
+    })),
+  }));
+
+  res.json({ requests: mappedRequests });
 }
 
 async function getClientRequestMessagesByToken(req, res) {
@@ -923,8 +937,8 @@ async function sendRecoveryOtp(req, res) {
     return;
   }
 
-  // Check if any ticket request exists for this email — but don't reveal the answer
-  const hasRequest = await prisma.ticketRequest.findFirst({
+  // Check if a client profile exists for this email — but don't reveal the answer
+  const hasRequest = await prisma.clientProfile.findUnique({
     where: { email },
     select: { id: true },
   });
@@ -999,24 +1013,15 @@ async function confirmRecoveryOtp(req, res) {
     data: { verified: true, tokenUsed: true },
   });
 
-  // Find all ticket requests for this email and send dashboard links
-  const requests = await prisma.ticketRequest.findMany({
+  // Find the client profile and send their single dashboard link
+  const clientProfile = await prisma.clientProfile.findUnique({
     where: { email },
-    select: {
-      clientAccessToken: true,
-      createdAt: true,
-      event: { select: { eventName: true } },
-    },
-    orderBy: { createdAt: "desc" },
+    select: { clientAccessToken: true },
   });
 
-  if (requests.length > 0) {
+  if (clientProfile) {
     const baseUrl = getPublicBaseUrl();
-    const dashboardLinks = requests.map((r) => ({
-      eventName: r.event?.eventName || "Unknown Event",
-      dashboardUrl: `${baseUrl}/client/${r.clientAccessToken}`,
-      requestDate: new Date(r.createdAt).toLocaleDateString(),
-    }));
+    const dashboardLinks = [{ eventName: "All your tickets", dashboardUrl: `${baseUrl}/client/${clientProfile.clientAccessToken}`, requestDate: "" }];
     sendClientRecoveryEmail({ to: email, dashboardLinks }).catch((err) =>
       console.error("client recovery email failed", err),
     );
