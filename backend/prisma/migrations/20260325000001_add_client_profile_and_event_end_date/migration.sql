@@ -1,3 +1,6 @@
+-- Clear existing test data (no real customer data; required before adding NOT NULL clientProfileId)
+TRUNCATE "TicketRequest" CASCADE;
+
 -- DropIndex
 DROP INDEX "TicketRequest_clientAccessToken_key";
 
