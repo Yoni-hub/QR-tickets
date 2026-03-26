@@ -1167,102 +1167,125 @@ export default function Dashboard() {
 
   if (showHeroSection) {
     return (
-      <div className="w-full bg-white text-gray-900 antialiased">
+      <div className="w-full antialiased" style={{ background: "#ffffff", color: "#111827" }}>
         <div ref={turnstileRef} className="hidden" />
 
-        {/* Hero */}
-        <section className="relative overflow-hidden bg-gradient-to-br from-blue-50 via-white to-purple-50 px-6 pb-28 pt-16 text-center">
-          {/* Decorative blobs */}
-          <div style={{ position: "absolute", top: 0, left: "25%", width: 384, height: 384, borderRadius: "50%", background: "#2979ff", filter: "blur(80px)", opacity: 0.18, pointerEvents: "none" }} />
-          <div style={{ position: "absolute", bottom: 0, right: "25%", width: 320, height: 320, borderRadius: "50%", background: "#a855f7", filter: "blur(80px)", opacity: 0.18, pointerEvents: "none" }} />
-          <div className="relative mx-auto max-w-4xl">
-            <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-blue-600/20 bg-blue-600/10 px-4 py-1.5 text-xs font-semibold text-blue-600">
-              <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-blue-600"></span>
-              Free to use · No credit card needed
-            </div>
-
-            <h1 className="text-5xl font-black leading-tight tracking-tight text-gray-900 sm:text-6xl lg:text-7xl">
-              Your event. Your tickets.<br />
-              <span className="text-blue-600">Done in minutes.</span>
-            </h1>
-
-            <p className="mx-auto mt-6 max-w-2xl text-xl leading-relaxed text-gray-500">
-              No complicated setup. No tech headaches. Just create your event, share a link, and scan QR codes at the door.
-            </p>
-
-            <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
-              <AppButton type="button" variant="primary" onClick={handleGetStarted}>
-                Get started &rarr;
-              </AppButton>
-              <AppButton type="button" variant="secondary" onClick={handleAlreadyHaveCode}>
-                Already have Organizer access code?
-              </AppButton>
-            </div>
-
-            {/* Organizer form — replaces browser mockup */}
-            <div className="mx-auto mt-20 max-w-2xl overflow-hidden rounded-3xl border border-gray-100 bg-white p-4 text-left shadow-2xl shadow-gray-200 sm:p-6">
-              <div className="mb-5 flex items-center gap-2">
-                <div className="h-3 w-3 rounded-full bg-red-400"></div>
-                <div className="h-3 w-3 rounded-full bg-yellow-400"></div>
-                <div className="h-3 w-3 rounded-full bg-green-400"></div>
-                <div className="ml-3 flex-1 rounded-lg bg-gray-100 px-3 py-1 text-xs text-gray-400">qr-tickets.connsura.com</div>
+        {/* Hero — split layout */}
+        <section className="min-h-screen" style={{ background: "#fff" }}>
+          <div className="mx-auto flex max-w-7xl flex-col lg:flex-row">
+            {/* Left — headline */}
+            <div className="flex flex-col justify-start px-8 py-10 lg:w-1/2 lg:px-16 lg:py-16" style={{ background: "linear-gradient(135deg, #eff4ff 0%, #fff 60%)" }}>
+              <h1 className="text-5xl font-black leading-[1.05] tracking-tight sm:text-6xl" style={{ color: "#111827" }}>
+                Your event.<br />Your tickets.<br />
+                <span style={{ color: "#2979ff" }}>Done in minutes.</span>
+              </h1>
+              <p className="mt-6 max-w-md text-lg leading-relaxed" style={{ color: "#6b7280" }}>
+                No complicated setup. No tech headaches. Just create your event, share a link, and scan QR codes at the door.
+              </p>
+              <div className="mt-10 flex flex-col gap-3 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={handleGetStarted}
+                  className="rounded-xl px-8 py-4 text-base font-bold text-white shadow-lg transition-opacity hover:opacity-90"
+                  style={{ background: "#2979ff" }}
+                >
+                  Get started &rarr;
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAlreadyHaveCode}
+                  className="rounded-xl px-8 py-4 text-base font-semibold transition-colors hover:bg-gray-100"
+                  style={{ background: "#f3f4f6", color: "#374151" }}
+                >
+                  Already have a code?
+                </button>
               </div>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-[120px_1fr] sm:items-center">
-                <p className="text-sm font-semibold">Organizer:</p>
-                <div>
-                  <input
-                    ref={organizerNameRef}
-                    className="w-full rounded border p-2 text-sm"
-                    value={eventDraft.organizerName}
-                    onChange={(e) => setEventDraft((prev) => ({ ...prev, organizerName: e.target.value }))}
-                    placeholder="Organizer or brand name"
-                  />
-                  {showGetStartedHint ? (
-                    <p className="mt-1 text-xs text-blue-700">Fill in your event details. You can update them anytime.</p>
-                  ) : null}
+              <div className="mt-12 flex flex-wrap gap-6">
+                {["No accounts", "No passwords", "No payment details"].map((t) => (
+                  <div key={t} className="flex items-center gap-2 text-sm font-semibold" style={{ color: "#374151" }}>
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full text-xs text-white" style={{ background: "#2979ff" }}>✓</span>
+                    {t}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Right — form */}
+            <div className="flex items-center justify-center px-8 py-16 lg:w-1/2 lg:px-16" style={{ background: "#f9fafb" }}>
+              <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-2xl" style={{ border: "1px solid #e5e7eb" }}>
+                <p className="mb-6 text-xl font-black" style={{ color: "#111827" }}>Create your event</p>
+                <div className="grid grid-cols-1 gap-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wider" style={{ color: "#9ca3af" }}>Organizer</label>
+                    <input
+                      ref={organizerNameRef}
+                      className="w-full rounded-xl border p-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                      style={{ border: "1px solid #e5e7eb", color: "#111827" }}
+                      value={eventDraft.organizerName}
+                      onChange={(e) => setEventDraft((prev) => ({ ...prev, organizerName: e.target.value }))}
+                      placeholder="Organizer or brand name"
+                    />
+                    {showGetStartedHint ? (
+                      <p className="mt-1 text-xs" style={{ color: "#2979ff" }}>Fill in your event details. You can update them anytime.</p>
+                    ) : null}
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wider" style={{ color: "#9ca3af" }}>Event Name</label>
+                    <input
+                      className="w-full rounded-xl border p-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                      style={{ border: "1px solid #e5e7eb", color: "#111827" }}
+                      value={eventDraft.eventName}
+                      onChange={(e) => setEventDraft((prev) => ({ ...prev, eventName: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wider" style={{ color: "#9ca3af" }}>Start Date</label>
+                    <DateTimeInput
+                      value={eventDraft.eventDate}
+                      onChange={(v) => setEventDraft((prev) => ({ ...prev, eventDate: v }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wider" style={{ color: "#9ca3af" }}>End Date <span className="normal-case font-normal" style={{ color: "#d1d5db" }}>(optional)</span></label>
+                    <DateTimeInput
+                      value={eventDraft.eventEndDate}
+                      onChange={(v) => setEventDraft((prev) => ({ ...prev, eventEndDate: v }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wider" style={{ color: "#9ca3af" }}>Location</label>
+                    <input
+                      className="w-full rounded-xl border p-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                      style={{ border: "1px solid #e5e7eb", color: "#111827" }}
+                      value={eventDraft.eventAddress}
+                      onChange={(e) => setEventDraft((prev) => ({ ...prev, eventAddress: e.target.value }))}
+                    />
+                  </div>
                 </div>
-                <p className="text-sm font-semibold">Event Name:</p>
-                <input
-                  className="w-full rounded border p-2 text-sm"
-                  value={eventDraft.eventName}
-                  onChange={(e) => setEventDraft((prev) => ({ ...prev, eventName: e.target.value }))}
-                />
-                <p className="text-sm font-semibold">Start Date:</p>
-                <DateTimeInput
-                  value={eventDraft.eventDate}
-                  onChange={(v) => setEventDraft((prev) => ({ ...prev, eventDate: v }))}
-                />
-                <p className="text-sm font-semibold">End Date <span className="font-normal text-slate-400">(optional)</span>:</p>
-                <DateTimeInput
-                  value={eventDraft.eventEndDate}
-                  onChange={(v) => setEventDraft((prev) => ({ ...prev, eventEndDate: v }))}
-                />
-                <p className="text-sm font-semibold">Location:</p>
-                <input
-                  className="w-full rounded border p-2 text-sm"
-                  value={eventDraft.eventAddress}
-                  onChange={(e) => setEventDraft((prev) => ({ ...prev, eventAddress: e.target.value }))}
-                />
+                <button
+                  type="button"
+                  onClick={saveEventInline}
+                  disabled={savingEvent}
+                  className="mt-5 w-full rounded-xl py-3.5 text-sm font-bold text-white shadow-lg transition-opacity hover:opacity-90 disabled:opacity-50"
+                  style={{ background: "#2979ff" }}
+                >
+                  {savingEvent ? eventPrimaryLoadingLabel : eventPrimaryActionLabel}
+                </button>
+                <FeedbackBanner className="mt-3" kind={eventFb.kind} message={eventFb.message} />
+                {isAccessCodeGenerationMode ? (
+                  <p className="mt-2 text-center text-xs" style={{ color: "#2979ff" }}>Generate your access code to start sending QR tickets.</p>
+                ) : null}
               </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <AppButton onClick={saveEventInline} loading={savingEvent} loadingText={eventPrimaryLoadingLabel}>
-                  {eventPrimaryActionLabel}
-                </AppButton>
-              </div>
-              <FeedbackBanner className="mt-3" kind={eventFb.kind} message={eventFb.message} />
-              {isAccessCodeGenerationMode ? (
-                <p className="mt-2 text-xs text-blue-700">Generate your access code to start editing and sending QR tickets to your clients.</p>
-              ) : null}
             </div>
           </div>
         </section>
 
         {/* Who it's for */}
-        <section className="bg-white px-6 py-24">
+        <section className="px-6 py-24" style={{ background: "#111827" }}>
           <div className="mx-auto max-w-5xl text-center">
-            <p className="mb-3 text-sm font-semibold uppercase tracking-widest text-blue-600">Built for everyone</p>
-            <h2 className="text-3xl font-black text-gray-900 sm:text-4xl">Perfect for any event, any size</h2>
-            <p className="mx-auto mt-4 max-w-xl text-gray-400">From birthday parties to church gatherings — if you need tickets, Connsura has you covered.</p>
+            <p className="mb-3 text-xs font-bold uppercase tracking-widest" style={{ color: "#2979ff" }}>Built for everyone</p>
+            <h2 className="text-3xl font-black sm:text-4xl" style={{ color: "#f9fafb" }}>Perfect for any event, any size</h2>
+            <p className="mx-auto mt-4 max-w-xl" style={{ color: "#9ca3af" }}>From birthday parties to church gatherings — if you need tickets, Connsura has you covered.</p>
             <div className="mt-14 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
               {[
                 { emoji: "🎤", label: "Influencers" },
@@ -1272,9 +1295,9 @@ export default function Dashboard() {
                 { emoji: "🎉", label: "Parties" },
                 { emoji: "🏢", label: "Corporate" },
               ].map(({ emoji, label }) => (
-                <div key={label} className="flex flex-col items-center gap-3 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm transition-transform hover:-translate-y-1">
+                <div key={label} className="flex flex-col items-center gap-3 rounded-2xl p-5 transition-transform hover:-translate-y-1" style={{ background: "#1f2937", border: "1px solid #374151" }}>
                   <div className="text-4xl">{emoji}</div>
-                  <p className="text-sm font-semibold text-gray-700">{label}</p>
+                  <p className="text-sm font-semibold" style={{ color: "#f3f4f6" }}>{label}</p>
                 </div>
               ))}
             </div>
@@ -1282,21 +1305,21 @@ export default function Dashboard() {
         </section>
 
         {/* How it works */}
-        <section className="bg-gray-50 px-6 py-24">
+        <section className="px-6 py-24" style={{ background: "#eff4ff" }}>
           <div className="mx-auto max-w-5xl text-center">
-            <p className="mb-3 text-sm font-semibold uppercase tracking-widest text-blue-600">Simple by design</p>
-            <h2 className="text-3xl font-black text-gray-900 sm:text-4xl">Up and running in 3 steps</h2>
+            <p className="mb-3 text-xs font-bold uppercase tracking-widest" style={{ color: "#2979ff" }}>Simple by design</p>
+            <h2 className="text-3xl font-black sm:text-4xl" style={{ color: "#111827" }}>Up and running in 3 steps</h2>
             <div className="mt-14 grid grid-cols-1 gap-8 sm:grid-cols-3">
               {[
                 { emoji: "🎟️", step: "1", title: "Create your event", desc: "Fill in your event details — name, date, location, and ticket count. Done in 2 minutes." },
                 { emoji: "🔗", step: "2", title: "Share your link", desc: "Post your event link on Instagram, WhatsApp, or anywhere. Guests request tickets instantly." },
                 { emoji: "📱", step: "3", title: "Scan at the door", desc: "Scan QR codes with your phone on event day. Approved guests get in, gatecrashers don't." },
               ].map(({ emoji, step, title, desc }) => (
-                <div key={step} className="flex flex-col items-center rounded-3xl border border-gray-100 bg-white p-8 text-center shadow-sm transition-transform hover:-translate-y-1">
-                  <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-50 text-3xl">{emoji}</div>
-                  <div className="mb-4 flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 text-sm font-black text-white">{step}</div>
-                  <h3 className="text-lg font-bold text-gray-900">{title}</h3>
-                  <p className="mt-3 text-sm leading-relaxed text-gray-400">{desc}</p>
+                <div key={step} className="flex flex-col items-center rounded-3xl bg-white p-8 text-center shadow-md transition-transform hover:-translate-y-1">
+                  <div className="mb-4 text-4xl">{emoji}</div>
+                  <div className="mb-4 flex h-8 w-8 items-center justify-center rounded-full text-sm font-black text-white" style={{ background: "#2979ff" }}>{step}</div>
+                  <h3 className="text-lg font-bold" style={{ color: "#111827" }}>{title}</h3>
+                  <p className="mt-3 text-sm leading-relaxed" style={{ color: "#6b7280" }}>{desc}</p>
                 </div>
               ))}
             </div>
@@ -1304,11 +1327,11 @@ export default function Dashboard() {
         </section>
 
         {/* Features */}
-        <section className="bg-white px-6 py-24">
+        <section className="px-6 py-24" style={{ background: "#ffffff" }}>
           <div className="mx-auto max-w-5xl">
             <div className="mb-14 text-center">
-              <p className="mb-3 text-sm font-semibold uppercase tracking-widest text-blue-600">Everything you need</p>
-              <h2 className="text-3xl font-black text-gray-900 sm:text-4xl">Powerful features, zero complexity</h2>
+              <p className="mb-3 text-xs font-bold uppercase tracking-widest" style={{ color: "#2979ff" }}>Everything you need</p>
+              <h2 className="text-3xl font-black sm:text-4xl" style={{ color: "#111827" }}>Powerful features, zero complexity</h2>
             </div>
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
               {[
@@ -1319,10 +1342,10 @@ export default function Dashboard() {
                 { emoji: "📊", title: "Live Dashboard", desc: "See requests, approvals, and attendance in real time from one clean dashboard." },
                 { emoji: "🔒", title: "Secure & Private", desc: "Each ticket is unique and one-time use. No fakes, no sharing — your event stays exclusive." },
               ].map(({ emoji, title, desc }) => (
-                <div key={title} className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm transition-transform hover:-translate-y-1">
-                  <div className="mb-4 text-3xl">{emoji}</div>
-                  <h3 className="mb-2 text-base font-bold text-gray-900">{title}</h3>
-                  <p className="text-sm leading-relaxed text-gray-400">{desc}</p>
+                <div key={title} className="rounded-2xl p-6 transition-transform hover:-translate-y-1" style={{ background: "#f9fafb", border: "1px solid #e5e7eb" }}>
+                  <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl text-xl" style={{ background: "#eff4ff" }}>{emoji}</div>
+                  <h3 className="mb-2 text-base font-bold" style={{ color: "#111827" }}>{title}</h3>
+                  <p className="text-sm leading-relaxed" style={{ color: "#6b7280" }}>{desc}</p>
                 </div>
               ))}
             </div>
@@ -1330,26 +1353,27 @@ export default function Dashboard() {
         </section>
 
         {/* CTA */}
-        <section className="bg-blue-600 px-6 py-24 text-center">
+        <section className="px-6 py-24 text-center" style={{ background: "#0f172a" }}>
           <div className="mx-auto max-w-3xl">
             <h2 className="text-4xl font-black leading-tight text-white sm:text-5xl">Ready to run your next event?</h2>
-            <p className="mt-5 text-lg text-blue-100">Join organizers who trust Connsura to handle their tickets.</p>
+            <p className="mt-5 text-lg" style={{ color: "#bfdbfe" }}>Join organizers who trust Connsura to handle their tickets.</p>
             <div className="mt-8">
               <button
                 type="button"
                 onClick={handleGetStarted}
-                className="inline-block rounded-2xl bg-white px-12 py-4 text-lg font-bold text-blue-600 shadow-xl transition-colors hover:bg-gray-100"
+                className="inline-block rounded-2xl bg-white px-12 py-4 text-lg font-bold shadow-xl transition-colors hover:bg-orange-50"
+                style={{ color: "#2979ff" }}
               >
                 Get Started &rarr;
               </button>
             </div>
-            <p className="mt-4 text-xs text-blue-200">No credit card required. No setup fees.</p>
+            <p className="mt-4 text-xs" style={{ color: "#bfdbfe" }}>No credit card required. No setup fees.</p>
           </div>
         </section>
 
         {/* Footer */}
-        <footer className="border-t border-gray-100 bg-gray-50 px-6 py-8 text-center">
-          <p className="text-xs text-gray-400">© {new Date().getFullYear()} Connsura. All rights reserved.</p>
+        <footer className="px-6 py-8 text-center" style={{ background: "#111827", borderTop: "1px solid #1f2937" }}>
+          <p className="text-xs" style={{ color: "#4b5563" }}>© {new Date().getFullYear()} Connsura. All rights reserved.</p>
         </footer>
       </div>
     );
