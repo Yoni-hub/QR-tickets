@@ -226,6 +226,13 @@ export default function Dashboard() {
   const [notifDraft, setNotifDraft] = useState({ organizerEmail: "", notifyOnRequest: false, notifyOnMessage: false });
   const [notifLoaded, setNotifLoaded] = useState(false);
   const [savingNotif, setSavingNotif] = useState(false);
+  const [notifEmailInput, setNotifEmailInput] = useState("");
+  const [notifOtpInput, setNotifOtpInput] = useState("");
+  const [notifOtpSent, setNotifOtpSent] = useState(false);
+  const [notifEmailChanging, setNotifEmailChanging] = useState(false);
+  const [sendingNotifOtp, setSendingNotifOtp] = useState(false);
+  const [verifyingNotifOtp, setVerifyingNotifOtp] = useState(false);
+  const [notifEmailFb, setNotifEmailFb] = useFeedback();
   const [promoterForm, setPromoterForm] = useState({ name: "" });
   const [chatUnreadTotal, setChatUnreadTotal] = useState(0);
   const [chatContext, setChatContext] = useState(null);
@@ -830,6 +837,7 @@ export default function Dashboard() {
     try {
       const res = await api.get(`/events/by-code/${accessCode}/notifications`);
       setNotifDraft({ organizerEmail: res.data.organizerEmail || "", notifyOnRequest: res.data.notifyOnRequest, notifyOnMessage: res.data.notifyOnMessage });
+      setNotifEmailInput(res.data.organizerEmail || "");
       setNotifLoaded(true);
     } catch {
       // silently ignore — will show empty form
@@ -841,7 +849,7 @@ export default function Dashboard() {
     if (!accessCode || savingNotif) return;
     setSavingNotif(true);
     try {
-      await api.patch(`/events/by-code/${accessCode}/notifications`, notifDraft);
+      await api.patch(`/events/by-code/${accessCode}/notifications`, { notifyOnRequest: notifDraft.notifyOnRequest, notifyOnMessage: notifDraft.notifyOnMessage });
       setNotifFb("success", "Notification preferences saved.");
     } catch {
       setNotifFb("error", "Could not save preferences.");
@@ -849,6 +857,41 @@ export default function Dashboard() {
       setSavingNotif(false);
     }
   };
+
+  const sendNotifEmailOtp = async () => {
+    if (!accessCode || sendingNotifOtp) return;
+    setSendingNotifOtp(true);
+    setNotifEmailFb("", "");
+    try {
+      await api.post(`/events/by-code/${accessCode}/notifications/send-email-otp`, { email: notifEmailInput });
+      setNotifOtpSent(true);
+      setNotifOtpInput("");
+      setNotifEmailFb("success", "Verification code sent. Check your inbox.");
+    } catch (err) {
+      setNotifEmailFb("error", err.response?.data?.error || "Could not send code. Try again.");
+    } finally {
+      setSendingNotifOtp(false);
+    }
+  };
+
+  const verifyNotifEmailOtp = async () => {
+    if (!accessCode || verifyingNotifOtp) return;
+    setVerifyingNotifOtp(true);
+    setNotifEmailFb("", "");
+    try {
+      await api.post(`/events/by-code/${accessCode}/notifications/verify-email-otp`, { email: notifEmailInput, code: notifOtpInput });
+      setNotifDraft((prev) => ({ ...prev, organizerEmail: notifEmailInput }));
+      setNotifOtpSent(false);
+      setNotifOtpInput("");
+      setNotifEmailChanging(false);
+      setNotifEmailFb("success", "Email verified and saved.");
+    } catch (err) {
+      setNotifEmailFb("error", err.response?.data?.error || "Verification failed.");
+    } finally {
+      setVerifyingNotifOtp(false);
+    }
+  };
+
 
   const addPromoter = async () => {
     if (!promoterForm.name.trim()) {
@@ -1797,42 +1840,76 @@ export default function Dashboard() {
             <section className="mt-4 rounded border p-4">
               <p className="text-sm font-semibold">Notifications</p>
               <p className="mt-1 text-xs text-slate-500">
-                Enter your email below to receive notifications when customers send a ticket request,
-                reply to a message, or when the admin contacts you. Without this, you must log in
-                to the dashboard regularly to check for new activity.
+                Verify your email below to receive notifications when customers send a ticket request,
+                reply to a message, or when the admin contacts you.
               </p>
-              <div className="mt-4 grid grid-cols-1 gap-3">
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-slate-700">Your email address</label>
+
+              {/* Email verification */}
+              <div className="mt-4">
+                <label className="mb-1 block text-xs font-medium text-slate-700">Notification email</label>
+                {notifDraft.organizerEmail && !notifEmailChanging ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded bg-green-50 px-2 py-1 text-sm font-medium text-green-800">{notifDraft.organizerEmail} ✓</span>
+                    <button type="button" className="text-xs text-slate-500 underline" onClick={() => { setNotifEmailChanging(true); setNotifOtpSent(false); setNotifEmailFb("", ""); }}>
+                      Change
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <input
+                        className="w-full rounded border p-2 text-sm"
+                        type="email"
+                        placeholder="you@example.com"
+                        value={notifEmailInput}
+                        onChange={(e) => { setNotifEmailInput(e.target.value); setNotifOtpSent(false); }}
+                      />
+                      <AppButton onClick={sendNotifEmailOtp} loading={sendingNotifOtp} loadingText="Sending...">
+                        Send Code
+                      </AppButton>
+                    </div>
+                    {notifOtpSent ? (
+                      <div className="flex gap-2">
+                        <input
+                          className="w-full rounded border p-2 text-sm tracking-widest"
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={6}
+                          placeholder="6-digit code"
+                          value={notifOtpInput}
+                          onChange={(e) => setNotifOtpInput(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                        />
+                        <AppButton onClick={verifyNotifEmailOtp} loading={verifyingNotifOtp} loadingText="Verifying...">
+                          Verify
+                        </AppButton>
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+                <FeedbackBanner className="mt-2" kind={notifEmailFb.kind} message={notifEmailFb.message} />
+              </div>
+
+              {/* Toggle preferences */}
+              <div className="mt-4 space-y-2">
+                <label className="block text-xs font-medium text-slate-700">Notify me when:</label>
+                <label className="flex items-start gap-2 text-sm">
                   <input
-                    className="w-full rounded border p-2 text-sm"
-                    type="email"
-                    placeholder="you@example.com"
-                    value={notifDraft.organizerEmail}
-                    onChange={(e) => setNotifDraft((prev) => ({ ...prev, organizerEmail: e.target.value }))}
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={notifDraft.notifyOnRequest}
+                    onChange={(e) => setNotifDraft((prev) => ({ ...prev, notifyOnRequest: e.target.checked }))}
                   />
-                </div>
-                <div className="space-y-2">
-                  <label className="block text-xs font-medium text-slate-700">Notify me when:</label>
-                  <label className="flex items-start gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      className="mt-0.5"
-                      checked={notifDraft.notifyOnRequest}
-                      onChange={(e) => setNotifDraft((prev) => ({ ...prev, notifyOnRequest: e.target.checked }))}
-                    />
-                    <span>A customer submits a ticket request</span>
-                  </label>
-                  <label className="flex items-start gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      className="mt-0.5"
-                      checked={notifDraft.notifyOnMessage}
-                      onChange={(e) => setNotifDraft((prev) => ({ ...prev, notifyOnMessage: e.target.checked }))}
-                    />
-                    <span>A customer or the admin sends you a message</span>
-                  </label>
-                </div>
+                  <span>A customer submits a ticket request</span>
+                </label>
+                <label className="flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={notifDraft.notifyOnMessage}
+                    onChange={(e) => setNotifDraft((prev) => ({ ...prev, notifyOnMessage: e.target.checked }))}
+                  />
+                  <span>A customer or the admin sends you a message</span>
+                </label>
               </div>
               <AppButton className="mt-4" onClick={saveNotifications} loading={savingNotif} loadingText="Saving...">
                 Save Preferences

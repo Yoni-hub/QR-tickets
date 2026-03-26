@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const prisma = require("../utils/prisma");
 const { generateAccessCode } = require("../utils/accessCode");
 const { LIMITS, sanitizeText, safeError } = require("../utils/sanitize");
@@ -5,10 +6,16 @@ const { createEvent, buildQrPayload } = require("../services/eventService");
 const { generateTicketPublicId } = require("../utils/ticketPublicId");
 const { checkDailyTicketCap } = require("../utils/dailyCaps");
 const { verifyTurnstile } = require("../utils/turnstile");
+const { sendOtpEmail } = require("../utils/mailer");
 const {
   DEFAULT_TICKET_TYPE,
   reservePendingTicketIds,
 } = require("../services/pendingTicketReservations");
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const NOTIF_OTP_SLUG = "__organizer_notif__";
+const OTP_EXPIRY_MS = 10 * 60 * 1000;
+const OTP_MAX_ATTEMPTS = 3;
 
 function buildSoldTicketWhere(eventId) {
   return {
@@ -760,18 +767,89 @@ async function updateOrganizerNotifications(req, res) {
     res.status(400).json({ error: "accessCode is required." });
     return;
   }
-  const organizerEmail = String(req.body?.organizerEmail || "").trim();
   const notifyOnRequest = Boolean(req.body?.notifyOnRequest);
   const notifyOnMessage = Boolean(req.body?.notifyOnMessage);
-  // Update ALL events for this organizer so any event slug gets the notification settings
   const result = await prisma.userEvent.updateMany({
     where: { OR: [{ accessCode }, { organizerAccessCode: accessCode }] },
-    data: { organizerEmail: organizerEmail || null, notifyOnRequest, notifyOnMessage },
+    data: { notifyOnRequest, notifyOnMessage },
   });
   if (result.count === 0) {
     res.status(404).json({ error: "Event not found." });
     return;
   }
+  res.json({ ok: true });
+}
+
+async function sendNotificationEmailOtp(req, res) {
+  const accessCode = (req.params.accessCode || "").trim();
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  if (!accessCode) { res.status(400).json({ error: "accessCode is required." }); return; }
+  if (!EMAIL_PATTERN.test(email)) { res.status(400).json({ error: "A valid email address is required." }); return; }
+
+  const event = await prisma.userEvent.findFirst({
+    where: { OR: [{ accessCode }, { organizerAccessCode: accessCode }] },
+    select: { id: true },
+  });
+  if (!event) { res.status(404).json({ error: "Event not found." }); return; }
+
+  // Invalidate any existing unused OTPs for this organizer+email
+  await prisma.emailVerification.updateMany({
+    where: { email, eventSlug: NOTIF_OTP_SLUG, verified: false, tokenUsed: false },
+    data: { expiresAt: new Date(0) },
+  });
+
+  const code = String(Math.floor(100000 + crypto.randomInt(900000))).padStart(6, "0");
+  await prisma.emailVerification.create({
+    data: { email, eventSlug: NOTIF_OTP_SLUG, code, expiresAt: new Date(Date.now() + OTP_EXPIRY_MS) },
+  });
+
+  try {
+    await sendOtpEmail({ to: email, code });
+  } catch (err) {
+    console.error("sendNotificationEmailOtp failed", err);
+    res.status(500).json({ error: "Could not send verification email. Please try again." });
+    return;
+  }
+  res.json({ sent: true });
+}
+
+async function verifyNotificationEmailOtp(req, res) {
+  const accessCode = (req.params.accessCode || "").trim();
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  const code = String(req.body?.code || "").trim();
+  if (!accessCode || !email || !code) { res.status(400).json({ error: "accessCode, email, and code are required." }); return; }
+
+  const event = await prisma.userEvent.findFirst({
+    where: { OR: [{ accessCode }, { organizerAccessCode: accessCode }] },
+    select: { id: true },
+  });
+  if (!event) { res.status(404).json({ error: "Event not found." }); return; }
+
+  const record = await prisma.emailVerification.findFirst({
+    where: { email, eventSlug: NOTIF_OTP_SLUG, verified: false, tokenUsed: false, expiresAt: { gt: new Date() } },
+    orderBy: { createdAt: "desc" },
+  });
+  if (!record) { res.status(400).json({ error: "No active verification code found. Please request a new one." }); return; }
+
+  if (record.attempts >= OTP_MAX_ATTEMPTS) {
+    res.status(400).json({ error: "Too many incorrect attempts. Please request a new code." });
+    return;
+  }
+  if (record.code !== code) {
+    await prisma.emailVerification.update({ where: { id: record.id }, data: { attempts: { increment: 1 } } });
+    const remaining = OTP_MAX_ATTEMPTS - record.attempts - 1;
+    res.status(400).json({ error: `Incorrect code. ${remaining} attempt${remaining !== 1 ? "s" : ""} remaining.` });
+    return;
+  }
+
+  await prisma.emailVerification.update({ where: { id: record.id }, data: { verified: true, tokenUsed: true } });
+
+  // Save verified email to all events for this organizer
+  await prisma.userEvent.updateMany({
+    where: { OR: [{ accessCode }, { organizerAccessCode: accessCode }] },
+    data: { organizerEmail: email },
+  });
+
   res.json({ ok: true });
 }
 
@@ -785,5 +863,7 @@ module.exports = {
   updateEventInline,
   getOrganizerNotifications,
   updateOrganizerNotifications,
+  sendNotificationEmailOtp,
+  verifyNotificationEmailOtp,
 };
 

@@ -9,6 +9,8 @@ const {
   updateEventInline,
   getOrganizerNotifications,
   updateOrganizerNotifications,
+  sendNotificationEmailOtp,
+  verifyNotificationEmailOtp,
 } = require("../controllers/eventController");
 const { scanTicket } = require("../controllers/scanController");
 const { getTicketByPublicId, getPublicTicketByPublicId } = require("../controllers/ticketController");
@@ -99,6 +101,8 @@ router.get("/events/by-code/:accessCode/auto-approve", getEventAutoApprove);
 router.patch("/events/by-code/:accessCode/auto-approve", setEventAutoApprove);
 router.get("/events/by-code/:accessCode/notifications", getOrganizerNotifications);
 router.patch("/events/by-code/:accessCode/notifications", updateOrganizerNotifications);
+router.post("/events/by-code/:accessCode/notifications/send-email-otp", sendNotificationEmailOtp);
+router.post("/events/by-code/:accessCode/notifications/verify-email-otp", verifyNotificationEmailOtp);
 router.post("/ticket-requests/:id/approve", approveTicketRequest);
 router.post("/ticket-requests/:id/reject", rejectTicketRequest);
 router.post("/ticket-requests/:id/message", messageTicketRequest);
