@@ -150,29 +150,29 @@ function DateTimeInput({ value, onChange, className = "" }) {
         type="date"
         value={datePart || ""}
         onChange={(e) => emit(e.target.value, isNaN(h24) ? 0 : h24, isNaN(m) ? 0 : m)}
-        className="flex-1 border-0 bg-transparent p-2 text-sm focus:outline-none"
+        className="min-w-0 flex-1 border-0 bg-transparent p-1.5 text-xs focus:outline-none"
       />
-      <div className="flex items-center gap-1 border-l px-2 py-2">
+      <div className="flex shrink-0 items-center gap-0.5 border-l px-1.5 py-1.5">
         <input
           type="text"
           inputMode="numeric"
           placeholder="H"
           value={hourText}
           onChange={handleHourChange}
-          className="w-7 rounded border bg-slate-50 p-0.5 text-center text-sm font-mono focus:outline-none focus:ring-1 focus:ring-slate-300"
+          className="w-6 rounded border bg-slate-50 p-0.5 text-center text-xs font-mono focus:outline-none focus:ring-1 focus:ring-slate-300"
         />
-        <span className="text-slate-400">:</span>
+        <span className="text-xs text-slate-400">:</span>
         <input
           type="text"
           inputMode="numeric"
           placeholder="MM"
           value={minText}
           onChange={handleMinChange}
-          className="w-8 rounded border bg-slate-50 p-0.5 text-center text-sm font-mono focus:outline-none focus:ring-1 focus:ring-slate-300"
+          className="w-7 rounded border bg-slate-50 p-0.5 text-center text-xs font-mono focus:outline-none focus:ring-1 focus:ring-slate-300"
         />
-        <div className="ml-1 flex overflow-hidden rounded border text-xs font-semibold">
-          <button type="button" onClick={() => !isPm || toggleAmPm()} className={`px-2 py-0.5 ${!isPm ? "bg-slate-800 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}>AM</button>
-          <button type="button" onClick={() => isPm || toggleAmPm()} className={`px-2 py-0.5 ${isPm ? "bg-slate-800 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}>PM</button>
+        <div className="ml-0.5 flex overflow-hidden rounded border text-xs font-semibold">
+          <button type="button" onClick={() => !isPm || toggleAmPm()} className={`px-1.5 py-0.5 ${!isPm ? "bg-slate-800 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}>AM</button>
+          <button type="button" onClick={() => isPm || toggleAmPm()} className={`px-1.5 py-0.5 ${isPm ? "bg-slate-800 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}>PM</button>
         </div>
       </div>
     </div>
@@ -1165,38 +1165,200 @@ export default function Dashboard() {
     navigate("/");
   };
 
+  if (showHeroSection) {
+    return (
+      <div className="w-full bg-white text-gray-900 antialiased">
+        <div ref={turnstileRef} className="hidden" />
+
+        {/* Hero */}
+        <section className="relative overflow-hidden bg-gradient-to-br from-blue-50 via-white to-purple-50 px-6 pb-28 pt-16 text-center">
+          {/* Decorative blobs */}
+          <div style={{ position: "absolute", top: 0, left: "25%", width: 384, height: 384, borderRadius: "50%", background: "#2979ff", filter: "blur(80px)", opacity: 0.18, pointerEvents: "none" }} />
+          <div style={{ position: "absolute", bottom: 0, right: "25%", width: 320, height: 320, borderRadius: "50%", background: "#a855f7", filter: "blur(80px)", opacity: 0.18, pointerEvents: "none" }} />
+          <div className="relative mx-auto max-w-4xl">
+            <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-blue-600/20 bg-blue-600/10 px-4 py-1.5 text-xs font-semibold text-blue-600">
+              <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-blue-600"></span>
+              Free to use · No credit card needed
+            </div>
+
+            <h1 className="text-5xl font-black leading-tight tracking-tight text-gray-900 sm:text-6xl lg:text-7xl">
+              Your event. Your tickets.<br />
+              <span className="text-blue-600">Done in minutes.</span>
+            </h1>
+
+            <p className="mx-auto mt-6 max-w-2xl text-xl leading-relaxed text-gray-500">
+              No complicated setup. No tech headaches. Just create your event, share a link, and scan QR codes at the door.
+            </p>
+
+            <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
+              <AppButton type="button" variant="primary" onClick={handleGetStarted}>
+                Get started &rarr;
+              </AppButton>
+              <AppButton type="button" variant="secondary" onClick={handleAlreadyHaveCode}>
+                Already have Organizer access code?
+              </AppButton>
+            </div>
+
+            {/* Organizer form — replaces browser mockup */}
+            <div className="mx-auto mt-20 max-w-2xl overflow-hidden rounded-3xl border border-gray-100 bg-white p-4 text-left shadow-2xl shadow-gray-200 sm:p-6">
+              <div className="mb-5 flex items-center gap-2">
+                <div className="h-3 w-3 rounded-full bg-red-400"></div>
+                <div className="h-3 w-3 rounded-full bg-yellow-400"></div>
+                <div className="h-3 w-3 rounded-full bg-green-400"></div>
+                <div className="ml-3 flex-1 rounded-lg bg-gray-100 px-3 py-1 text-xs text-gray-400">qr-tickets.connsura.com</div>
+              </div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-[120px_1fr] sm:items-center">
+                <p className="text-sm font-semibold">Organizer:</p>
+                <div>
+                  <input
+                    ref={organizerNameRef}
+                    className="w-full rounded border p-2 text-sm"
+                    value={eventDraft.organizerName}
+                    onChange={(e) => setEventDraft((prev) => ({ ...prev, organizerName: e.target.value }))}
+                    placeholder="Organizer or brand name"
+                  />
+                  {showGetStartedHint ? (
+                    <p className="mt-1 text-xs text-blue-700">Fill in your event details. You can update them anytime.</p>
+                  ) : null}
+                </div>
+                <p className="text-sm font-semibold">Event Name:</p>
+                <input
+                  className="w-full rounded border p-2 text-sm"
+                  value={eventDraft.eventName}
+                  onChange={(e) => setEventDraft((prev) => ({ ...prev, eventName: e.target.value }))}
+                />
+                <p className="text-sm font-semibold">Start Date:</p>
+                <DateTimeInput
+                  value={eventDraft.eventDate}
+                  onChange={(v) => setEventDraft((prev) => ({ ...prev, eventDate: v }))}
+                />
+                <p className="text-sm font-semibold">End Date <span className="font-normal text-slate-400">(optional)</span>:</p>
+                <DateTimeInput
+                  value={eventDraft.eventEndDate}
+                  onChange={(v) => setEventDraft((prev) => ({ ...prev, eventEndDate: v }))}
+                />
+                <p className="text-sm font-semibold">Location:</p>
+                <input
+                  className="w-full rounded border p-2 text-sm"
+                  value={eventDraft.eventAddress}
+                  onChange={(e) => setEventDraft((prev) => ({ ...prev, eventAddress: e.target.value }))}
+                />
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <AppButton onClick={saveEventInline} loading={savingEvent} loadingText={eventPrimaryLoadingLabel}>
+                  {eventPrimaryActionLabel}
+                </AppButton>
+              </div>
+              <FeedbackBanner className="mt-3" kind={eventFb.kind} message={eventFb.message} />
+              {isAccessCodeGenerationMode ? (
+                <p className="mt-2 text-xs text-blue-700">Generate your access code to start editing and sending QR tickets to your clients.</p>
+              ) : null}
+            </div>
+          </div>
+        </section>
+
+        {/* Who it's for */}
+        <section className="bg-white px-6 py-24">
+          <div className="mx-auto max-w-5xl text-center">
+            <p className="mb-3 text-sm font-semibold uppercase tracking-widest text-blue-600">Built for everyone</p>
+            <h2 className="text-3xl font-black text-gray-900 sm:text-4xl">Perfect for any event, any size</h2>
+            <p className="mx-auto mt-4 max-w-xl text-gray-400">From birthday parties to church gatherings — if you need tickets, Connsura has you covered.</p>
+            <div className="mt-14 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+              {[
+                { emoji: "🎤", label: "Influencers" },
+                { emoji: "🎧", label: "Club Promoters" },
+                { emoji: "⛪", label: "Churches" },
+                { emoji: "🎓", label: "Schools" },
+                { emoji: "🎉", label: "Parties" },
+                { emoji: "🏢", label: "Corporate" },
+              ].map(({ emoji, label }) => (
+                <div key={label} className="flex flex-col items-center gap-3 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm transition-transform hover:-translate-y-1">
+                  <div className="text-4xl">{emoji}</div>
+                  <p className="text-sm font-semibold text-gray-700">{label}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* How it works */}
+        <section className="bg-gray-50 px-6 py-24">
+          <div className="mx-auto max-w-5xl text-center">
+            <p className="mb-3 text-sm font-semibold uppercase tracking-widest text-blue-600">Simple by design</p>
+            <h2 className="text-3xl font-black text-gray-900 sm:text-4xl">Up and running in 3 steps</h2>
+            <div className="mt-14 grid grid-cols-1 gap-8 sm:grid-cols-3">
+              {[
+                { emoji: "🎟️", step: "1", title: "Create your event", desc: "Fill in your event details — name, date, location, and ticket count. Done in 2 minutes." },
+                { emoji: "🔗", step: "2", title: "Share your link", desc: "Post your event link on Instagram, WhatsApp, or anywhere. Guests request tickets instantly." },
+                { emoji: "📱", step: "3", title: "Scan at the door", desc: "Scan QR codes with your phone on event day. Approved guests get in, gatecrashers don't." },
+              ].map(({ emoji, step, title, desc }) => (
+                <div key={step} className="flex flex-col items-center rounded-3xl border border-gray-100 bg-white p-8 text-center shadow-sm transition-transform hover:-translate-y-1">
+                  <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-50 text-3xl">{emoji}</div>
+                  <div className="mb-4 flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 text-sm font-black text-white">{step}</div>
+                  <h3 className="text-lg font-bold text-gray-900">{title}</h3>
+                  <p className="mt-3 text-sm leading-relaxed text-gray-400">{desc}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Features */}
+        <section className="bg-white px-6 py-24">
+          <div className="mx-auto max-w-5xl">
+            <div className="mb-14 text-center">
+              <p className="mb-3 text-sm font-semibold uppercase tracking-widest text-blue-600">Everything you need</p>
+              <h2 className="text-3xl font-black text-gray-900 sm:text-4xl">Powerful features, zero complexity</h2>
+            </div>
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {[
+                { emoji: "📲", title: "QR Code Tickets", desc: "Every approved guest gets a unique QR code instantly. No printing needed — works right from their phone." },
+                { emoji: "✅", title: "Approve or Reject", desc: "You decide who gets in. Review requests, approve the right people, keep full control of your guest list." },
+                { emoji: "💬", title: "Built-in Messaging", desc: "Chat directly with guests. Answer questions, send updates — all in one place." },
+                { emoji: "🔍", title: "Real-time Scanning", desc: "Scan tickets at the door with any smartphone. Instantly know who's in and flag any duplicates." },
+                { emoji: "📊", title: "Live Dashboard", desc: "See requests, approvals, and attendance in real time from one clean dashboard." },
+                { emoji: "🔒", title: "Secure & Private", desc: "Each ticket is unique and one-time use. No fakes, no sharing — your event stays exclusive." },
+              ].map(({ emoji, title, desc }) => (
+                <div key={title} className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm transition-transform hover:-translate-y-1">
+                  <div className="mb-4 text-3xl">{emoji}</div>
+                  <h3 className="mb-2 text-base font-bold text-gray-900">{title}</h3>
+                  <p className="text-sm leading-relaxed text-gray-400">{desc}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* CTA */}
+        <section className="bg-blue-600 px-6 py-24 text-center">
+          <div className="mx-auto max-w-3xl">
+            <h2 className="text-4xl font-black leading-tight text-white sm:text-5xl">Ready to run your next event?</h2>
+            <p className="mt-5 text-lg text-blue-100">Join organizers who trust Connsura to handle their tickets.</p>
+            <div className="mt-8">
+              <button
+                type="button"
+                onClick={handleGetStarted}
+                className="inline-block rounded-2xl bg-white px-12 py-4 text-lg font-bold text-blue-600 shadow-xl transition-colors hover:bg-gray-100"
+              >
+                Get Started &rarr;
+              </button>
+            </div>
+            <p className="mt-4 text-xs text-blue-200">No credit card required. No setup fees.</p>
+          </div>
+        </section>
+
+        {/* Footer */}
+        <footer className="border-t border-gray-100 bg-gray-50 px-6 py-8 text-center">
+          <p className="text-xs text-gray-400">© {new Date().getFullYear()} Connsura. All rights reserved.</p>
+        </footer>
+      </div>
+    );
+  }
+
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-4 sm:px-6 sm:py-6">
       <div ref={turnstileRef} className="hidden" />
-      {showHeroSection ? (
-        <section className="mt-4 rounded border p-4">
-          <h1 className="text-3xl font-black leading-tight sm:text-4xl">Stop Signing Up For Ticket Platforms</h1>
-          <p className="mt-4 text-base font-semibold text-slate-800 sm:text-lg">Create your event &rarr; Generate QR tickets &rarr; Scan at the door</p>
-          <div className="mt-4 space-y-1 text-sm font-semibold text-slate-900 sm:text-base">
-            <p>&#10004; No accounts.</p>
-            <p>&#10004; No passwords.</p>
-            <p>&#10004; No payment details.</p>
-          </div>
-          <div className="mt-5 flex flex-wrap items-center gap-3">
-            <AppButton
-              type="button"
-              variant="primary"
-              className="sm:w-auto"
-              onClick={handleGetStarted}
-            >
-              Get started
-            </AppButton>
-            <AppButton
-              type="button"
-              variant="secondary"
-              className="sm:w-auto"
-              onClick={handleAlreadyHaveCode}
-            >
-              Already have Organizer access code?
-            </AppButton>
-          </div>
-        </section>
-      ) : showLoadDashboard ? (
+      {showLoadDashboard ? (
         <div className="mt-8 max-w-sm">
           <h2 className="text-xl font-bold">Load your dashboard</h2>
           <p className="mt-1 text-sm text-slate-500">Enter your organizer access code to continue.</p>
