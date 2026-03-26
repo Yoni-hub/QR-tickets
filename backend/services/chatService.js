@@ -676,10 +676,11 @@ async function sendMessageForActor(actor, conversationIdRaw, payload = {}) {
     try {
       const ticketRequest = await prisma.ticketRequest.findUnique({
         where: { id: resolved.conversation.ticketRequestId },
-        select: { email: true, clientAccessToken: true, event: { select: { eventName: true } } },
+        select: { email: true, clientProfile: { select: { clientAccessToken: true } }, event: { select: { eventName: true } } },
       });
-      if (ticketRequest?.email && ticketRequest?.clientAccessToken) {
-        const dashboardUrl = `${getPublicBaseUrl()}/client/${ticketRequest.clientAccessToken}`;
+      const token679 = ticketRequest?.clientProfile?.clientAccessToken;
+      if (ticketRequest?.email && token679) {
+        const dashboardUrl = `${getPublicBaseUrl()}/client/${token679}`;
         try {
           await sendNewChatMessageEmail({
             to: ticketRequest.email,
@@ -846,11 +847,11 @@ async function sendSystemMessageForTicketRequest({ ticketRequestId, body, emailF
     let emailStatus = CHAT_MESSAGE_EMAIL_STATUS.NO_EMAIL;
     const ticketRequest = await prisma.ticketRequest.findUnique({
       where: { id: ticketRequestId },
-      select: { email: true, clientAccessToken: true, event: { select: { eventName: true } } },
+      select: { email: true, clientProfile: { select: { clientAccessToken: true } }, event: { select: { eventName: true } } },
     });
-
-    if (emailFn && ticketRequest?.email && ticketRequest?.clientAccessToken) {
-      const dashboardUrl = emailArgs.dashboardUrl || `${getPublicBaseUrl()}/client/${ticketRequest.clientAccessToken}`;
+    const token849 = ticketRequest?.clientProfile?.clientAccessToken;
+    if (emailFn && ticketRequest?.email && token849) {
+      const dashboardUrl = emailArgs.dashboardUrl || `${getPublicBaseUrl()}/client/${token849}`;
       try {
         await emailFn({
           to: ticketRequest.email,

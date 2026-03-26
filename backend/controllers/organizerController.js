@@ -350,7 +350,7 @@ async function approveTicketRequest(req, res) {
         select: {
           id: true, status: true, quantity: true, ticketType: true, ticketPrice: true,
           totalPrice: true, ticketSelections: true, name: true, email: true,
-          clientAccessToken: true, promoter: { select: { name: true, code: true } },
+          clientProfile: { select: { clientAccessToken: true } }, promoter: { select: { name: true, code: true } },
         },
       });
       return { alreadyApproved: false, tickets, updatedRequest };

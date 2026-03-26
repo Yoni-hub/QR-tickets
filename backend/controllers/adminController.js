@@ -153,7 +153,7 @@ async function getAdminOverview(_req, res) {
         name: true,
         email: true,
         status: true,
-        clientAccessToken: true,
+        clientProfile: { select: { clientAccessToken: true } },
         createdAt: true,
         event: {
           select: {
@@ -230,8 +230,8 @@ async function getAdminOverview(_req, res) {
     buyerName: request.name,
     buyerEmail: request.email,
     status: request.status,
-    clientAccessToken: request.clientAccessToken || null,
-    clientDashboardUrl: request.clientAccessToken ? `${baseUrl}/client/${request.clientAccessToken}` : null,
+    clientAccessToken: request.clientProfile?.clientAccessToken || null,
+    clientDashboardUrl: request.clientProfile?.clientAccessToken ? `${baseUrl}/client/${request.clientProfile.clientAccessToken}` : null,
     createdAt: request.createdAt,
   }));
 
@@ -848,11 +848,10 @@ async function listAdminClientDashTokens(req, res) {
   const search = String(req.query.search || "").trim();
 
   const where = {
-    clientAccessToken: { not: null },
     ...(search
       ? {
           OR: [
-            { clientAccessToken: { contains: search, mode: "insensitive" } },
+            { clientProfile: { clientAccessToken: { contains: search, mode: "insensitive" } } },
             { event: { accessCode: { contains: search, mode: "insensitive" } } },
             { event: { eventName: { contains: search, mode: "insensitive" } } },
             { email: { contains: search, mode: "insensitive" } },
@@ -868,7 +867,7 @@ async function listAdminClientDashTokens(req, res) {
     take: limit,
     select: {
       id: true,
-      clientAccessToken: true,
+      clientProfile: { select: { clientAccessToken: true } },
       status: true,
       createdAt: true,
       name: true,
@@ -884,18 +883,21 @@ async function listAdminClientDashTokens(req, res) {
   });
 
   const baseUrl = getPublicBaseUrl();
-  const items = rows.map((row) => ({
-    requestId: row.id,
-    eventId: row.event?.id || null,
-    eventName: row.event?.eventName || "Unknown event",
-    eventCode: row.event?.accessCode || "-",
-    buyerName: row.name || "-",
-    buyerEmail: row.email || "-",
-    status: row.status,
-    clientAccessToken: row.clientAccessToken,
-    clientDashboardUrl: `${baseUrl}/client/${row.clientAccessToken}`,
-    createdAt: row.createdAt,
-  }));
+  const items = rows.map((row) => {
+    const token = row.clientProfile?.clientAccessToken || null;
+    return {
+      requestId: row.id,
+      eventId: row.event?.id || null,
+      eventName: row.event?.eventName || "Unknown event",
+      eventCode: row.event?.accessCode || "-",
+      buyerName: row.name || "-",
+      buyerEmail: row.email || "-",
+      status: row.status,
+      clientAccessToken: token,
+      clientDashboardUrl: token ? `${baseUrl}/client/${token}` : null,
+      createdAt: row.createdAt,
+    };
+  });
 
   res.json({ items });
 }
