@@ -7,6 +7,7 @@ const dotenv = require("dotenv");
 const { Server } = require("socket.io");
 const morgan = require("morgan");
 const apiRoutes = require("./routes/apiRoutes");
+const prisma = require("./utils/prisma");
 const socketManager = require("./socket/socketManager");
 const { registerSocketHandlers } = require("./socket/socketHandler");
 
@@ -86,8 +87,13 @@ app.use("/api/public/verify-otp", otpLimiter);
 app.use("/api/public/recover-client-token", otpLimiter);
 app.use("/api/public/support/conversations", supportLimiter);
 
-app.get("/health", (_req, res) => {
-  res.status(200).json({ status: "ok" });
+app.get("/health", async (_req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.status(200).json({ status: "ok" });
+  } catch {
+    res.status(503).json({ status: "db_unavailable" });
+  }
 });
 
 app.use("/api", apiRoutes);
