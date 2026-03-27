@@ -75,6 +75,15 @@ function toLocalDateTimeInputValue(value) {
   return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
 }
 
+// Convert a local datetime string ("YYYY-MM-DDTHH:mm") to a UTC ISO string before sending to the backend.
+// Without this, the UTC server interprets the local time as UTC, shifting the stored time by the browser's offset.
+function localDateTimeToISO(value) {
+  if (!value) return value;
+  const date = new Date(value); // browser treats "YYYY-MM-DDTHH:mm" as local time
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toISOString();
+}
+
 function resolveDefaultTicketType(value) {
   return String(value || "").trim() || DEFAULT_TICKET_TYPE;
 }
@@ -957,8 +966,8 @@ export default function Dashboard() {
           const response = await api.post("/events", {
             organizerName: eventDraft.organizerName,
             eventName: eventDraft.eventName,
-            eventDateTime: eventDraft.eventDate,
-            eventEndDate: eventDraft.eventEndDate || undefined,
+            eventDateTime: localDateTimeToISO(eventDraft.eventDate),
+            eventEndDate: localDateTimeToISO(eventDraft.eventEndDate) || undefined,
             eventAddress: eventDraft.eventAddress,
             paymentInstructions: eventDraft.paymentInstructions,
             generateAccessOnly: true,
@@ -984,8 +993,8 @@ export default function Dashboard() {
         const response = await api.post(`/events/by-code/${encodeURIComponent(accessCode)}/create-new`, {
           organizerName: eventDraft.organizerName,
           eventName: eventDraft.eventName,
-          eventDate: eventDraft.eventDate,
-          eventEndDate: eventDraft.eventEndDate || undefined,
+          eventDate: localDateTimeToISO(eventDraft.eventDate),
+          eventEndDate: localDateTimeToISO(eventDraft.eventEndDate) || undefined,
           eventAddress: eventDraft.eventAddress,
           paymentInstructions: eventDraft.paymentInstructions,
           cfTurnstileToken,
@@ -1003,8 +1012,8 @@ export default function Dashboard() {
         accessCode,
         organizerName: eventDraft.organizerName,
         eventName: eventDraft.eventName,
-        eventDate: eventDraft.eventDate,
-        eventEndDate: eventDraft.eventEndDate,
+        eventDate: localDateTimeToISO(eventDraft.eventDate),
+        eventEndDate: localDateTimeToISO(eventDraft.eventEndDate),
         eventAddress: eventDraft.eventAddress,
         paymentInstructions: eventDraft.paymentInstructions,
       });
@@ -1099,7 +1108,7 @@ export default function Dashboard() {
         designJson: draft?.designJson || summary.event.designJson || null,
       };
       if (draft?.eventDate) {
-        payload.eventDate = draft.eventDate;
+        payload.eventDate = localDateTimeToISO(draft.eventDate);
       }
 
       const response = await api.patch(`/events/${summary.event.id}`, payload);

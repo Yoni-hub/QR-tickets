@@ -1,9 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import AppButton from "../components/ui/AppButton";
 import api from "../lib/api";
-import { clientChatApi } from "../features/chat/chatApi";
-import { joinConversation, leaveConversation, onNewMessage } from "../lib/socket";
 
 const FAQ_SECTIONS = [
   {
@@ -92,7 +90,7 @@ const FAQ_SECTIONS = [
       {
         question: "I lost my organizer access code. What should I do?",
         answer: (
-          <p>Contact support and be ready to answer verification questions about your event so we can help locate your account.</p>
+          <p>Go to the <strong>Help → Support</strong> tab and click <strong>"I lost my access code"</strong>. Enter the notification email you set up in your dashboard — we'll send a verification code and email you your access code automatically. If you never set up a notification email, contact admin via your dashboard chat.</p>
         ),
       },
     ],
@@ -143,17 +141,6 @@ const FAQ_SECTIONS = [
   },
 ];
 
-const STORAGE_KEYS = {
-  organizer: { token: "qr-recovery:organizer:token", conv: "qr-recovery:organizer:conversationId" },
-  client: { token: "qr-recovery:client:token", conv: "qr-recovery:client:conversationId" },
-};
-
-function getStoredSession(type) {
-  const keys = STORAGE_KEYS[type];
-  const token = localStorage.getItem(keys.token);
-  const conversationId = localStorage.getItem(keys.conv);
-  return token && conversationId ? { token, conversationId } : null;
-}
 
 export default function HelpPage() {
   const [searchParams] = useSearchParams();
@@ -168,20 +155,12 @@ export default function HelpPage() {
   });
   const [recoveryType, setRecoveryType] = useState(() => roleParam === "customer" ? "client" : "organizer");
 
-  // recovery session — separate per type so organizer and client sessions don't collide
-  const [recoverySession, setRecoverySession] = useState(() => getStoredSession(roleParam === "customer" ? "client" : "organizer"));
-
-  // sync session when recoveryType changes
-  useEffect(() => {
-    setRecoverySession(getStoredSession(recoveryType));
-    setMessages([]);
-    setRecoveryError("");
-  }, [recoveryType]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // new request form (organizer manual chat)
-  const [recoveryForm, setRecoveryForm] = useState({ name: "", eventName: "", description: "" });
-  const [recoverySubmitting, setRecoverySubmitting] = useState(false);
-  const [recoveryError, setRecoveryError] = useState("");
+  // automated organizer code recovery
+  const [orgRecoveryStep, setOrgRecoveryStep] = useState("email"); // "email" | "otp" | "done"
+  const [orgRecoveryEmail, setOrgRecoveryEmail] = useState("");
+  const [orgRecoveryCode, setOrgRecoveryCode] = useState("");
+  const [orgRecoverySubmitting, setOrgRecoverySubmitting] = useState(false);
+  const [orgRecoveryError, setOrgRecoveryError] = useState("");
 
   // automated client token recovery
   const [clientRecoveryStep, setClientRecoveryStep] = useState("email"); // "email" | "otp" | "done"
@@ -189,20 +168,6 @@ export default function HelpPage() {
   const [clientRecoveryCode, setClientRecoveryCode] = useState("");
   const [clientRecoverySubmitting, setClientRecoverySubmitting] = useState(false);
   const [clientRecoveryError, setClientRecoveryError] = useState("");
-
-  // token entry for returning users on a different device
-  const [tokenEntry, setTokenEntry] = useState("");
-  const [tokenEntryError, setTokenEntryError] = useState("");
-  const [tokenEntryLoading, setTokenEntryLoading] = useState(false);
-
-  // chat thread
-  const [messages, setMessages] = useState([]);
-  const [chatInput, setChatInput] = useState("");
-  const [chatSending, setChatSending] = useState(false);
-  const [chatAttachment, setChatAttachment] = useState(null); // File | null
-  const [copiedToken, setCopiedToken] = useState(false);
-  const messagesEndRef = useRef(null);
-  const fileInputRef = useRef(null);
 
   const toggleItem = (itemId) => {
     setOpenItems((previous) => {
@@ -213,45 +178,41 @@ export default function HelpPage() {
     });
   };
 
-  const loadMessages = async (session) => {
+  const handleOrgRecoverySendOtp = async () => {
+    const email = orgRecoveryEmail.trim().toLowerCase();
+    if (!email) { setOrgRecoveryError("Please enter your email address."); return; }
+    setOrgRecoverySubmitting(true);
+    setOrgRecoveryError("");
     try {
-      const res = await clientChatApi.listMessages(session.token, session.conversationId);
-      setMessages(res.data?.messages || []);
+      await api.post("/public/recover-organizer-code/send-otp", { email });
+      setOrgRecoveryStep("otp");
+      setOrgRecoveryCode("");
     } catch {
-      // silent — will retry on next poll
+      setOrgRecoveryError("Could not send verification code. Please try again.");
+    } finally {
+      setOrgRecoverySubmitting(false);
     }
   };
 
-  // load messages and join WebSocket room when recovery chat opens
-  useEffect(() => {
-    if (!recoverySession || role !== "recovery") return;
-    loadMessages(recoverySession);
+  const handleOrgRecoveryConfirm = async () => {
+    const code = orgRecoveryCode.trim();
+    if (!code) { setOrgRecoveryError("Please enter the verification code."); return; }
+    setOrgRecoverySubmitting(true);
+    setOrgRecoveryError("");
+    try {
+      await api.post("/public/recover-organizer-code/confirm", { email: orgRecoveryEmail.trim().toLowerCase(), code });
+      setOrgRecoveryStep("done");
+    } catch (err) {
+      setOrgRecoveryError(err.response?.data?.error || "Verification failed. Please try again.");
+    } finally {
+      setOrgRecoverySubmitting(false);
+    }
+  };
 
-    const { token, conversationId } = recoverySession;
-    joinConversation(conversationId, { clientAccessToken: token });
-    const unsub = onNewMessage((msg) => {
-      setMessages((prev) => {
-        if (prev.some((m) => m.id === msg.id)) return prev;
-        return [...prev, msg];
-      });
-    });
-
-    return () => {
-      unsub();
-      leaveConversation(conversationId);
-    };
-  }, [recoverySession, role, recoveryType]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // scroll to bottom when new messages arrive
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  const saveSession = (token, conversationId) => {
-    const keys = STORAGE_KEYS[recoveryType];
-    localStorage.setItem(keys.token, token);
-    localStorage.setItem(keys.conv, conversationId);
-    return { token, conversationId };
+  const handleOrgRecoveryBack = () => {
+    setOrgRecoveryStep("email");
+    setOrgRecoveryCode("");
+    setOrgRecoveryError("");
   };
 
   const handleClientRecoverySendOtp = async () => {
@@ -295,105 +256,6 @@ export default function HelpPage() {
     setClientRecoveryStep("email");
     setClientRecoveryCode("");
     setClientRecoveryError("");
-  };
-
-  const handleRecoverySubmit = async () => {
-    const { name, eventName, description } = recoveryForm;
-    if (!name.trim() || !eventName.trim()) {
-      setRecoveryError("Please fill in your organizer name and event name.");
-      return;
-    }
-    setRecoverySubmitting(true);
-    setRecoveryError("");
-    try {
-      const prefix = recoveryType === "organizer"
-        ? "ORGANIZER ACCESS CODE RECOVERY REQUEST"
-        : "CLIENT ACCESS TOKEN RECOVERY REQUEST";
-      const nameLabel = recoveryType === "organizer" ? "Organizer name" : "Buyer name";
-      const lines = [
-        prefix,
-        "",
-        `${nameLabel}: ${name.trim()}`,
-        `Event name: ${eventName.trim()}`,
-      ];
-      if (description.trim()) lines.push("", `Additional info: ${description.trim()}`);
-      const subject = recoveryType === "organizer"
-        ? `Organizer Recovery: ${name.trim()}`
-        : `Client Recovery: ${name.trim()}`;
-      const res = await api.post("/public/support/conversations", {
-        name: name.trim(),
-        message: lines.join("\n"),
-        subject,
-      });
-      const token = res.data?.conversation?.conversationToken;
-      const conversationId = res.data?.conversation?.id;
-      if (!token || !conversationId) throw new Error("Invalid response");
-      const session = saveSession(token, conversationId);
-      setRecoverySession(session);
-      setMessages(res.data?.messages || []);
-    } catch {
-      setRecoveryError("Could not send your request. Please try again.");
-    } finally {
-      setRecoverySubmitting(false);
-    }
-  };
-
-  const handleLoadByToken = async () => {
-    const token = tokenEntry.trim();
-    if (!token) return;
-    setTokenEntryLoading(true);
-    setTokenEntryError("");
-    try {
-      const res = await clientChatApi.listConversations(token);
-      const conversation = (res.data?.conversations || [])[0];
-      if (!conversation) {
-        setTokenEntryError("Recovery token not found. Check and try again.");
-        return;
-      }
-      const session = saveSession(token, conversation.id);
-      setRecoverySession(session);
-      const msgRes = await clientChatApi.listMessages(token, conversation.id);
-      setMessages(msgRes.data?.messages || []);
-    } catch {
-      setTokenEntryError("Could not load recovery request. Check your token and try again.");
-    } finally {
-      setTokenEntryLoading(false);
-    }
-  };
-
-  const handleChatSend = async () => {
-    const text = chatInput.trim();
-    if (!text && !chatAttachment) return;
-    if (!recoverySession) return;
-    setChatSending(true);
-    try {
-      await clientChatApi.sendMessage(recoverySession.token, recoverySession.conversationId, { message: text, attachment: chatAttachment || undefined });
-      setChatInput("");
-      setChatAttachment(null);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      await loadMessages(recoverySession);
-    } catch {
-      // silent
-    } finally {
-      setChatSending(false);
-    }
-  };
-
-  const handleCopyToken = () => {
-    if (!recoverySession) return;
-    navigator.clipboard.writeText(recoverySession.token).then(() => {
-      setCopiedToken(true);
-      setTimeout(() => setCopiedToken(false), 2000);
-    });
-  };
-
-  const handleClearSession = () => {
-    const keys = STORAGE_KEYS[recoveryType];
-    localStorage.removeItem(keys.token);
-    localStorage.removeItem(keys.conv);
-    setRecoverySession(null);
-    setMessages([]);
-    setRecoveryForm({ name: "", eventName: "", description: "" });
   };
 
   return (
@@ -627,171 +489,74 @@ export default function HelpPage() {
           {role === "recovery" && recoveryType === "organizer" ? (
             <div className="rounded border bg-white p-6">
               <h2 className="text-lg font-semibold">Organizer Access Code Recovery</h2>
-
-              {recoverySession ? (
-                /* ── CHAT THREAD ── */
+              {orgRecoveryStep === "email" ? (
                 <>
-                  <div className="mt-3 rounded border border-amber-300 bg-amber-50 p-3">
-                    <p className="text-xs font-semibold text-amber-800">Your recovery token — save this on another device</p>
-                    <div className="mt-1 flex items-center gap-2">
-                      <code className="flex-1 break-all rounded bg-white px-2 py-1 font-mono text-xs text-slate-800">{recoverySession.token}</code>
-                      <button
-                        type="button"
-                        className="shrink-0 rounded border px-2 py-1 text-xs font-semibold hover:bg-amber-100"
-                        onClick={handleCopyToken}
-                      >
-                        {copiedToken ? "Copied!" : "Copy"}
-                      </button>
-                    </div>
-                    <p className="mt-1 text-xs text-amber-700">Your access code will only be shared here — never by email or phone.</p>
-                  </div>
-
-                  <div className="mt-4 flex max-h-72 flex-col gap-2 overflow-y-auto rounded border bg-slate-50 p-3">
-                    {messages.length === 0 ? (
-                      <p className="text-center text-xs text-slate-400">Waiting for admin response…</p>
-                    ) : null}
-                    {messages.map((msg) => {
-                      const isAdmin = msg.senderType === "ADMIN";
-                      const images = (msg.attachments || []).filter((a) => String(a.contentType || "").startsWith("image/"));
-                      return (
-                        <div key={msg.id} className={`flex ${isAdmin ? "justify-start" : "justify-end"}`}>
-                          <div className={`max-w-[80%] rounded px-3 py-2 text-sm ${isAdmin ? "bg-white text-slate-800 shadow-sm" : "bg-slate-900 text-white"}`}>
-                            {isAdmin ? <p className="mb-1 text-xs font-semibold text-slate-400">Admin</p> : null}
-                            {msg.message ? <p className="whitespace-pre-wrap">{msg.message}</p> : null}
-                            {images.map((att) => (
-                              <a key={att.id} href={att.downloadUrl} target="_blank" rel="noreferrer" className="mt-1 block">
-                                <img src={att.downloadUrl} alt="attachment" className="max-h-48 rounded object-contain" />
-                              </a>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })}
-                    <div ref={messagesEndRef} />
-                  </div>
-
-                  {chatAttachment ? (
-                    <div className="mt-3 flex items-center gap-2 rounded border bg-slate-50 px-3 py-2 text-sm">
-                      <img
-                        src={URL.createObjectURL(chatAttachment)}
-                        alt="attachment preview"
-                        className="h-14 w-14 rounded object-cover"
-                      />
-                      <span className="flex-1 truncate text-slate-600">{chatAttachment.name}</span>
-                      <button type="button" className="text-xs text-red-500 hover:text-red-700" onClick={() => { setChatAttachment(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}>
-                        Remove
-                      </button>
-                    </div>
-                  ) : null}
-                  <div className="mt-3 flex gap-2">
+                  <p className="mt-2 text-sm text-slate-600">
+                    Enter the notification email you set up in your organizer dashboard. We'll send a verification code, then email you your access code.
+                  </p>
+                  <p className="mt-2 text-xs text-amber-700 font-medium">
+                    Recovery only works if you previously saved a notification email in your dashboard settings.
+                  </p>
+                  <div className="mt-5 space-y-3">
                     <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => setChatAttachment(e.target.files?.[0] || null)}
+                      className="w-full rounded border p-2 text-sm"
+                      type="email"
+                      placeholder="Notification email from your dashboard settings"
+                      value={orgRecoveryEmail}
+                      onChange={(e) => setOrgRecoveryEmail(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && handleOrgRecoverySendOtp()}
                     />
-                    <button
-                      type="button"
-                      title="Attach image"
-                      className="rounded border px-2 py-2 text-slate-500 hover:bg-slate-50 hover:text-slate-800"
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-                      </svg>
-                    </button>
-                    <input
-                      className="flex-1 rounded border p-2 text-sm"
-                      placeholder="Reply to admin…"
-                      value={chatInput}
-                      onChange={(e) => setChatInput(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleChatSend()}
-                    />
-                    <AppButton variant="primary" onClick={handleChatSend} loading={chatSending} loadingText="…">
-                      Send
+                    {orgRecoveryError ? <p className="text-sm text-red-600">{orgRecoveryError}</p> : null}
+                    <AppButton onClick={handleOrgRecoverySendOtp} loading={orgRecoverySubmitting} loadingText="Sending code…">
+                      Send Verification Code
                     </AppButton>
                   </div>
-
-                  <div className="mt-4 flex flex-wrap gap-4">
-                    <button type="button" className="text-sm text-slate-500 underline hover:text-slate-800" onClick={() => setRole(null)}>
+                  <div className="mt-4">
+                    <button type="button" className="text-sm text-slate-500 underline hover:text-slate-800" onClick={() => setRole("organizer")}>
                       Back
                     </button>
-                    <button type="button" className="text-sm text-red-600 underline hover:text-red-800" onClick={handleClearSession}>
-                      Start a new recovery request
+                  </div>
+                </>
+              ) : orgRecoveryStep === "otp" ? (
+                <>
+                  <p className="mt-2 text-sm text-slate-600">
+                    Enter the 6-digit code sent to <strong>{orgRecoveryEmail}</strong>.
+                  </p>
+                  <div className="mt-5 space-y-3">
+                    <input
+                      className="w-full rounded border p-2 text-center text-xl font-bold tracking-widest"
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={6}
+                      placeholder="000000"
+                      value={orgRecoveryCode}
+                      onChange={(e) => setOrgRecoveryCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    />
+                    {orgRecoveryError ? <p className="text-sm text-red-600">{orgRecoveryError}</p> : null}
+                    <AppButton onClick={handleOrgRecoveryConfirm} loading={orgRecoverySubmitting} loadingText="Verifying…">
+                      Verify &amp; Send My Code
+                    </AppButton>
+                  </div>
+                  <div className="mt-4 flex gap-4">
+                    <button type="button" className="text-sm text-slate-500 underline hover:text-slate-800" onClick={handleOrgRecoveryBack}>
+                      Back
+                    </button>
+                    <button type="button" className="text-sm text-blue-600 underline hover:text-blue-800" onClick={handleOrgRecoverySendOtp}>
+                      Resend code
                     </button>
                   </div>
                 </>
               ) : (
-                /* ── FORM + TOKEN ENTRY ── */
                 <>
-                  <p className="mt-2 text-sm text-slate-600">
-                    Fill in the details below. Our admin team will verify your identity before sharing your access code.
-                    The more details you provide, the faster we can verify you.
-                  </p>
-                  <p className="mt-2 text-xs font-medium text-amber-700">
-                    For your security: your access code will only be shared via this private support chat — never by email or phone.
-                  </p>
-                  <div className="mt-5 space-y-3">
-                    <div>
-                      <label className="block text-sm font-semibold text-slate-700">
-                        Your organizer name <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        className="mt-1 w-full rounded border p-2 text-sm"
-                        placeholder="Name or brand you used when creating your account"
-                        value={recoveryForm.name}
-                        onChange={(e) => setRecoveryForm((p) => ({ ...p, name: e.target.value }))}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-semibold text-slate-700">
-                        Event name <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        className="mt-1 w-full rounded border p-2 text-sm"
-                        placeholder="Name of at least one event you created"
-                        value={recoveryForm.eventName}
-                        onChange={(e) => setRecoveryForm((p) => ({ ...p, eventName: e.target.value }))}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-semibold text-slate-700">Additional details</label>
-                      <textarea
-                        className="mt-1 w-full rounded border p-2 text-sm"
-                        rows={3}
-                        placeholder="Approximate event date, number of tickets sold, buyer names — anything that proves you own this account"
-                        value={recoveryForm.description}
-                        onChange={(e) => setRecoveryForm((p) => ({ ...p, description: e.target.value }))}
-                      />
-                    </div>
-                    {recoveryError ? <p className="text-sm text-red-600">{recoveryError}</p> : null}
-                    <AppButton variant="primary" onClick={handleRecoverySubmit} loading={recoverySubmitting} loadingText="Sending…" className="w-full sm:w-auto">
-                      Send Recovery Request
-                    </AppButton>
+                  <div className="mt-4 rounded border border-emerald-300 bg-emerald-50 p-4">
+                    <p className="font-semibold text-emerald-800">Check your inbox</p>
+                    <p className="mt-1 text-sm text-emerald-700">
+                      If a notification email was found for <strong>{orgRecoveryEmail}</strong>, we've sent your organizer access code to that address.
+                    </p>
                   </div>
-
-                  <div className="mt-6 border-t pt-4">
-                    <p className="text-sm font-semibold text-slate-700">Already submitted a request?</p>
-                    <p className="mt-1 text-xs text-slate-500">Enter your recovery token to continue the conversation.</p>
-                    <div className="mt-2 flex gap-2">
-                      <input
-                        className="flex-1 rounded border p-2 font-mono text-sm"
-                        placeholder="Paste your recovery token"
-                        value={tokenEntry}
-                        onChange={(e) => setTokenEntry(e.target.value)}
-                        onKeyDown={(e) => e.key === "Enter" && handleLoadByToken()}
-                      />
-                      <AppButton variant="secondary" onClick={handleLoadByToken} loading={tokenEntryLoading} loadingText="…">
-                        Load
-                      </AppButton>
-                    </div>
-                    {tokenEntryError ? <p className="mt-1 text-sm text-red-600">{tokenEntryError}</p> : null}
-                  </div>
-
                   <div className="mt-4">
-                    <button type="button" className="text-sm text-slate-500 underline hover:text-slate-800" onClick={() => setRole(recoveryType === "organizer" ? "organizer" : "customer")}>
-                      Back
+                    <button type="button" className="text-sm text-slate-500 underline hover:text-slate-800" onClick={() => { setRole(null); setOrgRecoveryStep("email"); setOrgRecoveryEmail(""); setOrgRecoveryError(""); }}>
+                      Back to Help
                     </button>
                   </div>
                 </>

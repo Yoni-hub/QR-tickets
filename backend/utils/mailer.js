@@ -338,6 +338,49 @@ async function sendClientRecoveryEmail({ to, dashboardLinks }) {
   return transporter.sendMail({ from, to, subject, text, html });
 }
 
+async function sendOrganizerRecoveryEmail({ to, entries }) {
+  // entries: [{ organizerAccessCode, eventNames }]
+  const transporter = getTransporter();
+  const from = process.env.MAIL_FROM || "no-reply@localhost";
+  const subject = "Your QR Tickets organizer access code";
+
+  const textBlocks = entries.map((e) =>
+    `Access code: ${e.organizerAccessCode}\nEvents: ${e.eventNames.join(", ")}`,
+  ).join("\n\n");
+
+  const text = [
+    "Hello,",
+    "",
+    "Here is your QR Tickets organizer access code:",
+    "",
+    textBlocks,
+    "",
+    "Use this code to log into your organizer dashboard.",
+    "",
+    "If you did not request this, you can ignore this email.",
+  ].join("\n");
+
+  const htmlBlocks = entries.map((e) => `
+    <div style="margin-bottom:16px;padding:16px;background:#f8fafc;border-radius:6px;border:1px solid #e2e8f0;">
+      <p style="margin:0 0 6px 0;font-size:12px;color:#64748b;">Events: ${escapeHtml(e.eventNames.join(", "))}</p>
+      <p style="margin:0 0 10px 0;font-size:13px;color:#374151;">Your organizer access code:</p>
+      <code style="display:block;font-size:18px;font-weight:700;letter-spacing:0.05em;color:#0f172a;background:#ffffff;border:1px solid #cbd5e1;border-radius:4px;padding:10px 14px;">${escapeHtml(e.organizerAccessCode)}</code>
+    </div>
+  `).join("");
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.45;color:#0f172a;">
+      <p>Hello,</p>
+      <p>Here is your QR Tickets organizer access code:</p>
+      ${htmlBlocks}
+      <p>Use this code to log into your <a href="${escapeHtml(process.env.PUBLIC_BASE_URL || "")}/dashboard" style="color:#2d5bd1;">organizer dashboard</a>.</p>
+      <p style="font-size:12px;color:#94a3b8;margin-top:24px;">If you did not request this recovery, you can ignore this email.</p>
+    </div>
+  `;
+
+  return transporter.sendMail({ from, to, subject, text, html });
+}
+
 module.exports = {
   sendTicketApprovedEmail,
   sendTicketCancelledEmail,
@@ -346,4 +389,5 @@ module.exports = {
   sendOrganizerNewMessageEmail,
   sendOtpEmail,
   sendClientRecoveryEmail,
+  sendOrganizerRecoveryEmail,
 };

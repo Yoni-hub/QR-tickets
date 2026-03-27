@@ -10,7 +10,7 @@ const {
   startConversationForActor,
   sendSystemMessageForTicketRequest,
 } = require("../services/chatService");
-const { sendTicketApprovedEmail, sendOrganizerNewRequestEmail, sendOrganizerNewMessageEmail, sendOtpEmail, sendClientRecoveryEmail } = require("../utils/mailer");
+const { sendTicketApprovedEmail, sendOrganizerNewRequestEmail, sendOrganizerNewMessageEmail, sendOtpEmail, sendClientRecoveryEmail, sendOrganizerRecoveryEmail } = require("../utils/mailer");
 const { createTicketsForRequest } = require("./organizerController");
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -930,6 +930,7 @@ async function verifyOtp(req, res) {
 }
 
 const RECOVERY_SLUG = "__recovery__";
+const ORGANIZER_RECOVERY_SLUG = "__organizer_recovery__";
 
 async function sendRecoveryOtp(req, res) {
   const email = String(req.body?.email || "").trim().toLowerCase();
@@ -1033,6 +1034,91 @@ async function confirmRecoveryOtp(req, res) {
   res.json({ sent: true });
 }
 
+async function sendOrganizerRecoveryOtp(req, res) {
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  if (!EMAIL_PATTERN.test(email)) {
+    res.status(400).json({ error: "A valid email address is required." });
+    return;
+  }
+
+  const hasEvents = await prisma.userEvent.findFirst({
+    where: { organizerEmail: email },
+    select: { id: true },
+  });
+
+  if (hasEvents) {
+    await prisma.emailVerification.updateMany({
+      where: { email, eventSlug: ORGANIZER_RECOVERY_SLUG, verified: false, tokenUsed: false },
+      data: { expiresAt: new Date(0) },
+    });
+
+    const code = String(Math.floor(100000 + crypto.randomInt(900000))).padStart(6, "0");
+    await prisma.emailVerification.create({
+      data: { email, eventSlug: ORGANIZER_RECOVERY_SLUG, code, expiresAt: new Date(Date.now() + OTP_EXPIRY_MS) },
+    });
+
+    sendOtpEmail({ to: email, code }).catch((err) => console.error("organizer recovery OTP email failed", err));
+  }
+
+  // Always respond with success to avoid email enumeration
+  res.json({ sent: true });
+}
+
+async function confirmOrganizerRecoveryOtp(req, res) {
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  const code = String(req.body?.code || "").trim();
+  if (!email || !code) {
+    res.status(400).json({ error: "email and code are required." });
+    return;
+  }
+
+  const record = await prisma.emailVerification.findFirst({
+    where: { email, eventSlug: ORGANIZER_RECOVERY_SLUG, verified: false, tokenUsed: false, expiresAt: { gt: new Date() } },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (!record) {
+    res.status(400).json({ error: "Verification code expired or not found. Please request a new one." });
+    return;
+  }
+
+  if (record.attempts >= OTP_MAX_ATTEMPTS) {
+    res.status(400).json({ error: "Too many incorrect attempts. Please request a new code." });
+    return;
+  }
+
+  if (record.code !== code) {
+    await prisma.emailVerification.update({ where: { id: record.id }, data: { attempts: { increment: 1 } } });
+    const remaining = OTP_MAX_ATTEMPTS - record.attempts - 1;
+    res.status(400).json({ error: `Incorrect code. ${remaining} attempt${remaining !== 1 ? "s" : ""} remaining.` });
+    return;
+  }
+
+  await prisma.emailVerification.update({ where: { id: record.id }, data: { verified: true, tokenUsed: true } });
+
+  // Find all events for this organizer email and group by organizerAccessCode
+  const events = await prisma.userEvent.findMany({
+    where: { organizerEmail: email },
+    select: { organizerAccessCode: true, eventName: true },
+    orderBy: { createdAt: "asc" },
+  });
+
+  if (events.length > 0) {
+    // Group event names by organizerAccessCode (one organizer may have multiple events)
+    const codeMap = new Map();
+    for (const ev of events) {
+      const key = ev.organizerAccessCode;
+      if (!codeMap.has(key)) codeMap.set(key, []);
+      codeMap.get(key).push(ev.eventName || "Unnamed event");
+    }
+    const entries = Array.from(codeMap.entries()).map(([organizerAccessCode, eventNames]) => ({ organizerAccessCode, eventNames }));
+    sendOrganizerRecoveryEmail({ to: email, entries }).catch((err) => console.error("organizer recovery email failed", err));
+  }
+
+  // Always respond with success to avoid enumeration
+  res.json({ sent: true });
+}
+
 module.exports = {
   getPublicEventBySlug,
   sendOtp,
@@ -1043,5 +1129,7 @@ module.exports = {
   createClientRequestMessageByToken,
   sendRecoveryOtp,
   confirmRecoveryOtp,
+  sendOrganizerRecoveryOtp,
+  confirmOrganizerRecoveryOtp,
 };
 
