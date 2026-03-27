@@ -1061,8 +1061,6 @@ export default function Dashboard() {
 
   const closeOrganizerCodeModal = () => {
     setGeneratedOrganizerCodeModal((prev) => ({ ...prev, open: false, copied: false }));
-    const code = String(generatedOrganizerCodeModal.code || "").trim();
-    if (code) navigate(`/dashboard?code=${encodeURIComponent(code)}&menu=events`, { replace: true });
   };
 
   const copyOrganizerCode = async () => {
@@ -1165,10 +1163,11 @@ export default function Dashboard() {
     navigate("/");
   };
 
-  if (showHeroSection) {
-    return (
+  return (
+    <>
+      <div ref={turnstileRef} className="hidden" />
+      {showHeroSection ? (
       <div className="w-full antialiased" style={{ background: "#ffffff", color: "#111827" }}>
-        <div ref={turnstileRef} className="hidden" />
 
         {/* Hero — split layout */}
         <section className="min-h-screen" style={{ background: "#fff" }}>
@@ -1376,12 +1375,8 @@ export default function Dashboard() {
           <p className="text-xs" style={{ color: "#4b5563" }}>© {new Date().getFullYear()} Connsura. All rights reserved.</p>
         </footer>
       </div>
-    );
-  }
-
-  return (
-    <main className="mx-auto w-full max-w-5xl px-4 py-4 sm:px-6 sm:py-6">
-      <div ref={turnstileRef} className="hidden" />
+      ) : (
+      <main className="mx-auto w-full max-w-5xl px-4 py-4 sm:px-6 sm:py-6">
       {showLoadDashboard ? (
         <div className="mt-8 max-w-sm">
           <h2 className="text-xl font-bold">Load your dashboard</h2>
@@ -2361,5 +2356,7 @@ export default function Dashboard() {
         </ModalOverlay>
       ) : null}
     </main>
+      )}
+    </>
   );
 }
