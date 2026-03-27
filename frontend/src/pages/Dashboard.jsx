@@ -1199,14 +1199,6 @@ export default function Dashboard() {
                   Already have a code?
                 </button>
               </div>
-              <div className="mt-12 flex flex-wrap gap-6">
-                {["No accounts", "No passwords", "No payment details"].map((t) => (
-                  <div key={t} className="flex items-center gap-2 text-sm font-semibold" style={{ color: "#374151" }}>
-                    <span className="flex h-5 w-5 items-center justify-center rounded-full text-xs text-white" style={{ background: "#2979ff" }}>✓</span>
-                    {t}
-                  </div>
-                ))}
-              </div>
             </div>
 
             {/* Right — form */}
@@ -1303,70 +1295,30 @@ export default function Dashboard() {
           </div>
         </section>
 
-        {/* How it works */}
-        <section className="px-6 py-24" style={{ background: "#eff4ff" }}>
-          <div className="mx-auto max-w-5xl text-center">
-            <p className="mb-3 text-xs font-bold uppercase tracking-widest" style={{ color: "#2979ff" }}>Simple by design</p>
-            <h2 className="text-3xl font-black sm:text-4xl" style={{ color: "#111827" }}>Up and running in 3 steps</h2>
-            <div className="mt-14 grid grid-cols-1 gap-8 sm:grid-cols-3">
-              {[
-                { emoji: "🎟️", step: "1", title: "Create your event", desc: "Fill in your event details — name, date, location, and ticket count. Done in 2 minutes." },
-                { emoji: "🔗", step: "2", title: "Share your link", desc: "Post your event link on Instagram, WhatsApp, or anywhere. Guests request tickets instantly." },
-                { emoji: "📱", step: "3", title: "Scan at the door", desc: "Scan QR codes with your phone on event day. Approved guests get in, gatecrashers don't." },
-              ].map(({ emoji, step, title, desc }) => (
-                <div key={step} className="flex flex-col items-center rounded-3xl bg-white p-8 text-center shadow-md transition-transform hover:-translate-y-1">
-                  <div className="mb-4 text-4xl">{emoji}</div>
-                  <div className="mb-4 flex h-8 w-8 items-center justify-center rounded-full text-sm font-black text-white" style={{ background: "#2979ff" }}>{step}</div>
-                  <h3 className="text-lg font-bold" style={{ color: "#111827" }}>{title}</h3>
-                  <p className="mt-3 text-sm leading-relaxed" style={{ color: "#6b7280" }}>{desc}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* Features */}
-        <section className="px-6 py-24" style={{ background: "#ffffff" }}>
-          <div className="mx-auto max-w-5xl">
-            <div className="mb-14 text-center">
-              <p className="mb-3 text-xs font-bold uppercase tracking-widest" style={{ color: "#2979ff" }}>Everything you need</p>
-              <h2 className="text-3xl font-black sm:text-4xl" style={{ color: "#111827" }}>Powerful features, zero complexity</h2>
-            </div>
-            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {[
-                { emoji: "📲", title: "QR Code Tickets", desc: "Every approved guest gets a unique QR code instantly. No printing needed — works right from their phone." },
-                { emoji: "✅", title: "Approve or Reject", desc: "You decide who gets in. Review requests, approve the right people, keep full control of your guest list." },
-                { emoji: "💬", title: "Built-in Messaging", desc: "Chat directly with guests. Answer questions, send updates — all in one place." },
-                { emoji: "🔍", title: "Real-time Scanning", desc: "Scan tickets at the door with any smartphone. Instantly know who's in and flag any duplicates." },
-                { emoji: "📊", title: "Live Dashboard", desc: "See requests, approvals, and attendance in real time from one clean dashboard." },
-                { emoji: "🔒", title: "Secure & Private", desc: "Each ticket is unique and one-time use. No fakes, no sharing — your event stays exclusive." },
-              ].map(({ emoji, title, desc }) => (
-                <div key={title} className="rounded-2xl p-6 transition-transform hover:-translate-y-1" style={{ background: "#f9fafb", border: "1px solid #e5e7eb" }}>
-                  <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl text-xl" style={{ background: "#eff4ff" }}>{emoji}</div>
-                  <h3 className="mb-2 text-base font-bold" style={{ color: "#111827" }}>{title}</h3>
-                  <p className="text-sm leading-relaxed" style={{ color: "#6b7280" }}>{desc}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
         {/* CTA */}
-        <section className="px-6 py-24 text-center" style={{ background: "#0f172a" }}>
+        <section className="px-6 py-24 text-center" style={{ background: "linear-gradient(135deg, #eff4ff 0%, #fff 60%)" }}>
           <div className="mx-auto max-w-3xl">
-            <h2 className="text-4xl font-black leading-tight text-white sm:text-5xl">Ready to run your next event?</h2>
-            <p className="mt-5 text-lg" style={{ color: "#bfdbfe" }}>Join organizers who trust Connsura to handle their tickets.</p>
+            <h2 className="text-4xl font-black leading-tight sm:text-5xl" style={{ color: "#111827" }}>Ready to run your next event?</h2>
+            <p className="mt-5 text-lg" style={{ color: "#6b7280" }}>Join organizers who trust Connsura to handle their tickets.</p>
             <div className="mt-8">
               <button
                 type="button"
                 onClick={handleGetStarted}
-                className="inline-block rounded-2xl bg-white px-12 py-4 text-lg font-bold shadow-xl transition-colors hover:bg-orange-50"
-                style={{ color: "#2979ff" }}
+                className="inline-block rounded-2xl px-12 py-4 text-lg font-bold text-white shadow-xl transition-opacity hover:opacity-90"
+                style={{ background: "#2979ff" }}
               >
                 Get Started &rarr;
               </button>
             </div>
-            <p className="mt-4 text-xs" style={{ color: "#bfdbfe" }}>No credit card required. No setup fees.</p>
+            <p className="mt-4 text-sm font-semibold" style={{ color: "#6b7280" }}>No credit card required. No setup fees.</p>
+            <div className="mt-3 flex flex-wrap justify-center gap-6">
+              {["No email sign up", "No passwords"].map((t) => (
+                <div key={t} className="flex items-center gap-2 text-sm font-semibold" style={{ color: "#374151" }}>
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full text-xs text-white" style={{ background: "#2979ff" }}>✓</span>
+                  {t}
+                </div>
+              ))}
+            </div>
           </div>
         </section>
 
