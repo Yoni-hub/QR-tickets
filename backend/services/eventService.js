@@ -107,6 +107,7 @@ async function createEvent(payload, isDemo = false) {
       organizerName: String(payload.organizerName || "").trim() || null,
       eventName: payload.eventName || "QR Tickets Demo Event",
       eventDate: resolveEventDate(payload),
+      eventEndDate: payload.eventEndDate ? new Date(payload.eventEndDate) : null,
       eventAddress: payload.eventAddress || "Demo Venue",
       slug,
       ticketType: primaryTicketType,

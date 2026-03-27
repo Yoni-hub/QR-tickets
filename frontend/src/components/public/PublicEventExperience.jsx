@@ -232,7 +232,7 @@ export default function PublicEventExperience({
           {eventData.event.organizerName}
         </p>
       ) : null}
-      <p className="mt-2 text-slate-600">{formatDate(eventData.event.eventDate)} | {eventData.event.location}</p>
+      <p className="mt-2 text-slate-600">{formatDate(eventData.event.eventDate)}{eventData.event.eventEndDate ? ` — ${formatDate(eventData.event.eventEndDate)}` : ""} | {eventData.event.location}</p>
       <div className="mt-3 rounded border bg-white p-3 text-sm">
         <p className="font-semibold">Ticket Types</p>
         <div className="mt-2 space-y-2 sm:hidden">

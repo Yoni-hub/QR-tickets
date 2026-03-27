@@ -45,6 +45,7 @@ async function getTicketByPublicId(req, res) {
           id: true,
           eventName: true,
           eventDate: true,
+          eventEndDate: true,
           eventAddress: true,
           accessCode: true,
           isDemo: true,

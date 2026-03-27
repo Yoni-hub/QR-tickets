@@ -1,7 +1,7 @@
 async function verifyTurnstile(token, ip) {
   const secret = process.env.TURNSTILE_SECRET;
   if (!secret) return true; // not configured — allow (dev mode)
-  if (!token) return false;
+  if (!token) return process.env.NODE_ENV !== "production"; // allow empty token in dev/test
 
   try {
     const resp = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {

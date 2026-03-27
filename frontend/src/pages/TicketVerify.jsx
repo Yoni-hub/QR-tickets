@@ -84,7 +84,7 @@ export default function TicketVerify() {
           <span className="font-semibold">Event:</span> {ticket.event.eventName}
         </p>
         <p className="break-words">
-          <span className="font-semibold">Date:</span> {new Date(ticket.event.eventDate).toLocaleString()}
+          <span className="font-semibold">Date:</span> {new Date(ticket.event.eventDate).toLocaleString()}{ticket.event.eventEndDate ? ` — ${new Date(ticket.event.eventEndDate).toLocaleString()}` : ""}
         </p>
         <p className="break-words">
           <span className="font-semibold">Location:</span> {ticket.event.eventAddress}

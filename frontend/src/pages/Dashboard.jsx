@@ -265,6 +265,7 @@ export default function Dashboard() {
   const [copiedPromoterId, setCopiedPromoterId] = useState("");
   const ticketEditorDraftRef = useRef(null);
   const organizerNameRef = useRef(null);
+  const dashboardLoadingRef = useRef(false);
   const [showGetStartedHint, setShowGetStartedHint] = useState(false);
   const getStartedHintTimerRef = useRef(null);
   const copyResetTimersRef = useRef({
@@ -503,19 +504,16 @@ export default function Dashboard() {
 
   const loadDashboard = useCallback(async (targetCode, requestedEventId = "") => {
     const trimmedCode = String(targetCode || "").trim();
-    if (!trimmedCode || loading) return;
+    if (!trimmedCode || dashboardLoadingRef.current) return;
+    dashboardLoadingRef.current = true;
     setLoading(true);
     setLoadFb("", "");
-    if (location.pathname === "/") {
-      navigate(`/dashboard?code=${encodeURIComponent(trimmedCode)}&menu=events`, { replace: true });
-    } else {
-      setParams((prev) => {
-        const next = new URLSearchParams(prev);
-        next.set("code", trimmedCode);
-        next.set("menu", "events");
-        return next;
-      });
-    }
+    setParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("code", trimmedCode);
+      next.set("menu", "events");
+      return next;
+    });
 
     const storageKey = getSelectedEventStorageKey(trimmedCode);
     const storedEventId = requestedEventId || localStorage.getItem(storageKey) || "";
@@ -553,8 +551,9 @@ export default function Dashboard() {
       setTicketStatusFilter(TICKET_STATUS_FILTERS.TOTAL);
     } finally {
       setLoading(false);
+      dashboardLoadingRef.current = false;
     }
-  }, [loading, setParams, applySummaryEvent, navigate, location.pathname]);
+  }, [setParams, applySummaryEvent]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = async () => {
     const trimmedCode = code.trim();
@@ -972,7 +971,7 @@ export default function Dashboard() {
             throw new Error("Organizer code was not generated.");
           }
           setCode(nextOrganizerCode);
-          await loadDashboard(nextOrganizerCode, response.data?.eventId);
+          navigate(`/dashboard?code=${encodeURIComponent(nextOrganizerCode)}&menu=events`, { replace: true });
           setGeneratedOrganizerCodeModal({
             open: true,
             code: nextOrganizerCode,
@@ -1019,6 +1018,7 @@ export default function Dashboard() {
                 organizerName: response.data?.event?.organizerName,
                 eventName: response.data?.event?.eventName,
                 eventDate: response.data?.event?.eventDate,
+                eventEndDate: response.data?.event?.eventEndDate ?? null,
                 eventAddress: response.data?.event?.eventAddress,
               }
             : eventItem,
@@ -1135,6 +1135,30 @@ export default function Dashboard() {
     }
   };
 
+  const shareEvent = async () => {
+    if (!summary?.event?.slug) return;
+    const url = `${window.location.origin}/e/${summary.event.slug}`;
+    const shareData = {
+      title: summary.event.eventName || "Event",
+      text: `Get your ticket for ${summary.event.eventName || "this event"}`,
+      url,
+    };
+    if (navigator.share) {
+      try {
+        await navigator.share(shareData);
+      } catch {
+        // user cancelled or share failed — ignore
+      }
+    } else {
+      try {
+        await navigator.clipboard.writeText(url);
+        setEventFb("success", "Event link copied to clipboard.");
+      } catch {
+        setEventFb("error", "Could not copy event link.");
+      }
+    }
+  };
+
   const copyPublicEventLink = async () => {
     if (!summary?.event?.slug) return;
     try {
@@ -1237,7 +1261,7 @@ export default function Dashboard() {
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wider" style={{ color: "#9ca3af" }}>End Date <span className="normal-case font-normal" style={{ color: "#d1d5db" }}>(optional)</span></label>
+                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wider" style={{ color: "#9ca3af" }}>End Date</label>
                     <DateTimeInput
                       value={eventDraft.eventEndDate}
                       onChange={(v) => setEventDraft((prev) => ({ ...prev, eventEndDate: v }))}
@@ -1395,6 +1419,15 @@ export default function Dashboard() {
               ) : null}
             </button>
           ))}
+          {summary?.event?.slug ? (
+            <button
+              type="button"
+              onClick={shareEvent}
+              className="rounded border border-blue-600 bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"
+            >
+              Share Event
+            </button>
+          ) : null}
         </div>
       ) : null}
 
@@ -1438,7 +1471,7 @@ export default function Dashboard() {
                     value={eventDraft.eventDate}
                     onChange={(v) => setEventDraft((prev) => ({ ...prev, eventDate: v }))}
                   />
-                  <p className="font-semibold">End Date <span className="font-normal text-slate-400">(optional)</span>:</p>
+                  <p className="font-semibold">End Date:</p>
                   <DateTimeInput
                     value={eventDraft.eventEndDate}
                     onChange={(v) => setEventDraft((prev) => ({ ...prev, eventEndDate: v }))}
@@ -1476,6 +1509,15 @@ export default function Dashboard() {
                     disabled={!summary?.event?.id}
                   >
                     Edit Event
+                  </AppButton>
+                  <AppButton
+                    type="button"
+                    variant="primary"
+                    className="!bg-blue-600 hover:!bg-blue-700"
+                    onClick={shareEvent}
+                    disabled={!summary?.event?.slug}
+                  >
+                    Share Event
                   </AppButton>
                 </div>
                 <FeedbackBanner className="mt-3" kind={eventFb.kind} message={eventFb.message} />
@@ -2256,7 +2298,7 @@ export default function Dashboard() {
               value={eventDraft.eventDate}
               onChange={(v) => setEventDraft((prev) => ({ ...prev, eventDate: v }))}
             />
-            <p className="font-semibold">End Date <span className="font-normal text-slate-400">(optional)</span>:</p>
+            <p className="font-semibold">End Date:</p>
             <DateTimeInput
               value={eventDraft.eventEndDate}
               onChange={(v) => setEventDraft((prev) => ({ ...prev, eventEndDate: v }))}
