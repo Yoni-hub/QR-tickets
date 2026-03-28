@@ -843,7 +843,7 @@ export default function Dashboard() {
   const loadNotifications = async () => {
     if (!accessCode || notifLoaded) return;
     try {
-      const res = await api.get(`/events/by-code/${accessCode}/notifications`);
+      const res = await api.get(`/events/by-code/${encodeURIComponent(accessCode)}/notifications`);
       setNotifDraft({ organizerEmail: res.data.organizerEmail || "", notifyOnRequest: res.data.notifyOnRequest, notifyOnMessage: res.data.notifyOnMessage });
       setNotifEmailInput(res.data.organizerEmail || "");
       setNotifLoaded(true);
@@ -857,7 +857,7 @@ export default function Dashboard() {
     if (!accessCode || savingNotif) return;
     setSavingNotif(true);
     try {
-      await api.patch(`/events/by-code/${accessCode}/notifications`, { notifyOnRequest: notifDraft.notifyOnRequest, notifyOnMessage: notifDraft.notifyOnMessage });
+      await api.patch(`/events/by-code/${encodeURIComponent(accessCode)}/notifications`, { notifyOnRequest: notifDraft.notifyOnRequest, notifyOnMessage: notifDraft.notifyOnMessage });
       setNotifFb("success", "Notification preferences saved.");
     } catch {
       setNotifFb("error", "Could not save preferences.");
@@ -871,7 +871,7 @@ export default function Dashboard() {
     setSendingNotifOtp(true);
     setNotifEmailFb("", "");
     try {
-      await api.post(`/events/by-code/${accessCode}/notifications/send-email-otp`, { email: notifEmailInput });
+      await api.post(`/events/by-code/${encodeURIComponent(accessCode)}/notifications/send-email-otp`, { email: notifEmailInput });
       setNotifOtpSent(true);
       setNotifOtpInput("");
       setNotifEmailFb("success", "Verification code sent. Check your inbox.");
@@ -887,7 +887,7 @@ export default function Dashboard() {
     setVerifyingNotifOtp(true);
     setNotifEmailFb("", "");
     try {
-      await api.post(`/events/by-code/${accessCode}/notifications/verify-email-otp`, { email: notifEmailInput, code: notifOtpInput });
+      await api.post(`/events/by-code/${encodeURIComponent(accessCode)}/notifications/verify-email-otp`, { email: notifEmailInput, code: notifOtpInput });
       setNotifDraft((prev) => ({ ...prev, organizerEmail: notifEmailInput }));
       setNotifOtpSent(false);
       setNotifOtpInput("");
