@@ -233,6 +233,19 @@ export default function PublicEventExperience({
         </p>
       ) : null}
       <p className="mt-2 text-slate-600">{formatDate(eventData.event.eventDate)}{eventData.event.eventEndDate ? ` — ${formatDate(eventData.event.eventEndDate)}` : ""} | {eventData.event.location}</p>
+      {(() => {
+        const msUntilStart = new Date(eventData.event.eventDate) - new Date();
+        if (msUntilStart > 0 && msUntilStart < 6 * 3600 * 1000) {
+          const totalMinutes = Math.ceil(msUntilStart / 60000);
+          const hours = Math.floor(totalMinutes / 60);
+          const minutes = totalMinutes % 60;
+          const label = hours > 0
+            ? `Event starts in ${hours} hour${hours !== 1 ? "s" : ""}${minutes > 0 ? ` ${minutes} minute${minutes !== 1 ? "s" : ""}` : ""}`
+            : `Event starts in ${minutes} minute${minutes !== 1 ? "s" : ""}`;
+          return <p className="mt-1 rounded bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700 border border-amber-200 inline-block">{label}</p>;
+        }
+        return null;
+      })()}
       <div className="mt-3 rounded border bg-white p-3 text-sm">
         <p className="font-semibold">Ticket Types</p>
         <div className="mt-2 space-y-2 sm:hidden">

@@ -394,6 +394,10 @@ async function generateTicketsByAccessCode(req, res) {
   const eventAddress = sanitizeText(req.body?.eventAddress, LIMITS.EVENT_ADDRESS);
   const rawEventDate = String(req.body?.eventDateTime || req.body?.dateTimeText || "").trim();
   const parsedEventDate = rawEventDate ? new Date(rawEventDate) : null;
+  if (parsedEventDate && !Number.isNaN(parsedEventDate.getTime()) && parsedEventDate <= new Date()) {
+    res.status(400).json({ error: "Event start date must be in the future." });
+    return;
+  }
   const designJson = req.body?.designJson && typeof req.body.designJson === "object" ? req.body.designJson : null;
   const currency = String(req.body?.currency || designJson?.currency || "$").trim() || "$";
   const designGroups = Array.isArray(designJson?.ticketGroups) ? designJson.ticketGroups : [];
@@ -555,6 +559,14 @@ async function updateEventInline(req, res) {
     res.status(400).json({ error: "Invalid eventEndDate." });
     return;
   }
+  if (parsedEventDate && parsedEventDate <= new Date()) {
+    res.status(400).json({ error: "Event start date must be in the future." });
+    return;
+  }
+  if (parsedEventEndDate && parsedEventDate && parsedEventEndDate <= parsedEventDate) {
+    res.status(400).json({ error: "Event end date must be after the start date." });
+    return;
+  }
   if (hasTicketPrice && ticketPriceRaw !== "" && Number.isNaN(parsedTicketPrice)) {
     res.status(400).json({ error: "Invalid ticketPrice." });
     return;
@@ -696,6 +708,14 @@ async function createEventForAccessCode(req, res) {
   }
   if (eventEndDateRaw && Number.isNaN(parsedEventEndDate?.getTime())) {
     res.status(400).json({ error: "Invalid eventEndDate." });
+    return;
+  }
+  if (parsedEventDate && parsedEventDate <= new Date()) {
+    res.status(400).json({ error: "Event start date must be in the future." });
+    return;
+  }
+  if (parsedEventEndDate && parsedEventDate && parsedEventEndDate <= parsedEventDate) {
+    res.status(400).json({ error: "Event end date must be after the start date." });
     return;
   }
 

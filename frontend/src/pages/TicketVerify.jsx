@@ -7,6 +7,8 @@ function resolveStatus(ticket, order) {
   if (!order || order.status !== "ACTIVE") return "DISABLED";
   if (ticket.cancelledAt || ticket.isInvalidated) return "CANCELLED";
   if (ticket.status === "USED") return "ALREADY_USED";
+  const expiryDate = ticket.event?.eventEndDate || ticket.event?.eventDate;
+  if (expiryDate && new Date() > new Date(expiryDate)) return "EXPIRED";
   return "VALID";
 }
 
@@ -62,7 +64,9 @@ export default function TicketVerify() {
         ? "Already Used"
         : resolvedStatus === "CANCELLED"
           ? "Cancelled"
-          : "Disabled";
+          : resolvedStatus === "EXPIRED"
+            ? "Expired"
+            : "Disabled";
   const statusClass =
     resolvedStatus === "VALID"
       ? "bg-green-100 text-green-800"
@@ -70,7 +74,9 @@ export default function TicketVerify() {
         ? "bg-yellow-100 text-yellow-900"
         : resolvedStatus === "CANCELLED"
           ? "bg-red-100 text-red-800"
-          : "bg-slate-100 text-slate-600";
+          : resolvedStatus === "EXPIRED"
+            ? "bg-orange-100 text-orange-800"
+            : "bg-slate-100 text-slate-600";
 
   const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(
     ticket.qrPayload || `${window.location.origin}/t/${ticket.ticketPublicId}`,

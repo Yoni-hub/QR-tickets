@@ -112,7 +112,7 @@ function readFileAsDataUrl(file) {
   });
 }
 
-function DateTimeInput({ value, onChange, className = "" }) {
+function DateTimeInput({ value, onChange, minDate, className = "" }) {
   const [datePart, timePart] = String(value || "").split("T");
   const [hStr, mStr] = (timePart || "").split(":");
   const h24 = parseInt(hStr || "", 10);
@@ -158,6 +158,7 @@ function DateTimeInput({ value, onChange, className = "" }) {
       <input
         type="date"
         value={datePart || ""}
+        min={minDate}
         onChange={(e) => emit(e.target.value, isNaN(h24) ? 0 : h24, isNaN(m) ? 0 : m)}
         className="min-w-0 flex-1 border-0 bg-transparent p-1.5 text-xs focus:outline-none"
       />
@@ -951,6 +952,16 @@ export default function Dashboard() {
       setEventFb("error", "Event name, date, and location are required.");
       return;
     }
+    const startDate = eventDraft.eventDate ? new Date(eventDraft.eventDate) : null;
+    if (startDate && startDate <= new Date()) {
+      setEventFb("error", "Event start date must be in the future.");
+      return;
+    }
+    const endDate = eventDraft.eventEndDate ? new Date(eventDraft.eventEndDate) : null;
+    if (endDate && startDate && endDate <= startDate) {
+      setEventFb("error", "Event end date must be after the start date.");
+      return;
+    }
     setSavingEvent(true);
     let cfTurnstileToken = "";
     try {
@@ -1267,6 +1278,7 @@ export default function Dashboard() {
                     <DateTimeInput
                       value={eventDraft.eventDate}
                       onChange={(v) => setEventDraft((prev) => ({ ...prev, eventDate: v }))}
+                      minDate={new Date().toISOString().slice(0, 10)}
                     />
                   </div>
                   <div>
@@ -1274,6 +1286,7 @@ export default function Dashboard() {
                     <DateTimeInput
                       value={eventDraft.eventEndDate}
                       onChange={(v) => setEventDraft((prev) => ({ ...prev, eventEndDate: v }))}
+                      minDate={new Date().toISOString().slice(0, 10)}
                     />
                   </div>
                   <div>
@@ -1479,11 +1492,13 @@ export default function Dashboard() {
                   <DateTimeInput
                     value={eventDraft.eventDate}
                     onChange={(v) => setEventDraft((prev) => ({ ...prev, eventDate: v }))}
+                    minDate={new Date().toISOString().slice(0, 10)}
                   />
                   <p className="font-semibold">End Date:</p>
                   <DateTimeInput
                     value={eventDraft.eventEndDate}
                     onChange={(v) => setEventDraft((prev) => ({ ...prev, eventEndDate: v }))}
+                    minDate={new Date().toISOString().slice(0, 10)}
                   />
                   <p className="font-semibold">Location:</p>
                   <input
@@ -2306,11 +2321,13 @@ export default function Dashboard() {
             <DateTimeInput
               value={eventDraft.eventDate}
               onChange={(v) => setEventDraft((prev) => ({ ...prev, eventDate: v }))}
+              minDate={new Date().toISOString().slice(0, 10)}
             />
             <p className="font-semibold">End Date:</p>
             <DateTimeInput
               value={eventDraft.eventEndDate}
               onChange={(v) => setEventDraft((prev) => ({ ...prev, eventEndDate: v }))}
+              minDate={new Date().toISOString().slice(0, 10)}
             />
             <p className="font-semibold">Location:</p>
             <input

@@ -29,6 +29,7 @@ function resolveScanOutcomeLabel(outcome) {
   if (outcome === "CANCELED") return "CANCELED";
   if (outcome === "BLOCKED") return "BLOCKED";
   if (outcome === "DUPLICATE_SCAN") return "DUPLICATE SCAN";
+  if (outcome === "EXPIRED") return "EXPIRED";
   return "INVALID TICKET";
 }
 
@@ -40,6 +41,7 @@ function resolveSupportingText(outcome) {
   if (outcome === "CANCELED") return "Ticket has been voided";
   if (outcome === "BLOCKED") return "Ticket is not allowed for entry";
   if (outcome === "DUPLICATE_SCAN") return "Same code scanned again too quickly";
+  if (outcome === "EXPIRED") return "Event has ended";
   return "Ticket not found or not valid for this organizer";
 }
 
@@ -159,6 +161,7 @@ async function scanTicket(req, res) {
           id: true,
           eventName: true,
           eventDate: true,
+          eventEndDate: true,
           ticketType: true,
           organizerAccessCode: true,
           accessCode: true,
@@ -230,6 +233,13 @@ async function scanTicket(req, res) {
 
   if (!isCrossOrganizerTicket && outcome === "INVALID_TICKET" && ticket.status === "USED") {
     outcome = "ALREADY_USED";
+  }
+
+  if (!isCrossOrganizerTicket && outcome === "INVALID_TICKET") {
+    const expiryDate = ticket.event.eventEndDate || ticket.event.eventDate;
+    if (expiryDate && scannedAt > new Date(expiryDate)) {
+      outcome = "EXPIRED";
+    }
   }
 
   if (!isCrossOrganizerTicket && outcome === "INVALID_TICKET") {
