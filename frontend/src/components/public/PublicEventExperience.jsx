@@ -252,13 +252,38 @@ export default function PublicEventExperience({
           return parts.join(" ") || "less than a minute";
         }
 
+        function formatCutoffLabel(cutoffDate) {
+          const msUntil = cutoffDate - now;
+          if (msUntil <= 24 * 3600 * 1000) {
+            return `Ticket sales close in ${formatDuration(msUntil)}`;
+          }
+          return `Ticket sales close on ${cutoffDate.toLocaleString([], { month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })}`;
+        }
+
+        const salesCutoff = eventData.event.salesCutoffAt ? new Date(eventData.event.salesCutoffAt) : null;
+        const hasCutoffNotice = salesCutoff && salesCutoff > now;
+        const hasWindowNotice = eventData.event.salesWindowStart && eventData.event.salesWindowEnd;
+
+        let eventBanner = null;
         if (msUntilEnd <= 0) {
-          return <p className="mt-2 rounded border border-red-300 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 inline-block">This event has ended</p>;
+          eventBanner = <p className="mt-2 rounded border border-red-300 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 inline-block">This event has ended</p>;
+        } else if (msUntilStart <= 0) {
+          eventBanner = <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700 inline-block">Event has started — {formatDuration(msUntilEnd)} remaining</p>;
+        } else {
+          eventBanner = <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700 inline-block">Event starts in {formatDuration(msUntilStart)}</p>;
         }
-        if (msUntilStart <= 0) {
-          return <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700 inline-block">Event has started — {formatDuration(msUntilEnd)} remaining</p>;
-        }
-        return <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700 inline-block">Event starts in {formatDuration(msUntilStart)}</p>;
+
+        return (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {eventBanner}
+            {hasCutoffNotice ? (
+              <p className="rounded border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700 inline-block">{formatCutoffLabel(salesCutoff)}</p>
+            ) : null}
+            {hasWindowNotice ? (
+              <p className="rounded border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700 inline-block">Tickets available daily {eventData.event.salesWindowStart} – {eventData.event.salesWindowEnd}</p>
+            ) : null}
+          </div>
+        );
       })()}
       <div className="mt-3 rounded border bg-white p-3 text-sm">
         <p className="font-semibold">Ticket Types</p>
