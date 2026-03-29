@@ -252,6 +252,13 @@ export default function PublicEventExperience({
           return parts.join(" ") || "less than a minute";
         }
 
+        function formatTime(hhmm) {
+          const [h, m] = hhmm.split(":").map(Number);
+          const suffix = h >= 12 ? "PM" : "AM";
+          const h12 = h % 12 || 12;
+          return `${h12}:${String(m).padStart(2, "0")} ${suffix}`;
+        }
+
         function formatCutoffLabel(cutoffDate) {
           const msUntil = cutoffDate - now;
           if (msUntil <= 24 * 3600 * 1000) {
@@ -261,8 +268,9 @@ export default function PublicEventExperience({
         }
 
         const salesCutoff = eventData.event.salesCutoffAt ? new Date(eventData.event.salesCutoffAt) : null;
+        const salesExpired = msUntilEnd <= 0 || (salesCutoff && salesCutoff <= now);
         const hasCutoffNotice = salesCutoff && salesCutoff > now;
-        const hasWindowNotice = eventData.event.salesWindowStart && eventData.event.salesWindowEnd;
+        const hasWindowNotice = !salesExpired && eventData.event.salesWindowStart && eventData.event.salesWindowEnd;
 
         let eventBanner = null;
         if (msUntilEnd <= 0) {
@@ -280,7 +288,7 @@ export default function PublicEventExperience({
               <p className="rounded border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700 inline-block">{formatCutoffLabel(salesCutoff)}</p>
             ) : null}
             {hasWindowNotice ? (
-              <p className="rounded border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700 inline-block">Tickets available daily {eventData.event.salesWindowStart} – {eventData.event.salesWindowEnd}</p>
+              <p className="rounded border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700 inline-block">Tickets available daily {formatTime(eventData.event.salesWindowStart)} – {formatTime(eventData.event.salesWindowEnd)}</p>
             ) : null}
           </div>
         );
