@@ -51,6 +51,11 @@
 - Decision: Use one shared public-event renderer for live and preview views, and model cancellations as explicit ticket/request metadata with organizer-authored buyer messages for public-page sales.
 - Consequence: UI changes to the public event page now reflect in preview automatically, and cancelled public-page tickets can show reason/evidence consistently across organizer and buyer surfaces.
 
+## DEC-012 (2026-03-29)
+- Context: Sales window open/close times need to be stored and compared against local event time regardless of server timezone.
+- Decision: Store `salesWindowStart` / `salesWindowEnd` as `HH:MM` strings (24h) rather than UTC DateTimes. Comparison is done in the server's local minute-of-day (`new Date()` → hours * 60 + minutes).
+- Consequence: Simple, timezone-portable storage; no DateTime arithmetic; display conversion (24h → 12h) done in `formatTime()` helper on the frontend.
+
 ## DEC-011 (2026-03-17)
 - Context: Needed one coherent messaging system without 3-party threads while preserving legacy flows.
 - Decision: Enforced strict pairwise chat model and routed all new reads/writes through unified chat service with compatibility aliases.

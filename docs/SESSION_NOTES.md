@@ -150,6 +150,16 @@
 ### Backend restart note
 - `chatController.js` and `chatService.js` changes require backend restart. Backend uses `node index.js` (no nodemon). The recovery subject fix and `ticketRequestId` backfill both depend on the server picking up the new code.
 
+## 2026-03-29 (Event controls, lifecycle banner, sales blocking, max tickets per email)
+
+- **Schema** (`backend/prisma/schema.prisma`, migration `20260329000001_add_sales_controls`): Added 4 nullable fields to `UserEvent`: `salesCutoffAt` (DateTime), `salesWindowStart` (String HH:MM), `salesWindowEnd` (String HH:MM), `maxTicketsPerEmail` (Int).
+- **Backend enforcement** (`backend/controllers/publicController.js`, `createPublicTicketRequest`): Blocks requests when cutoff passed, outside daily window, or buyer has reached max tickets per email (counting APPROVED + PENDING_VERIFICATION across all requests for that email on the event).
+- **Public event page** (`frontend/src/components/public/PublicEventExperience.jsx`): Always-visible lifecycle banner (3 states: before start amber, after start amber, after end red). Amber badges for cutoff and window notices (hidden when sales closed). Request form hidden when any blocking condition active.
+- **EXPIRED scanner outcome** (`backend/controllers/scanController.js`): New `EXPIRED` outcome fires when `scannedAt > (eventEndDate || eventDate)`. Ticket NOT marked USED. `TicketVerify.jsx` shows orange EXPIRED badge.
+- **Past-date validation**: Frontend blocks saves when start date is in the past; backend enforces same on all 3 save paths. End date must be after start date.
+- **Advanced settings UI** (`frontend/src/pages/Dashboard.jsx`): Collapsible "Advanced Settings" section (state: `advancedSettingsOpen`) appears above Save in all 3 event form locations. Exposes cutoff, window start/end, and max tickets per email. Sends `null` on clear to explicitly remove DB value.
+- **12-hour time display**: `formatTime(HH:MM)` helper in `PublicEventExperience.jsx` converts stored 24h strings to 12h for display.
+
 ## 2026-03-18 (Chat bug fix + Help page rework + Dashboard home rework)
 - **Bug fix** (`backend/services/chatService.js`): `normalizeAccessCode()` was calling `.toUpperCase()` before DB lookup. Since `organizerAccessCode` is stored mixed-case in Postgres (case-sensitive), the lookup always failed → "Organizer scope not found." for organizers trying to send/read chat messages. Fixed by removing `.toUpperCase()` — now just `.trim()`. `listConversations` had previously worked only because it passed `?eventId=` triggering a secondary fallback in `requireOrganizerActor`.
 - **Help page** (`frontend/src/pages/HelpPage.jsx`): Replaced the name/email/access-code support form with a role-selection flow. Three roles: organizer → redirected to `/dashboard`, ticket buyer → redirected to `/client`, visitor → redirected to FAQ tab. Each result panel has a Back button. Removed all legacy API calls, localStorage token logic, and `FeedbackBanner`.
