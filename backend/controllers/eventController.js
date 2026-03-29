@@ -58,6 +58,9 @@ function toEventListItem(event) {
     eventAddress: event.eventAddress,
     accessCode: event.accessCode,
     createdAt: event.createdAt,
+    salesCutoffAt: event.salesCutoffAt,
+    salesWindowStart: event.salesWindowStart,
+    salesWindowEnd: event.salesWindowEnd,
   };
 }
 
@@ -94,6 +97,9 @@ async function resolveEventGroupByAccessCode(accessCode) {
       quantity: true,
       createdAt: true,
       designJson: true,
+      salesCutoffAt: true,
+      salesWindowStart: true,
+      salesWindowEnd: true,
     },
   });
 
@@ -550,6 +556,13 @@ async function updateEventInline(req, res) {
     Object.prototype.hasOwnProperty.call(req.body || {}, "designJson") &&
     req.body?.designJson &&
     typeof req.body.designJson === "object";
+  const salesCutoffRaw = String(req.body?.salesCutoffAt || "").trim();
+  const parsedSalesCutoff = salesCutoffRaw ? new Date(salesCutoffRaw) : null;
+  const hasSalesCutoff = Object.prototype.hasOwnProperty.call(req.body || {}, "salesCutoffAt");
+  const salesWindowStart = Object.prototype.hasOwnProperty.call(req.body || {}, "salesWindowStart")
+    ? (String(req.body.salesWindowStart || "").trim() || null) : undefined;
+  const salesWindowEnd = Object.prototype.hasOwnProperty.call(req.body || {}, "salesWindowEnd")
+    ? (String(req.body.salesWindowEnd || "").trim() || null) : undefined;
 
   if (eventDateRaw && Number.isNaN(parsedEventDate?.getTime())) {
     res.status(400).json({ error: "Invalid eventDate." });
@@ -592,6 +605,9 @@ async function updateEventInline(req, res) {
       ...(ticketType ? { ticketType } : {}),
       ...(hasTicketPrice ? { ticketPrice: parsedTicketPrice } : {}),
       ...(hasDesignJson ? { designJson: req.body.designJson } : {}),
+      ...(hasSalesCutoff ? { salesCutoffAt: parsedSalesCutoff || null } : {}),
+      ...(salesWindowStart !== undefined ? { salesWindowStart } : {}),
+      ...(salesWindowEnd !== undefined ? { salesWindowEnd } : {}),
     },
     select: {
       id: true,
@@ -606,6 +622,9 @@ async function updateEventInline(req, res) {
       ticketPrice: true,
       paymentInstructions: true,
       designJson: true,
+      salesCutoffAt: true,
+      salesWindowStart: true,
+      salesWindowEnd: true,
     },
   });
 

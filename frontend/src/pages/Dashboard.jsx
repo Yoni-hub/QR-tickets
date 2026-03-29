@@ -215,7 +215,8 @@ export default function Dashboard() {
   const [events, setEvents] = useState([]);
   const [selectedEventId, setSelectedEventId] = useState("");
   const [eventEditMode, setEventEditMode] = useState(EVENT_EDIT_MODES.CREATE);
-  const [eventDraft, setEventDraft] = useState({ organizerName: "", eventName: "", eventDate: "", eventEndDate: "", eventAddress: "", paymentInstructions: "" });
+  const [eventDraft, setEventDraft] = useState({ organizerName: "", eventName: "", eventDate: "", eventEndDate: "", eventAddress: "", paymentInstructions: "", salesCutoffAt: "", salesWindowStart: "", salesWindowEnd: "" });
+  const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
   const [savingEvent, setSavingEvent] = useState(false);
   const [savingTicketDraft, setSavingTicketDraft] = useState(false);
   const [tickets, setTickets] = useState([]);
@@ -471,6 +472,9 @@ export default function Dashboard() {
       eventEndDate: toLocalDateTimeInputValue(payload?.event?.eventEndDate),
       eventAddress: String(payload?.event?.eventAddress || ""),
       paymentInstructions: String(payload?.event?.paymentInstructions || ""),
+      salesCutoffAt: toLocalDateTimeInputValue(payload?.event?.salesCutoffAt),
+      salesWindowStart: String(payload?.event?.salesWindowStart || ""),
+      salesWindowEnd: String(payload?.event?.salesWindowEnd || ""),
     });
     setEventEditMode(EVENT_EDIT_MODES.EDIT);
   }, []);
@@ -1027,6 +1031,9 @@ export default function Dashboard() {
         eventEndDate: localDateTimeToISO(eventDraft.eventEndDate),
         eventAddress: eventDraft.eventAddress,
         paymentInstructions: eventDraft.paymentInstructions,
+        salesCutoffAt: localDateTimeToISO(eventDraft.salesCutoffAt) || null,
+        salesWindowStart: eventDraft.salesWindowStart || null,
+        salesWindowEnd: eventDraft.salesWindowEnd || null,
       });
       applySummaryEvent({
         ...(summary || {}),
@@ -1060,8 +1067,12 @@ export default function Dashboard() {
       organizerName: "",
       eventName: "",
       eventDate: "",
+      eventEndDate: "",
       eventAddress: "",
       paymentInstructions: "",
+      salesCutoffAt: "",
+      salesWindowStart: "",
+      salesWindowEnd: "",
     });
     setShowPublicPreview(false);
   };
@@ -1076,6 +1087,9 @@ export default function Dashboard() {
       eventEndDate: toLocalDateTimeInputValue(summary.event.eventEndDate),
       eventAddress: String(summary.event.eventAddress || ""),
       paymentInstructions: String(summary.event.paymentInstructions || ""),
+      salesCutoffAt: toLocalDateTimeInputValue(summary.event.salesCutoffAt),
+      salesWindowStart: String(summary.event.salesWindowStart || ""),
+      salesWindowEnd: String(summary.event.salesWindowEnd || ""),
     });
   };
 
@@ -1301,6 +1315,51 @@ export default function Dashboard() {
                 </div>
                 <button
                   type="button"
+                  onClick={() => setAdvancedSettingsOpen((prev) => !prev)}
+                  className="mt-4 flex w-full items-center justify-between rounded-xl border px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-500 hover:bg-slate-50"
+                  style={{ border: "1px solid #e5e7eb" }}
+                >
+                  <span>Advanced Settings</span>
+                  <span>{advancedSettingsOpen ? "▲" : "▼"}</span>
+                </button>
+                {advancedSettingsOpen ? (
+                  <div className="mt-2 space-y-4 rounded-xl border p-4 text-sm" style={{ border: "1px solid #e5e7eb" }}>
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold uppercase tracking-wider" style={{ color: "#9ca3af" }}>Stop selling after</label>
+                      <DateTimeInput
+                        value={eventDraft.salesCutoffAt}
+                        onChange={(v) => setEventDraft((prev) => ({ ...prev, salesCutoffAt: v }))}
+                        minDate={new Date().toISOString().slice(0, 10)}
+                      />
+                      {eventDraft.salesCutoffAt ? (
+                        <button type="button" className="mt-1 text-xs text-slate-400 underline" onClick={() => setEventDraft((prev) => ({ ...prev, salesCutoffAt: "" }))}>Clear</button>
+                      ) : null}
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold uppercase tracking-wider" style={{ color: "#9ca3af" }}>Sell tickets from</label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="time"
+                          value={eventDraft.salesWindowStart}
+                          onChange={(e) => setEventDraft((prev) => ({ ...prev, salesWindowStart: e.target.value }))}
+                          className="rounded border p-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-300"
+                        />
+                        <span className="text-slate-500">to</span>
+                        <input
+                          type="time"
+                          value={eventDraft.salesWindowEnd}
+                          onChange={(e) => setEventDraft((prev) => ({ ...prev, salesWindowEnd: e.target.value }))}
+                          className="rounded border p-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-300"
+                        />
+                        {(eventDraft.salesWindowStart || eventDraft.salesWindowEnd) ? (
+                          <button type="button" className="text-xs text-slate-400 underline" onClick={() => setEventDraft((prev) => ({ ...prev, salesWindowStart: "", salesWindowEnd: "" }))}>Clear</button>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+                <button
+                  type="button"
                   onClick={saveEventInline}
                   disabled={savingEvent}
                   className="mt-5 w-full rounded-xl py-3.5 text-sm font-bold text-white shadow-lg transition-opacity hover:opacity-90 disabled:opacity-50"
@@ -1517,6 +1576,50 @@ export default function Dashboard() {
                     />
                     <p className="mt-1 text-xs text-slate-500">Leave this blank for free events.</p>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setAdvancedSettingsOpen((prev) => !prev)}
+                    className="mt-2 flex w-full items-center justify-between rounded border px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-500 hover:bg-slate-50"
+                  >
+                    <span>Advanced Settings</span>
+                    <span>{advancedSettingsOpen ? "▲" : "▼"}</span>
+                  </button>
+                  {advancedSettingsOpen ? (
+                    <div className="mt-2 space-y-3 rounded border p-3 text-sm">
+                      <div>
+                        <p className="font-semibold">Stop selling after:</p>
+                        <DateTimeInput
+                          value={eventDraft.salesCutoffAt}
+                          onChange={(v) => setEventDraft((prev) => ({ ...prev, salesCutoffAt: v }))}
+                          minDate={new Date().toISOString().slice(0, 10)}
+                        />
+                        {eventDraft.salesCutoffAt ? (
+                          <button type="button" className="mt-1 text-xs text-slate-400 underline" onClick={() => setEventDraft((prev) => ({ ...prev, salesCutoffAt: "" }))}>Clear</button>
+                        ) : null}
+                      </div>
+                      <div>
+                        <p className="font-semibold">Sell tickets from:</p>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="time"
+                            value={eventDraft.salesWindowStart}
+                            onChange={(e) => setEventDraft((prev) => ({ ...prev, salesWindowStart: e.target.value }))}
+                            className="rounded border p-1.5 text-sm focus:outline-none"
+                          />
+                          <span className="text-slate-500">to</span>
+                          <input
+                            type="time"
+                            value={eventDraft.salesWindowEnd}
+                            onChange={(e) => setEventDraft((prev) => ({ ...prev, salesWindowEnd: e.target.value }))}
+                            className="rounded border p-1.5 text-sm focus:outline-none"
+                          />
+                          {(eventDraft.salesWindowStart || eventDraft.salesWindowEnd) ? (
+                            <button type="button" className="text-xs text-slate-400 underline" onClick={() => setEventDraft((prev) => ({ ...prev, salesWindowStart: "", salesWindowEnd: "" }))}>Clear</button>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <AppButton className="" onClick={saveEventInline} loading={savingEvent} loadingText={eventPrimaryLoadingLabel}>
@@ -2336,6 +2439,50 @@ export default function Dashboard() {
               onChange={(e) => setEventDraft((prev) => ({ ...prev, eventAddress: e.target.value }))}
             />
           </div>
+          <button
+            type="button"
+            onClick={() => setAdvancedSettingsOpen((prev) => !prev)}
+            className="mt-3 flex w-full items-center justify-between rounded border px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-500 hover:bg-slate-50"
+          >
+            <span>Advanced Settings</span>
+            <span>{advancedSettingsOpen ? "▲" : "▼"}</span>
+          </button>
+          {advancedSettingsOpen ? (
+            <div className="mt-2 space-y-3 rounded border p-3 text-sm">
+              <div>
+                <p className="font-semibold">Stop selling after:</p>
+                <DateTimeInput
+                  value={eventDraft.salesCutoffAt}
+                  onChange={(v) => setEventDraft((prev) => ({ ...prev, salesCutoffAt: v }))}
+                  minDate={new Date().toISOString().slice(0, 10)}
+                />
+                {eventDraft.salesCutoffAt ? (
+                  <button type="button" className="mt-1 text-xs text-slate-400 underline" onClick={() => setEventDraft((prev) => ({ ...prev, salesCutoffAt: "" }))}>Clear</button>
+                ) : null}
+              </div>
+              <div>
+                <p className="font-semibold">Sell tickets from:</p>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="time"
+                    value={eventDraft.salesWindowStart}
+                    onChange={(e) => setEventDraft((prev) => ({ ...prev, salesWindowStart: e.target.value }))}
+                    className="rounded border p-1.5 text-sm focus:outline-none"
+                  />
+                  <span className="text-slate-500">to</span>
+                  <input
+                    type="time"
+                    value={eventDraft.salesWindowEnd}
+                    onChange={(e) => setEventDraft((prev) => ({ ...prev, salesWindowEnd: e.target.value }))}
+                    className="rounded border p-1.5 text-sm focus:outline-none"
+                  />
+                  {(eventDraft.salesWindowStart || eventDraft.salesWindowEnd) ? (
+                    <button type="button" className="text-xs text-slate-400 underline" onClick={() => setEventDraft((prev) => ({ ...prev, salesWindowStart: "", salesWindowEnd: "" }))}>Clear</button>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          ) : null}
           <div className="mt-3 flex flex-wrap gap-2">
             <AppButton className="" onClick={saveEventInline} loading={savingEvent} loadingText={eventPrimaryLoadingLabel}>
               {eventPrimaryActionLabel}

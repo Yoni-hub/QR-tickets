@@ -27,6 +27,9 @@ model UserEvent {
   organizerAccessCode String?
   isDemo      Boolean     @default(false)
   autoApprove Boolean     @default(false)
+  salesCutoffAt       DateTime?
+  salesWindowStart    String?
+  salesWindowEnd      String?
   organizerEmail      String?
   notifyOnRequest     Boolean @default(false)
   notifyOnMessage     Boolean @default(false)

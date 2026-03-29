@@ -312,6 +312,9 @@ async function getPublicEventBySlug(req, res) {
       designJson: true,
       adminStatus: true,
       accessCode: true,
+      salesCutoffAt: true,
+      salesWindowStart: true,
+      salesWindowEnd: true,
     },
   });
 
@@ -345,6 +348,9 @@ async function getPublicEventBySlug(req, res) {
       paymentInstructions: event.paymentInstructions,
       ticketTypes,
       ticketsRemaining,
+      salesCutoffAt: event.salesCutoffAt,
+      salesWindowStart: event.salesWindowStart,
+      salesWindowEnd: event.salesWindowEnd,
     },
     promoters,
   });
@@ -399,6 +405,7 @@ async function createPublicTicketRequest(req, res) {
       slug: true,
       eventName: true,
       eventDate: true,
+      eventEndDate: true,
       eventAddress: true,
       paymentInstructions: true,
       ticketPrice: true,
@@ -410,12 +417,38 @@ async function createPublicTicketRequest(req, res) {
       notifyOnRequest: true,
       organizerAccessCode: true,
       accessCode: true,
+      salesCutoffAt: true,
+      salesWindowStart: true,
+      salesWindowEnd: true,
     },
   });
 
   if (!event || event.adminStatus !== "ACTIVE") {
     res.status(404).json({ error: "Event not found." });
     return;
+  }
+
+  // Sales controls check
+  const now = new Date();
+  const expiryDate = event.eventEndDate || event.eventDate;
+  if (expiryDate && now > new Date(expiryDate)) {
+    res.status(400).json({ error: "This event has ended. Ticket requests are no longer accepted." });
+    return;
+  }
+  if (event.salesCutoffAt && now > new Date(event.salesCutoffAt)) {
+    res.status(400).json({ error: "Ticket sales have closed for this event." });
+    return;
+  }
+  if (event.salesWindowStart && event.salesWindowEnd) {
+    const [startH, startM] = event.salesWindowStart.split(":").map(Number);
+    const [endH, endM] = event.salesWindowEnd.split(":").map(Number);
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    const windowStartMinutes = startH * 60 + startM;
+    const windowEndMinutes = endH * 60 + endM;
+    if (nowMinutes < windowStartMinutes || nowMinutes >= windowEndMinutes) {
+      res.status(400).json({ error: `Ticket sales are only open from ${event.salesWindowStart} to ${event.salesWindowEnd}.` });
+      return;
+    }
   }
 
   const ticketTypes = await buildTicketTypeStats(event);

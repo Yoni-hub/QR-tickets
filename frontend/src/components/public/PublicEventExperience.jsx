@@ -234,17 +234,31 @@ export default function PublicEventExperience({
       ) : null}
       <p className="mt-2 text-slate-600">{formatDate(eventData.event.eventDate)}{eventData.event.eventEndDate ? ` — ${formatDate(eventData.event.eventEndDate)}` : ""} | {eventData.event.location}</p>
       {(() => {
-        const msUntilStart = new Date(eventData.event.eventDate) - new Date();
-        if (msUntilStart > 0 && msUntilStart < 6 * 3600 * 1000) {
-          const totalMinutes = Math.ceil(msUntilStart / 60000);
-          const hours = Math.floor(totalMinutes / 60);
+        const now = new Date();
+        const startDate = new Date(eventData.event.eventDate);
+        const expiryDate = eventData.event.eventEndDate ? new Date(eventData.event.eventEndDate) : startDate;
+        const msUntilStart = startDate - now;
+        const msUntilEnd = expiryDate - now;
+
+        function formatDuration(ms) {
+          const totalMinutes = Math.ceil(ms / 60000);
+          const days = Math.floor(totalMinutes / 1440);
+          const hours = Math.floor((totalMinutes % 1440) / 60);
           const minutes = totalMinutes % 60;
-          const label = hours > 0
-            ? `Event starts in ${hours} hour${hours !== 1 ? "s" : ""}${minutes > 0 ? ` ${minutes} minute${minutes !== 1 ? "s" : ""}` : ""}`
-            : `Event starts in ${minutes} minute${minutes !== 1 ? "s" : ""}`;
-          return <p className="mt-1 rounded bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700 border border-amber-200 inline-block">{label}</p>;
+          const parts = [];
+          if (days > 0) parts.push(`${days} day${days !== 1 ? "s" : ""}`);
+          if (hours > 0) parts.push(`${hours} hour${hours !== 1 ? "s" : ""}`);
+          if (minutes > 0 && days === 0) parts.push(`${minutes} minute${minutes !== 1 ? "s" : ""}`);
+          return parts.join(" ") || "less than a minute";
         }
-        return null;
+
+        if (msUntilEnd <= 0) {
+          return <p className="mt-2 rounded border border-red-300 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 inline-block">This event has ended</p>;
+        }
+        if (msUntilStart <= 0) {
+          return <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700 inline-block">Event has started — {formatDuration(msUntilEnd)} remaining</p>;
+        }
+        return <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700 inline-block">Event starts in {formatDuration(msUntilStart)}</p>;
       })()}
       <div className="mt-3 rounded border bg-white p-3 text-sm">
         <p className="font-semibold">Ticket Types</p>
@@ -338,6 +352,57 @@ export default function PublicEventExperience({
         </div>
       ) : null}
 
+      {(() => {
+        const now = new Date();
+        const expiryDate = eventData.event.eventEndDate ? new Date(eventData.event.eventEndDate) : new Date(eventData.event.eventDate);
+        if (now > expiryDate) {
+          return (
+            <div className="mt-5 rounded border border-red-300 bg-red-50 p-4 text-center">
+              <p className="text-lg font-bold text-red-700">This event has ended</p>
+              <p className="mt-1 text-sm text-red-600">Ticket requests are no longer accepted.</p>
+            </div>
+          );
+        }
+        if (eventData.event.salesCutoffAt && now > new Date(eventData.event.salesCutoffAt)) {
+          return (
+            <div className="mt-5 rounded border border-red-300 bg-red-50 p-4 text-center">
+              <p className="text-lg font-bold text-red-700">Ticket sales have closed</p>
+              <p className="mt-1 text-sm text-red-600">The organizer has stopped accepting new ticket requests.</p>
+            </div>
+          );
+        }
+        if (eventData.event.salesWindowStart && eventData.event.salesWindowEnd) {
+          const [startH, startM] = eventData.event.salesWindowStart.split(":").map(Number);
+          const [endH, endM] = eventData.event.salesWindowEnd.split(":").map(Number);
+          const nowMinutes = now.getHours() * 60 + now.getMinutes();
+          const windowStartMinutes = startH * 60 + startM;
+          const windowEndMinutes = endH * 60 + endM;
+          if (nowMinutes < windowStartMinutes || nowMinutes >= windowEndMinutes) {
+            return (
+              <div className="mt-5 rounded border border-amber-300 bg-amber-50 p-4 text-center">
+                <p className="text-lg font-bold text-amber-800">Ticket sales are currently closed</p>
+                <p className="mt-1 text-sm text-amber-700">Sales are open from {eventData.event.salesWindowStart} to {eventData.event.salesWindowEnd}. Please come back after {eventData.event.salesWindowEnd}.</p>
+              </div>
+            );
+          }
+        }
+        return null;
+      })()}
+
+      {(() => {
+        const now = new Date();
+        const expiryDate = eventData.event.eventEndDate ? new Date(eventData.event.eventEndDate) : new Date(eventData.event.eventDate);
+        const salesClosed = now > expiryDate
+          || (eventData.event.salesCutoffAt && now > new Date(eventData.event.salesCutoffAt));
+        const outsideWindow = eventData.event.salesWindowStart && eventData.event.salesWindowEnd && (() => {
+          const [startH, startM] = eventData.event.salesWindowStart.split(":").map(Number);
+          const [endH, endM] = eventData.event.salesWindowEnd.split(":").map(Number);
+          const nowMinutes = now.getHours() * 60 + now.getMinutes();
+          return nowMinutes < startH * 60 + startM || nowMinutes >= endH * 60 + endM;
+        })();
+        if (salesClosed || outsideWindow) return null;
+        return true;
+      })() ? (
       <section className={`mt-5 rounded border bg-white p-4 ${eventData.event.ticketsRemaining === 0 && (eventData.event.ticketTypes || []).length > 0 ? "hidden" : ""}`}>
         <h2 className="text-lg font-semibold">Request Tickets</h2>
         <div className="mt-3 grid grid-cols-1 gap-2">
@@ -406,6 +471,7 @@ export default function PublicEventExperience({
           </AppButton>
         )}
       </section>
+      ) : null}
     </main>
   );
 }
