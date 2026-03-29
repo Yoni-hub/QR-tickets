@@ -315,6 +315,7 @@ async function getPublicEventBySlug(req, res) {
       salesCutoffAt: true,
       salesWindowStart: true,
       salesWindowEnd: true,
+      maxTicketsPerEmail: true,
     },
   });
 
@@ -351,6 +352,7 @@ async function getPublicEventBySlug(req, res) {
       salesCutoffAt: event.salesCutoffAt,
       salesWindowStart: event.salesWindowStart,
       salesWindowEnd: event.salesWindowEnd,
+      maxTicketsPerEmail: event.maxTicketsPerEmail,
     },
     promoters,
   });
@@ -420,6 +422,7 @@ async function createPublicTicketRequest(req, res) {
       salesCutoffAt: true,
       salesWindowStart: true,
       salesWindowEnd: true,
+      maxTicketsPerEmail: true,
     },
   });
 
@@ -479,6 +482,27 @@ async function createPublicTicketRequest(req, res) {
       unitPrice,
       lineTotal,
     });
+  }
+
+  if (event.maxTicketsPerEmail) {
+    const existingCount = await prisma.ticketRequest.aggregate({
+      where: {
+        eventId: event.id,
+        email,
+        status: { in: ["PENDING_VERIFICATION", "APPROVED"] },
+      },
+      _sum: { quantity: true },
+    });
+    const alreadyHas = existingCount._sum.quantity || 0;
+    if (alreadyHas + totalQuantity > event.maxTicketsPerEmail) {
+      const remaining = Math.max(0, event.maxTicketsPerEmail - alreadyHas);
+      res.status(400).json({
+        error: remaining > 0
+          ? `You can only get up to ${event.maxTicketsPerEmail} tickets per email for this event. You already have ${alreadyHas} — you can request ${remaining} more.`
+          : `You have reached the maximum of ${event.maxTicketsPerEmail} tickets allowed per email for this event.`,
+      });
+      return;
+    }
   }
 
   if (totalPrice > 0 && !evidenceValidation.value) {

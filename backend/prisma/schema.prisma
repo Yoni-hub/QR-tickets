@@ -30,6 +30,7 @@ model UserEvent {
   salesCutoffAt       DateTime?
   salesWindowStart    String?
   salesWindowEnd      String?
+  maxTicketsPerEmail  Int?
   organizerEmail      String?
   notifyOnRequest     Boolean @default(false)
   notifyOnMessage     Boolean @default(false)

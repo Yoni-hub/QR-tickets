@@ -61,6 +61,7 @@ function toEventListItem(event) {
     salesCutoffAt: event.salesCutoffAt,
     salesWindowStart: event.salesWindowStart,
     salesWindowEnd: event.salesWindowEnd,
+    maxTicketsPerEmail: event.maxTicketsPerEmail,
   };
 }
 
@@ -100,6 +101,7 @@ async function resolveEventGroupByAccessCode(accessCode) {
       salesCutoffAt: true,
       salesWindowStart: true,
       salesWindowEnd: true,
+      maxTicketsPerEmail: true,
     },
   });
 
@@ -563,6 +565,11 @@ async function updateEventInline(req, res) {
     ? (String(req.body.salesWindowStart || "").trim() || null) : undefined;
   const salesWindowEnd = Object.prototype.hasOwnProperty.call(req.body || {}, "salesWindowEnd")
     ? (String(req.body.salesWindowEnd || "").trim() || null) : undefined;
+  const hasMaxTickets = Object.prototype.hasOwnProperty.call(req.body || {}, "maxTicketsPerEmail");
+  const maxTicketsPerEmailRaw = hasMaxTickets ? String(req.body.maxTicketsPerEmail ?? "").trim() : undefined;
+  const maxTicketsPerEmail = maxTicketsPerEmailRaw === "" || maxTicketsPerEmailRaw === undefined
+    ? (hasMaxTickets ? null : undefined)
+    : (Number.isInteger(Number(maxTicketsPerEmailRaw)) && Number(maxTicketsPerEmailRaw) > 0 ? Number(maxTicketsPerEmailRaw) : undefined);
 
   if (eventDateRaw && Number.isNaN(parsedEventDate?.getTime())) {
     res.status(400).json({ error: "Invalid eventDate." });
@@ -608,6 +615,7 @@ async function updateEventInline(req, res) {
       ...(hasSalesCutoff ? { salesCutoffAt: parsedSalesCutoff || null } : {}),
       ...(salesWindowStart !== undefined ? { salesWindowStart } : {}),
       ...(salesWindowEnd !== undefined ? { salesWindowEnd } : {}),
+      ...(maxTicketsPerEmail !== undefined ? { maxTicketsPerEmail } : {}),
     },
     select: {
       id: true,
@@ -625,6 +633,7 @@ async function updateEventInline(req, res) {
       salesCutoffAt: true,
       salesWindowStart: true,
       salesWindowEnd: true,
+      maxTicketsPerEmail: true,
     },
   });
 

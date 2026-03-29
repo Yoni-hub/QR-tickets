@@ -215,7 +215,7 @@ export default function Dashboard() {
   const [events, setEvents] = useState([]);
   const [selectedEventId, setSelectedEventId] = useState("");
   const [eventEditMode, setEventEditMode] = useState(EVENT_EDIT_MODES.CREATE);
-  const [eventDraft, setEventDraft] = useState({ organizerName: "", eventName: "", eventDate: "", eventEndDate: "", eventAddress: "", paymentInstructions: "", salesCutoffAt: "", salesWindowStart: "", salesWindowEnd: "" });
+  const [eventDraft, setEventDraft] = useState({ organizerName: "", eventName: "", eventDate: "", eventEndDate: "", eventAddress: "", paymentInstructions: "", salesCutoffAt: "", salesWindowStart: "", salesWindowEnd: "", maxTicketsPerEmail: "" });
   const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
   const [savingEvent, setSavingEvent] = useState(false);
   const [savingTicketDraft, setSavingTicketDraft] = useState(false);
@@ -475,6 +475,7 @@ export default function Dashboard() {
       salesCutoffAt: toLocalDateTimeInputValue(payload?.event?.salesCutoffAt),
       salesWindowStart: String(payload?.event?.salesWindowStart || ""),
       salesWindowEnd: String(payload?.event?.salesWindowEnd || ""),
+      maxTicketsPerEmail: payload?.event?.maxTicketsPerEmail != null ? String(payload.event.maxTicketsPerEmail) : "",
     });
     setEventEditMode(EVENT_EDIT_MODES.EDIT);
   }, []);
@@ -1034,6 +1035,7 @@ export default function Dashboard() {
         salesCutoffAt: localDateTimeToISO(eventDraft.salesCutoffAt) || null,
         salesWindowStart: eventDraft.salesWindowStart || null,
         salesWindowEnd: eventDraft.salesWindowEnd || null,
+        maxTicketsPerEmail: eventDraft.maxTicketsPerEmail ? Number(eventDraft.maxTicketsPerEmail) : null,
       });
       applySummaryEvent({
         ...(summary || {}),
@@ -1073,6 +1075,7 @@ export default function Dashboard() {
       salesCutoffAt: "",
       salesWindowStart: "",
       salesWindowEnd: "",
+      maxTicketsPerEmail: "",
     });
     setShowPublicPreview(false);
   };
@@ -1090,6 +1093,7 @@ export default function Dashboard() {
       salesCutoffAt: toLocalDateTimeInputValue(summary.event.salesCutoffAt),
       salesWindowStart: String(summary.event.salesWindowStart || ""),
       salesWindowEnd: String(summary.event.salesWindowEnd || ""),
+      maxTicketsPerEmail: summary.event.maxTicketsPerEmail != null ? String(summary.event.maxTicketsPerEmail) : "",
     });
   };
 
@@ -1356,6 +1360,18 @@ export default function Dashboard() {
                         ) : null}
                       </div>
                     </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold uppercase tracking-wider" style={{ color: "#9ca3af" }}>Max tickets per email</label>
+                      <input
+                        type="number"
+                        min="1"
+                        placeholder="No limit"
+                        value={eventDraft.maxTicketsPerEmail}
+                        onChange={(e) => setEventDraft((prev) => ({ ...prev, maxTicketsPerEmail: e.target.value }))}
+                        className="w-32 rounded border p-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-300"
+                      />
+                      <p className="mt-1 text-xs text-slate-400">Leave blank for no limit.</p>
+                    </div>
                   </div>
                 ) : null}
                 <button
@@ -1617,6 +1633,18 @@ export default function Dashboard() {
                             <button type="button" className="text-xs text-slate-400 underline" onClick={() => setEventDraft((prev) => ({ ...prev, salesWindowStart: "", salesWindowEnd: "" }))}>Clear</button>
                           ) : null}
                         </div>
+                      </div>
+                      <div>
+                        <p className="font-semibold">Max tickets per email:</p>
+                        <input
+                          type="number"
+                          min="1"
+                          placeholder="No limit"
+                          value={eventDraft.maxTicketsPerEmail}
+                          onChange={(e) => setEventDraft((prev) => ({ ...prev, maxTicketsPerEmail: e.target.value }))}
+                          className="w-32 rounded border p-1.5 text-sm focus:outline-none"
+                        />
+                        <p className="mt-1 text-xs text-slate-500">Leave blank for no limit.</p>
                       </div>
                     </div>
                   ) : null}
@@ -2480,6 +2508,18 @@ export default function Dashboard() {
                     <button type="button" className="text-xs text-slate-400 underline" onClick={() => setEventDraft((prev) => ({ ...prev, salesWindowStart: "", salesWindowEnd: "" }))}>Clear</button>
                   ) : null}
                 </div>
+              </div>
+              <div>
+                <p className="font-semibold">Max tickets per email:</p>
+                <input
+                  type="number"
+                  min="1"
+                  placeholder="No limit"
+                  value={eventDraft.maxTicketsPerEmail}
+                  onChange={(e) => setEventDraft((prev) => ({ ...prev, maxTicketsPerEmail: e.target.value }))}
+                  className="w-32 rounded border p-1.5 text-sm focus:outline-none"
+                />
+                <p className="mt-1 text-xs text-slate-500">Leave blank for no limit.</p>
               </div>
             </div>
           ) : null}
