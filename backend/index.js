@@ -90,6 +90,47 @@ app.get("/health", (_req, res) => {
   res.status(200).json({ status: "ok" });
 });
 
+// OG preview for social crawlers — nginx routes bot User-Agents here for /e/:slug
+app.get("/e/:slug", async (req, res) => {
+  const prisma = require("./utils/prisma");
+  const slug = String(req.params.slug || "").trim();
+  const base = process.env.PUBLIC_BASE_URL || "https://qr-tickets.connsura.com";
+  try {
+    const event = await prisma.userEvent.findFirst({
+      where: { slug, isDisabled: false },
+      select: { eventName: true, eventDate: true, eventAddress: true, organizerName: true },
+    });
+    const title = event ? `${event.eventName} — Get Your Ticket` : "Event Tickets · Connsura";
+    const description = event
+      ? `Tickets for ${event.eventName}${event.eventAddress ? ` at ${event.eventAddress}` : ""}. Get yours now on Connsura.`
+      : "Get your event tickets now on Connsura.";
+    const url = `${base}/e/${slug}`;
+    const image = `${base}/new_OG.png`;
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(`<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>${title}</title>
+<meta property="og:type" content="website">
+<meta property="og:url" content="${url}">
+<meta property="og:title" content="${title}">
+<meta property="og:description" content="${description}">
+<meta property="og:image" content="${image}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${title}">
+<meta name="twitter:description" content="${description}">
+<meta name="twitter:image" content="${image}">
+</head>
+<body></body>
+</html>`);
+  } catch {
+    res.redirect(302, `${base}/e/${slug}`);
+  }
+});
+
 app.use("/api", apiRoutes);
 
 server.listen(PORT, () => {
