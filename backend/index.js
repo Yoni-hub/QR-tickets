@@ -97,7 +97,7 @@ app.get("/e/:slug", async (req, res) => {
   const base = process.env.PUBLIC_BASE_URL || "https://qr-tickets.connsura.com";
   try {
     const event = await prisma.userEvent.findFirst({
-      where: { slug, isDisabled: false },
+      where: { slug, adminStatus: "ACTIVE" },
       select: { eventName: true, eventDate: true, eventAddress: true, organizerName: true },
     });
     const title = event ? `${event.eventName} — Get Your Ticket` : "Event Tickets · Connsura";
