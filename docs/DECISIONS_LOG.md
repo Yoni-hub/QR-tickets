@@ -56,6 +56,11 @@
 - Decision: Store `salesWindowStart` / `salesWindowEnd` as `HH:MM` strings (24h) rather than UTC DateTimes. Comparison is done in the server's local minute-of-day (`new Date()` → hours * 60 + minutes).
 - Consequence: Simple, timezone-portable storage; no DateTime arithmetic; display conversion (24h → 12h) done in `formatTime()` helper on the frontend.
 
+## DEC-013 (2026-04-02)
+- Context: Social sharing links for `/e/:slug` event pages showed the SPA shell with no meaningful OG meta tags because crawlers can't execute JavaScript.
+- Decision: Add a backend `GET /e/:slug` route in `index.js` that serves a static HTML shell with OG/Twitter card meta tags. nginx routes known crawler User-Agents to the backend; real users continue to get the React SPA directly.
+- Consequence: Social previews (WhatsApp, Facebook, Twitter) show event-specific title, description, and image. No change to the frontend routing or React render path for real users.
+
 ## DEC-011 (2026-03-17)
 - Context: Needed one coherent messaging system without 3-party threads while preserving legacy flows.
 - Decision: Enforced strict pairwise chat model and routed all new reads/writes through unified chat service with compatibility aliases.

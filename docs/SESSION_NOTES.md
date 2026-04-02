@@ -160,6 +160,13 @@
 - **Advanced settings UI** (`frontend/src/pages/Dashboard.jsx`): Collapsible "Advanced Settings" section (state: `advancedSettingsOpen`) appears above Save in all 3 event form locations. Exposes cutoff, window start/end, and max tickets per email. Sends `null` on clear to explicitly remove DB value.
 - **12-hour time display**: `formatTime(HH:MM)` helper in `PublicEventExperience.jsx` converts stored 24h strings to 12h for display.
 
+## 2026-04-02 (OG crawler redirect + client dashboard grouping)
+
+- **OG crawler route** (`backend/index.js`): Added `GET /e/:slug` route served server-side for social crawlers. nginx routes bot User-Agents (Facebook, Twitter, etc.) to the backend; real users get the React SPA. Returns an HTML shell with full OG + Twitter card meta tags using event-specific title/description fetched from `userEvent` (by slug, `adminStatus: ACTIVE`). Fallback redirects to the live event page on DB error.
+- **OG image** (`frontend/public/new_OG.png`): Replaced OG image; resized to 1200×630 for spec compliance.
+- **`UserEvent` field name fix** (`backend/index.js`, ac8c124): Corrected field name in the OG route `select` to match actual Prisma schema column names.
+- **Client dashboard ticket grouping** (`frontend/src/pages/ClientDashboardPage.jsx`): Tickets now grouped by event with collapsible sections per event.
+
 ## 2026-03-18 (Chat bug fix + Help page rework + Dashboard home rework)
 - **Bug fix** (`backend/services/chatService.js`): `normalizeAccessCode()` was calling `.toUpperCase()` before DB lookup. Since `organizerAccessCode` is stored mixed-case in Postgres (case-sensitive), the lookup always failed → "Organizer scope not found." for organizers trying to send/read chat messages. Fixed by removing `.toUpperCase()` — now just `.trim()`. `listConversations` had previously worked only because it passed `?eventId=` triggering a secondary fallback in `requireOrganizerActor`.
 - **Help page** (`frontend/src/pages/HelpPage.jsx`): Replaced the name/email/access-code support form with a role-selection flow. Three roles: organizer → redirected to `/dashboard`, ticket buyer → redirected to `/client`, visitor → redirected to FAQ tab. Each result panel has a Back button. Removed all legacy API calls, localStorage token logic, and `FeedbackBanner`.
