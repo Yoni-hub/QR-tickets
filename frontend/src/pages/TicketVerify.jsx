@@ -16,6 +16,7 @@ export default function TicketVerify() {
   const { ticketPublicId = "" } = useParams();
   const [ticket, setTicket] = useState(null);
   const [order, setOrder] = useState(null);
+  const [published, setPublished] = useState(null);
   const [showQr, setShowQr] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -30,6 +31,7 @@ export default function TicketVerify() {
         if (alive) {
           setTicket(response.data.ticket);
           setOrder(response.data.order || null);
+          setPublished(response.data.published ?? true);
         }
       } catch (requestError) {
         if (alive) {
@@ -56,6 +58,13 @@ export default function TicketVerify() {
   if (loading) return <main className="mx-auto w-full max-w-3xl px-4 py-4 sm:px-6 sm:py-6">Loading...</main>;
   if (error) return <main className="mx-auto w-full max-w-3xl px-4 py-4 text-red-600 sm:px-6 sm:py-6">{error}</main>;
   if (!ticket) return <main className="mx-auto w-full max-w-3xl px-4 py-4 sm:px-6 sm:py-6">Ticket not found.</main>;
+  if (published === false) return (
+    <main className="mx-auto w-full max-w-3xl px-4 py-12 text-center sm:px-6">
+      <p className="text-4xl mb-4">🔒</p>
+      <h1 className="text-xl font-semibold text-gray-800 mb-2">Event not yet published</h1>
+      <p className="text-gray-500">This event is not available yet. Check back soon.</p>
+    </main>
+  );
 
   const statusLabel =
     resolvedStatus === "VALID"

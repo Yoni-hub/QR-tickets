@@ -316,6 +316,7 @@ async function getPublicEventBySlug(req, res) {
       salesWindowStart: true,
       salesWindowEnd: true,
       maxTicketsPerEmail: true,
+      emailVerified: true,
     },
   });
 
@@ -355,6 +356,7 @@ async function getPublicEventBySlug(req, res) {
       maxTicketsPerEmail: event.maxTicketsPerEmail,
     },
     promoters,
+    published: event.emailVerified === true,
   });
 }
 

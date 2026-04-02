@@ -34,6 +34,7 @@ model UserEvent {
   organizerEmail      String?
   notifyOnRequest     Boolean @default(false)
   notifyOnMessage     Boolean @default(false)
+  emailVerified       Boolean @default(false)
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
   tickets     Ticket[]

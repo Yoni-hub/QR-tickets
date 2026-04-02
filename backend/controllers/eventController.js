@@ -6,7 +6,7 @@ const { createEvent, buildQrPayload } = require("../services/eventService");
 const { generateTicketPublicId } = require("../utils/ticketPublicId");
 const { checkDailyTicketCap } = require("../utils/dailyCaps");
 const { verifyTurnstile } = require("../utils/turnstile");
-const { sendOtpEmail } = require("../utils/mailer");
+const { sendOtpEmail, sendOrganizerRecoveryEmail } = require("../utils/mailer");
 const {
   DEFAULT_TICKET_TYPE,
   reservePendingTicketIds,
@@ -102,6 +102,7 @@ async function resolveEventGroupByAccessCode(accessCode) {
       salesWindowStart: true,
       salesWindowEnd: true,
       maxTicketsPerEmail: true,
+      emailVerified: true,
     },
   });
 
@@ -752,6 +753,7 @@ async function createEventForAccessCode(req, res) {
     return !existing;
   });
   const slug = await generateEventSlug(eventName);
+  const groupEmailVerified = group.events.some((e) => e.emailVerified === true);
   const created = await prisma.userEvent.create({
     data: {
       organizerName: organizerName || null,
@@ -765,6 +767,7 @@ async function createEventForAccessCode(req, res) {
       organizerAccessCode: group.organizerAccessCode,
       slug,
       isDemo: false,
+      emailVerified: groupEmailVerified,
     },
     select: {
       id: true,
@@ -802,13 +805,13 @@ async function getOrganizerNotifications(req, res) {
   }
   const event = await prisma.userEvent.findFirst({
     where: { OR: [{ accessCode }, { organizerAccessCode: accessCode }] },
-    select: { organizerEmail: true, notifyOnRequest: true, notifyOnMessage: true },
+    select: { organizerEmail: true, notifyOnRequest: true, notifyOnMessage: true, emailVerified: true },
   });
   if (!event) {
     res.status(404).json({ error: "Event not found." });
     return;
   }
-  res.json({ organizerEmail: event.organizerEmail || "", notifyOnRequest: event.notifyOnRequest, notifyOnMessage: event.notifyOnMessage });
+  res.json({ organizerEmail: event.organizerEmail || "", notifyOnRequest: event.notifyOnRequest, notifyOnMessage: event.notifyOnMessage, emailVerified: event.emailVerified });
 }
 
 async function updateOrganizerNotifications(req, res) {
@@ -894,10 +897,47 @@ async function verifyNotificationEmailOtp(req, res) {
 
   await prisma.emailVerification.update({ where: { id: record.id }, data: { verified: true, tokenUsed: true } });
 
-  // Save verified email to all events for this organizer
+  // Resolve current organizer's canonical organizerAccessCode
+  const currentEvent = await prisma.userEvent.findFirst({
+    where: { OR: [{ accessCode }, { organizerAccessCode: accessCode }] },
+    select: { accessCode: true, organizerAccessCode: true, eventName: true },
+  });
+  const canonicalOAC = currentEvent?.organizerAccessCode || currentEvent?.accessCode || accessCode;
+
+  // Duplicate check: does another organizer group already have this email verified?
+  const duplicate = await prisma.userEvent.findFirst({
+    where: {
+      emailVerified: true,
+      organizerEmail: email,
+      AND: [
+        { organizerAccessCode: { not: canonicalOAC } },
+        { accessCode: { not: canonicalOAC } },
+      ],
+    },
+    select: { organizerAccessCode: true, accessCode: true, eventName: true },
+  });
+  if (duplicate) {
+    const existingOAC = duplicate.organizerAccessCode || duplicate.accessCode;
+    const existingEvents = await prisma.userEvent.findMany({
+      where: { OR: [{ organizerAccessCode: existingOAC }, { accessCode: existingOAC }] },
+      select: { eventName: true, accessCode: true, organizerAccessCode: true },
+      orderBy: { createdAt: "asc" },
+    });
+    const entries = [{ organizerAccessCode: existingOAC, eventNames: existingEvents.map((e) => e.eventName) }];
+    sendOrganizerRecoveryEmail({ to: email, entries }).catch((err) =>
+      console.error("sendOrganizerRecoveryEmail failed", err)
+    );
+    res.status(409).json({
+      code: "EMAIL_ALREADY_REGISTERED",
+      error: "An organizer account already exists for this email. Your organizer code has been sent to your email.",
+    });
+    return;
+  }
+
+  // Save verified email and mark emailVerified on all events for this organizer
   await prisma.userEvent.updateMany({
     where: { OR: [{ accessCode }, { organizerAccessCode: accessCode }] },
-    data: { organizerEmail: email },
+    data: { organizerEmail: email, emailVerified: true },
   });
 
   res.json({ ok: true });

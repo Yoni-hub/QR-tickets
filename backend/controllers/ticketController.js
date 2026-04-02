@@ -51,6 +51,7 @@ async function getTicketByPublicId(req, res) {
           isDemo: true,
           adminStatus: true,
           designJson: true,
+          emailVerified: true,
         },
       },
     },
@@ -95,11 +96,11 @@ async function getTicketByPublicId(req, res) {
     ticketOut = { ...ticket, designJson: { ...ticket.designJson, priceText, currency } };
   }
 
-  // Strip event.designJson from the response (internal data)
-  const { designJson: _eventDesign, ...eventOut } = ticket.event;
+  // Strip event.designJson and internal fields from the response
+  const { designJson: _eventDesign, emailVerified: _emailVerified, ...eventOut } = ticket.event;
   ticketOut = { ...ticketOut, event: eventOut };
 
-  res.json({ ticket: ticketOut, order });
+  res.json({ ticket: ticketOut, order, published: ticket.event.emailVerified === true });
 }
 
 async function getPublicTicketByPublicId(req, res) {

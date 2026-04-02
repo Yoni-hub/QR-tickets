@@ -234,7 +234,14 @@ export default function Dashboard() {
   const [promoterFb, setPromoterFb] = useFeedback();
   const [chatFb, setChatFb] = useFeedback();
   const [notifFb, setNotifFb] = useFeedback();
-  const [notifDraft, setNotifDraft] = useState({ organizerEmail: "", notifyOnRequest: false, notifyOnMessage: false });
+  const [notifDraft, setNotifDraft] = useState({ organizerEmail: "", notifyOnRequest: false, notifyOnMessage: false, emailVerified: false });
+  const [verifyGateModal, setVerifyGateModal] = useState({ open: false, pendingAction: null });
+  const [gateEmailInput, setGateEmailInput] = useState("");
+  const [gateOtpInput, setGateOtpInput] = useState("");
+  const [gateOtpSent, setGateOtpSent] = useState(false);
+  const [sendingGateOtp, setSendingGateOtp] = useState(false);
+  const [verifyingGateOtp, setVerifyingGateOtp] = useState(false);
+  const [gateEmailFb, setGateEmailFb] = useFeedback();
   const [notifLoaded, setNotifLoaded] = useState(false);
   const [savingNotif, setSavingNotif] = useState(false);
   const [notifEmailInput, setNotifEmailInput] = useState("");
@@ -478,6 +485,10 @@ export default function Dashboard() {
       maxTicketsPerEmail: payload?.event?.maxTicketsPerEmail != null ? String(payload.event.maxTicketsPerEmail) : "",
     });
     setEventEditMode(EVENT_EDIT_MODES.EDIT);
+    // Seed emailVerified from event payload so gate doesn't flash for already-verified organizers
+    if (payload?.event?.emailVerified) {
+      setNotifDraft((prev) => ({ ...prev, emailVerified: true }));
+    }
   }, []);
 
   const handleTicketLockError = useCallback((requestError) => {
@@ -603,7 +614,7 @@ export default function Dashboard() {
     }, 1800);
   };
 
-  const copyTicketUrl = async (ticket) => {
+  const copyTicketUrlRaw = async (ticket) => {
     const ticketPublicId = ticket?.ticketPublicId;
     if (!ticketPublicId) return;
     try {
@@ -614,6 +625,11 @@ export default function Dashboard() {
     } catch {
       setTicketFb("error", "Could not copy ticket URL.");
     }
+  };
+
+  const copyTicketUrl = (ticket) => {
+    if (!isOrganizerVerified) { openVerifyGate({ type: "copyTicketUrl", ticket }); return; }
+    copyTicketUrlRaw(ticket);
   };
 
   const openEvidenceImage = (dataUrl) => {
@@ -850,7 +866,7 @@ export default function Dashboard() {
     if (!accessCode || notifLoaded) return;
     try {
       const res = await api.get(`/events/by-code/${encodeURIComponent(accessCode)}/notifications`);
-      setNotifDraft({ organizerEmail: res.data.organizerEmail || "", notifyOnRequest: res.data.notifyOnRequest, notifyOnMessage: res.data.notifyOnMessage });
+      setNotifDraft({ organizerEmail: res.data.organizerEmail || "", notifyOnRequest: res.data.notifyOnRequest, notifyOnMessage: res.data.notifyOnMessage, emailVerified: res.data.emailVerified ?? false });
       setNotifEmailInput(res.data.organizerEmail || "");
       setNotifLoaded(true);
     } catch {
@@ -894,7 +910,7 @@ export default function Dashboard() {
     setNotifEmailFb("", "");
     try {
       await api.post(`/events/by-code/${encodeURIComponent(accessCode)}/notifications/verify-email-otp`, { email: notifEmailInput, code: notifOtpInput });
-      setNotifDraft((prev) => ({ ...prev, organizerEmail: notifEmailInput }));
+      setNotifDraft((prev) => ({ ...prev, organizerEmail: notifEmailInput, emailVerified: true }));
       setNotifOtpSent(false);
       setNotifOtpInput("");
       setNotifEmailChanging(false);
@@ -903,6 +919,69 @@ export default function Dashboard() {
       setNotifEmailFb("error", err.response?.data?.error || "Verification failed.");
     } finally {
       setVerifyingNotifOtp(false);
+    }
+  };
+
+  const isOrganizerVerified = notifDraft.emailVerified === true && Boolean(notifDraft.organizerEmail);
+
+  const openVerifyGate = (pendingAction) => {
+    setGateEmailInput(notifDraft.organizerEmail || "");
+    setGateOtpInput("");
+    setGateOtpSent(false);
+    setGateEmailFb("", "");
+    setVerifyGateModal({ open: true, pendingAction });
+  };
+
+  const closeVerifyGate = () => {
+    setVerifyGateModal({ open: false, pendingAction: null });
+  };
+
+  const sendGateOtp = async () => {
+    if (!accessCode || sendingGateOtp) return;
+    setSendingGateOtp(true);
+    setGateEmailFb("", "");
+    try {
+      await api.post(`/events/by-code/${encodeURIComponent(accessCode)}/notifications/send-email-otp`, { email: gateEmailInput });
+      setGateOtpSent(true);
+      setGateOtpInput("");
+      setGateEmailFb("success", "Verification code sent. Check your inbox.");
+    } catch (err) {
+      const code = err.response?.data?.code;
+      if (code === "EMAIL_ALREADY_REGISTERED") {
+        setGateEmailFb("error", err.response.data.error);
+      } else {
+        setGateEmailFb("error", err.response?.data?.error || "Could not send code. Try again.");
+      }
+    } finally {
+      setSendingGateOtp(false);
+    }
+  };
+
+  const verifyGateOtp = async () => {
+    if (!accessCode || verifyingGateOtp) return;
+    setVerifyingGateOtp(true);
+    setGateEmailFb("", "");
+    try {
+      await api.post(`/events/by-code/${encodeURIComponent(accessCode)}/notifications/verify-email-otp`, { email: gateEmailInput, code: gateOtpInput });
+      // Mark verified and auto-enable notifications
+      setNotifDraft((prev) => ({ ...prev, organizerEmail: gateEmailInput, emailVerified: true, notifyOnRequest: true, notifyOnMessage: true }));
+      setNotifLoaded(false); // force reload next time notifications tab is opened
+      api.patch(`/events/by-code/${encodeURIComponent(accessCode)}/notifications`, { notifyOnRequest: true, notifyOnMessage: true }).catch(() => {});
+      const pending = verifyGateModal.pendingAction;
+      closeVerifyGate();
+      // Execute the original pending action now that verified
+      if (pending?.type === "shareEvent") shareEventRaw();
+      else if (pending?.type === "copyEventLink") copyPublicEventLinkRaw();
+      else if (pending?.type === "copyTicketUrl") copyTicketUrlRaw(pending.ticket);
+    } catch (err) {
+      const errCode = err.response?.data?.code;
+      if (errCode === "EMAIL_ALREADY_REGISTERED") {
+        setGateEmailFb("error", err.response.data.error);
+      } else {
+        setGateEmailFb("error", err.response?.data?.error || "Verification failed. Try again.");
+      }
+    } finally {
+      setVerifyingGateOtp(false);
     }
   };
 
@@ -1173,7 +1252,7 @@ export default function Dashboard() {
     }
   };
 
-  const shareEvent = async () => {
+  const shareEventRaw = async () => {
     if (!summary?.event?.slug) return;
     const url = `${window.location.origin}/e/${summary.event.slug}`;
     const shareData = {
@@ -1197,7 +1276,12 @@ export default function Dashboard() {
     }
   };
 
-  const copyPublicEventLink = async () => {
+  const shareEvent = () => {
+    if (!isOrganizerVerified) { openVerifyGate({ type: "shareEvent" }); return; }
+    shareEventRaw();
+  };
+
+  const copyPublicEventLinkRaw = async () => {
     if (!summary?.event?.slug) return;
     try {
       await navigator.clipboard.writeText(`${window.location.origin}/e/${summary.event.slug}`);
@@ -1205,6 +1289,11 @@ export default function Dashboard() {
     } catch {
       setTicketFb("error", "Could not copy public event link.");
     }
+  };
+
+  const copyPublicEventLink = () => {
+    if (!isOrganizerVerified) { openVerifyGate({ type: "copyEventLink" }); return; }
+    copyPublicEventLinkRaw();
   };
 
   const handleGetStarted = () => {
@@ -1688,18 +1777,24 @@ export default function Dashboard() {
                   </p>
                 )}
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <p className="break-all"><span className="font-semibold">Public Event Link:</span> {summary.event.slug ? `${window.location.origin}/e/${summary.event.slug}` : "Not available"}</p>
-                  {summary.event.slug ? (
-                    <button
-                      type="button"
-                      className="rounded border px-2 py-1 text-xs disabled:opacity-60"
-                        onClick={() => {
-                        void copyPublicEventLink();
-                      }}
-                    >
-                      {copiedPublicEventLink ? "Copied" : "Copy"}
-                    </button>
-                  ) : null}
+                  {isOrganizerVerified ? (
+                    <>
+                      <p className="break-all"><span className="font-semibold">Public Event Link:</span> {summary.event.slug ? `${window.location.origin}/e/${summary.event.slug}` : "Not available"}</p>
+                      {summary.event.slug ? (
+                        <button
+                          type="button"
+                          className="rounded border px-2 py-1 text-xs disabled:opacity-60"
+                          onClick={() => { void copyPublicEventLink(); }}
+                        >
+                          {copiedPublicEventLink ? "Copied" : "Copy"}
+                        </button>
+                      ) : null}
+                    </>
+                  ) : (
+                    <p className="text-xs text-amber-700 rounded border border-amber-300 bg-amber-50 px-2 py-1">
+                      <span className="font-semibold">Event not yet published.</span> Verify your email to publish and share your event.
+                    </p>
+                  )}
                 </div>
 
                 {summary.event.slug ? (
@@ -2558,6 +2653,61 @@ export default function Dashboard() {
               <AppButton type="button" variant="primary" onClick={closeOrganizerCodeModal}>
                 I saved the code
               </AppButton>
+            </div>
+          </section>
+        </ModalOverlay>
+      ) : null}
+
+      {verifyGateModal.open ? (
+        <ModalOverlay className="z-50 bg-black/50">
+          <section className="w-full max-w-sm rounded border bg-white p-5 shadow-xl">
+            <div className="flex items-start justify-between mb-3">
+              <div>
+                <p className="font-semibold text-gray-900">Verify your email to publish</p>
+                <p className="text-xs text-gray-500 mt-0.5">Your event will go live for ticket buyers once verified.</p>
+              </div>
+              <button type="button" onClick={closeVerifyGate} className="ml-3 text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+            </div>
+            <FeedbackBanner kind={gateEmailFb.kind} message={gateEmailFb.message} />
+            <div className="mt-2 space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Email address</label>
+                <input
+                  type="email"
+                  className="w-full rounded border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  value={gateEmailInput}
+                  onChange={(e) => setGateEmailInput(e.target.value)}
+                  placeholder="your@email.com"
+                  disabled={gateOtpSent}
+                />
+              </div>
+              {!gateOtpSent ? (
+                <AppButton type="button" variant="primary" className="w-full" onClick={sendGateOtp} loading={sendingGateOtp} loadingText="Sending...">
+                  Send verification code
+                </AppButton>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Enter the 6-digit code from your email</label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={6}
+                      className="w-full rounded border px-3 py-2 text-sm font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      value={gateOtpInput}
+                      onChange={(e) => setGateOtpInput(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      placeholder="123456"
+                    />
+                  </div>
+                  <AppButton type="button" variant="primary" className="w-full" onClick={verifyGateOtp} loading={verifyingGateOtp} loadingText="Verifying...">
+                    Verify &amp; publish event
+                  </AppButton>
+                  <button type="button" className="w-full text-xs text-blue-600 underline mt-1" onClick={() => { setGateOtpSent(false); setGateOtpInput(""); setGateEmailFb("", ""); }}>
+                    Use a different email
+                  </button>
+                </>
+              )}
+              <p className="text-xs text-gray-400">We&apos;ll also enable email notifications so you&apos;re alerted when someone requests a ticket.</p>
             </div>
           </section>
         </ModalOverlay>

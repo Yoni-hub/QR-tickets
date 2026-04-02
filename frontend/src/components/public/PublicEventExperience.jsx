@@ -224,8 +224,23 @@ export default function PublicEventExperience({
   if (error) return <main className="mx-auto max-w-3xl px-4 py-6 text-red-600">{error}</main>;
   if (!eventData?.event) return <main className="mx-auto max-w-3xl px-4 py-6">Event not found.</main>;
 
+  if (eventData.published === false && !previewMode) {
+    return (
+      <main className="mx-auto max-w-3xl px-4 py-12 text-center">
+        <p className="text-4xl mb-4">🔒</p>
+        <h1 className="text-xl font-semibold text-gray-800 mb-2">Event not yet published</h1>
+        <p className="text-gray-500">This event page is not available yet. Check back soon.</p>
+      </main>
+    );
+  }
+
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-4 sm:px-6 sm:py-6">
+      {eventData.published === false && previewMode && (
+        <div className="mb-4 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+          <strong>Preview only:</strong> This event is not yet published. Visitors will see a &quot;not yet published&quot; message until the organizer verifies their email.
+        </div>
+      )}
       <h1 className="text-2xl font-bold sm:text-3xl">{eventData.event.eventName}</h1>
       {eventData.event.organizerName ? (
         <p className="mt-2 text-sm font-semibold uppercase tracking-[0.14em] text-slate-500">
