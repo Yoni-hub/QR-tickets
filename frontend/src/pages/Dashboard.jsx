@@ -491,10 +491,8 @@ export default function Dashboard() {
       maxTicketsPerEmail: payload?.event?.maxTicketsPerEmail != null ? String(payload.event.maxTicketsPerEmail) : "",
     });
     setEventEditMode(EVENT_EDIT_MODES.EDIT);
-    // Seed emailVerified from event payload so gate doesn't flash for already-verified organizers
-    if (payload?.event?.emailVerified) {
-      setNotifDraft((prev) => ({ ...prev, emailVerified: true }));
-    }
+    // Seed emailVerified from event payload
+    setNotifDraft((prev) => ({ ...prev, emailVerified: payload?.event?.emailVerified === true }));
   }, []);
 
   const handleTicketLockError = useCallback((requestError) => {
@@ -929,7 +927,7 @@ export default function Dashboard() {
     }
   };
 
-  const isOrganizerVerified = notifDraft.emailVerified === true && Boolean(notifDraft.organizerEmail);
+  const isOrganizerVerified = notifDraft.emailVerified === true;
 
   const openVerifyGate = (pendingAction) => {
     setGateEmailInput(notifDraft.organizerEmail || "");
