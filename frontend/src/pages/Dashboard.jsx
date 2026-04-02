@@ -540,6 +540,7 @@ export default function Dashboard() {
     dashboardLoadingRef.current = true;
     setLoading(true);
     setLoadFb("", "");
+    setCode(trimmedCode);
     setParams((prev) => {
       const next = new URLSearchParams(prev);
       next.set("code", trimmedCode);
