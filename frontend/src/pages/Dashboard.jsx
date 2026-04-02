@@ -242,6 +242,12 @@ export default function Dashboard() {
   const [sendingGateOtp, setSendingGateOtp] = useState(false);
   const [verifyingGateOtp, setVerifyingGateOtp] = useState(false);
   const [gateEmailFb, setGateEmailFb] = useFeedback();
+  const [gateMode, setGateMode] = useState("otp");
+  const [recoveryCodeInput, setRecoveryCodeInput] = useState("");
+  const [loadingRecovery, setLoadingRecovery] = useState(false);
+  const [recoveryFb, setRecoveryFb] = useFeedback();
+  const [pendingMerge, setPendingMerge] = useState(null);
+  const [mergingEvent, setMergingEvent] = useState(false);
   const [notifLoaded, setNotifLoaded] = useState(false);
   const [savingNotif, setSavingNotif] = useState(false);
   const [notifEmailInput, setNotifEmailInput] = useState("");
@@ -929,11 +935,17 @@ export default function Dashboard() {
     setGateOtpInput("");
     setGateOtpSent(false);
     setGateEmailFb("", "");
+    setGateMode("otp");
+    setRecoveryCodeInput("");
+    setRecoveryFb("", "");
     setVerifyGateModal({ open: true, pendingAction });
   };
 
   const closeVerifyGate = () => {
     setVerifyGateModal({ open: false, pendingAction: null });
+    setGateMode("otp");
+    setRecoveryCodeInput("");
+    setRecoveryFb("", "");
   };
 
   const sendGateOtp = async () => {
@@ -948,7 +960,8 @@ export default function Dashboard() {
     } catch (err) {
       const code = err.response?.data?.code;
       if (code === "EMAIL_ALREADY_REGISTERED") {
-        setGateEmailFb("error", err.response.data.error);
+        setGateMode("recovery");
+        setRecoveryFb("", "");
       } else {
         setGateEmailFb("error", err.response?.data?.error || "Could not send code. Try again.");
       }
@@ -976,12 +989,46 @@ export default function Dashboard() {
     } catch (err) {
       const errCode = err.response?.data?.code;
       if (errCode === "EMAIL_ALREADY_REGISTERED") {
-        setGateEmailFb("error", err.response.data.error);
+        setGateMode("recovery");
+        setRecoveryFb("", "");
       } else {
         setGateEmailFb("error", err.response?.data?.error || "Verification failed. Try again.");
       }
     } finally {
       setVerifyingGateOtp(false);
+    }
+  };
+
+  const loadAccount = async () => {
+    const targetCode = recoveryCodeInput.trim();
+    if (!targetCode || loadingRecovery) return;
+    if (targetCode === accessCode) {
+      setRecoveryFb("error", "That\u2019s the same code you\u2019re already using.");
+      return;
+    }
+    setLoadingRecovery(true);
+    setRecoveryFb("", "");
+    const orphanCode = accessCode;
+    try {
+      await api.get(`/events/by-code/${encodeURIComponent(targetCode)}`);
+      // Fetch orphan details for the merge prompt (best-effort)
+      let orphanSummary = null;
+      try {
+        const orphanRes = await api.get(`/events/by-code/${encodeURIComponent(orphanCode)}`);
+        orphanSummary = orphanRes.data;
+      } catch {
+        // orphan fetch failed — proceed without merge prompt
+      }
+      closeVerifyGate();
+      localStorage.setItem(LOCAL_SAVED_CODE_KEY, targetCode);
+      await loadDashboard(targetCode);
+      if (orphanSummary) {
+        setPendingMerge({ orphanAccessCode: orphanCode, summary: orphanSummary });
+      }
+    } catch (err) {
+      setRecoveryFb("error", err.response?.data?.error || "Code not found. Check your email and try again.");
+    } finally {
+      setLoadingRecovery(false);
     }
   };
 
@@ -2661,53 +2708,134 @@ export default function Dashboard() {
       {verifyGateModal.open ? (
         <ModalOverlay className="z-50 bg-black/50">
           <section className="w-full max-w-sm rounded border bg-white p-5 shadow-xl">
-            <div className="flex items-start justify-between mb-3">
-              <div>
-                <p className="font-semibold text-gray-900">Verify your email to publish</p>
-                <p className="text-xs text-gray-500 mt-0.5">Your event will go live for ticket buyers once verified.</p>
-              </div>
-              <button type="button" onClick={closeVerifyGate} className="ml-3 text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
-            </div>
-            <FeedbackBanner kind={gateEmailFb.kind} message={gateEmailFb.message} />
-            <div className="mt-2 space-y-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Email address</label>
-                <input
-                  type="email"
-                  className="w-full rounded border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-                  value={gateEmailInput}
-                  onChange={(e) => setGateEmailInput(e.target.value)}
-                  placeholder="your@email.com"
-                  disabled={gateOtpSent}
-                />
-              </div>
-              {!gateOtpSent ? (
-                <AppButton type="button" variant="primary" className="w-full" onClick={sendGateOtp} loading={sendingGateOtp} loadingText="Sending...">
-                  Send verification code
-                </AppButton>
-              ) : (
-                <>
+            {gateMode === "recovery" ? (
+              <>
+                <div className="flex items-start justify-between mb-3">
+                  <p className="font-semibold text-gray-900">You already have an organizer account</p>
+                  <button type="button" onClick={closeVerifyGate} className="ml-3 text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+                </div>
+                <p className="text-sm text-gray-600 mb-3">
+                  We&apos;ve sent your organizer access code to <span className="font-medium">{gateEmailInput}</span>. Enter it below to switch to your existing account.
+                </p>
+                <FeedbackBanner kind={recoveryFb.kind} message={recoveryFb.message} />
+                <div className="mt-2 space-y-3">
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Enter the 6-digit code from your email</label>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Your organizer access code</label>
                     <input
                       type="text"
-                      inputMode="numeric"
-                      maxLength={6}
-                      className="w-full rounded border px-3 py-2 text-sm font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-blue-400"
-                      value={gateOtpInput}
-                      onChange={(e) => setGateOtpInput(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                      placeholder="123456"
+                      className="w-full rounded border px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      value={recoveryCodeInput}
+                      onChange={(e) => setRecoveryCodeInput(e.target.value)}
+                      placeholder="Paste your code here"
                     />
                   </div>
-                  <AppButton type="button" variant="primary" className="w-full" onClick={verifyGateOtp} loading={verifyingGateOtp} loadingText="Verifying...">
-                    Verify &amp; publish event
+                  <AppButton type="button" variant="primary" className="w-full" onClick={loadAccount} loading={loadingRecovery} loadingText="Loading...">
+                    Load Account
                   </AppButton>
-                  <button type="button" className="w-full text-xs text-blue-600 underline mt-1" onClick={() => { setGateOtpSent(false); setGateOtpInput(""); setGateEmailFb("", ""); }}>
-                    Use a different email
+                  <button type="button" className="w-full text-xs text-blue-600 underline" onClick={() => { setGateMode("otp"); setGateOtpSent(false); setGateOtpInput(""); setGateEmailFb("", ""); }}>
+                    Start over
                   </button>
-                </>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <p className="font-semibold text-gray-900">Verify your email to publish</p>
+                    <p className="text-xs text-gray-500 mt-0.5">Your event will go live for ticket buyers once verified.</p>
+                  </div>
+                  <button type="button" onClick={closeVerifyGate} className="ml-3 text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+                </div>
+                <FeedbackBanner kind={gateEmailFb.kind} message={gateEmailFb.message} />
+                <div className="mt-2 space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Email address</label>
+                    <input
+                      type="email"
+                      className="w-full rounded border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      value={gateEmailInput}
+                      onChange={(e) => setGateEmailInput(e.target.value)}
+                      placeholder="your@email.com"
+                      disabled={gateOtpSent}
+                    />
+                  </div>
+                  {!gateOtpSent ? (
+                    <AppButton type="button" variant="primary" className="w-full" onClick={sendGateOtp} loading={sendingGateOtp} loadingText="Sending...">
+                      Send verification code
+                    </AppButton>
+                  ) : (
+                    <>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Enter the 6-digit code from your email</label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={6}
+                          className="w-full rounded border px-3 py-2 text-sm font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-blue-400"
+                          value={gateOtpInput}
+                          onChange={(e) => setGateOtpInput(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                          placeholder="123456"
+                        />
+                      </div>
+                      <AppButton type="button" variant="primary" className="w-full" onClick={verifyGateOtp} loading={verifyingGateOtp} loadingText="Verifying...">
+                        Verify &amp; publish event
+                      </AppButton>
+                      <button type="button" className="w-full text-xs text-blue-600 underline mt-1" onClick={() => { setGateOtpSent(false); setGateOtpInput(""); setGateEmailFb("", ""); }}>
+                        Use a different email
+                      </button>
+                    </>
+                  )}
+                  <p className="text-xs text-gray-400">We&apos;ll also enable email notifications so you&apos;re alerted when someone requests a ticket.</p>
+                </div>
+              </>
+            )}
+          </section>
+        </ModalOverlay>
+      ) : null}
+
+      {pendingMerge ? (
+        <ModalOverlay className="z-50 bg-black/50">
+          <section className="w-full max-w-sm rounded border bg-white p-5 shadow-xl">
+            <p className="font-semibold text-gray-900 mb-1">You also started setting up a new event</p>
+            <div className="my-3 rounded border bg-slate-50 p-3 text-sm space-y-1">
+              <p className="font-medium">{pendingMerge.summary?.event?.eventName || "Unnamed event"}</p>
+              <p className="text-gray-500">{pendingMerge.summary?.event?.eventDate ? new Date(pendingMerge.summary.event.eventDate).toLocaleDateString() : ""}{pendingMerge.summary?.event?.eventAddress ? ` — ${pendingMerge.summary.event.eventAddress}` : ""}</p>
+              {pendingMerge.summary?.totalTickets > 0 && (
+                <p className="text-gray-500">{pendingMerge.summary.totalTickets} ticket{pendingMerge.summary.totalTickets !== 1 ? "s" : ""} generated</p>
               )}
-              <p className="text-xs text-gray-400">We&apos;ll also enable email notifications so you&apos;re alerted when someone requests a ticket.</p>
+            </div>
+            <p className="text-sm text-gray-700 mb-4">Add this event to your existing account?</p>
+            <div className="flex gap-3">
+              <AppButton
+                type="button"
+                variant="primary"
+                className="flex-1"
+                onClick={async () => {
+                  if (mergingEvent) return;
+                  setMergingEvent(true);
+                  try {
+                    await api.post(`/events/by-code/${encodeURIComponent(accessCode)}/merge-event`, { orphanAccessCode: pendingMerge.orphanAccessCode });
+                    setPendingMerge(null);
+                    await loadDashboard(accessCode);
+                  } catch (err) {
+                    alert(err.response?.data?.error || "Could not merge event. Try again.");
+                  } finally {
+                    setMergingEvent(false);
+                  }
+                }}
+                loading={mergingEvent}
+                loadingText="Adding..."
+              >
+                Yes, add it
+              </AppButton>
+              <button
+                type="button"
+                disabled={mergingEvent}
+                className="flex-1 rounded border px-3 py-2 text-sm text-gray-700 hover:bg-slate-50 disabled:opacity-50"
+                onClick={() => setPendingMerge(null)}
+              >
+                No, discard it
+              </button>
             </div>
           </section>
         </ModalOverlay>

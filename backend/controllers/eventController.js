@@ -943,6 +943,81 @@ async function verifyNotificationEmailOtp(req, res) {
   res.json({ ok: true });
 }
 
+async function mergeOrphanEvent(req, res) {
+  const accessCode = (req.params.accessCode || "").trim();
+  const orphanAccessCode = String(req.body?.orphanAccessCode || "").trim();
+  if (!accessCode || !orphanAccessCode) {
+    res.status(400).json({ error: "accessCode and orphanAccessCode are required." });
+    return;
+  }
+  if (orphanAccessCode === accessCode) {
+    res.status(400).json({ error: "Cannot merge an account into itself." });
+    return;
+  }
+
+  try {
+    const destinationGroup = await resolveEventGroupByAccessCode(accessCode);
+    if (!destinationGroup) {
+      res.status(404).json({ error: "Destination account not found." });
+      return;
+    }
+    const canonicalOAC = destinationGroup.organizerAccessCode;
+
+    if (orphanAccessCode === canonicalOAC) {
+      res.status(400).json({ error: "Cannot merge an account into itself." });
+      return;
+    }
+
+    const [orphan, destinationEvent] = await Promise.all([
+      prisma.userEvent.findFirst({
+        where: { OR: [{ accessCode: orphanAccessCode }, { organizerAccessCode: orphanAccessCode }] },
+        select: { id: true, emailVerified: true, organizerEmail: true, createdAt: true, organizerAccessCode: true, accessCode: true },
+      }),
+      prisma.userEvent.findFirst({
+        where: { OR: [{ accessCode: canonicalOAC }, { organizerAccessCode: canonicalOAC }] },
+        select: { organizerEmail: true },
+      }),
+    ]);
+
+    if (!orphan) {
+      res.status(404).json({ error: "Orphan event not found." });
+      return;
+    }
+    if (orphan.emailVerified === true || (orphan.organizerEmail && orphan.organizerEmail.trim())) {
+      res.status(400).json({ error: "This event belongs to a verified account and cannot be merged." });
+      return;
+    }
+    if (Date.now() - new Date(orphan.createdAt).getTime() > 24 * 60 * 60 * 1000) {
+      res.status(400).json({ error: "This event is too old to be merged. Only recently created unverified events can be merged." });
+      return;
+    }
+    const orphanGroup = await resolveEventGroupByAccessCode(orphanAccessCode);
+    if (orphanGroup && orphanGroup.organizerAccessCode === canonicalOAC) {
+      res.status(400).json({ error: "This event is already part of your account." });
+      return;
+    }
+
+    await prisma.userEvent.updateMany({
+      where: { OR: [{ accessCode: orphanAccessCode }, { organizerAccessCode: orphanAccessCode }] },
+      data: {
+        organizerAccessCode: canonicalOAC,
+        emailVerified: true,
+        organizerEmail: destinationEvent?.organizerEmail || null,
+      },
+    });
+
+    const merged = await prisma.userEvent.findFirst({
+      where: { accessCode: orphanAccessCode },
+      select: { eventName: true, eventDate: true, eventAddress: true, accessCode: true },
+    });
+
+    res.json({ merged: true, event: merged });
+  } catch (err) {
+    console.error("mergeOrphanEvent error", err);
+    res.status(500).json({ error: "An unexpected error occurred." });
+  }
+}
+
 module.exports = {
   createLiveEvent,
   createDemoEvent,
@@ -955,5 +1030,6 @@ module.exports = {
   updateOrganizerNotifications,
   sendNotificationEmailOtp,
   verifyNotificationEmailOtp,
+  mergeOrphanEvent,
 };
 
