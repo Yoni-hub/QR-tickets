@@ -381,6 +381,21 @@ async function sendOrganizerRecoveryEmail({ to, entries }) {
   return transporter.sendMail({ from, to, subject, text, html });
 }
 
+async function sendContactSupportEmail({ fromEmail, message }) {
+  const transporter = getTransporter();
+  const from = process.env.MAIL_FROM || "no-reply@localhost";
+  const to = "support@connsura.com";
+  const subject = `Support request from ${String(fromEmail || "unknown")}`;
+  const text = `From: ${String(fromEmail || "")}\n\n${String(message || "")}`;
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.45;color:#0f172a;">
+      <p><strong>Support request from:</strong> ${escapeHtml(fromEmail)}</p>
+      <p style="white-space:pre-wrap;">${escapeHtml(message)}</p>
+    </div>
+  `;
+  return transporter.sendMail({ from, to, subject, text, html });
+}
+
 module.exports = {
   sendTicketApprovedEmail,
   sendTicketCancelledEmail,
@@ -390,4 +405,5 @@ module.exports = {
   sendOtpEmail,
   sendClientRecoveryEmail,
   sendOrganizerRecoveryEmail,
+  sendContactSupportEmail,
 };

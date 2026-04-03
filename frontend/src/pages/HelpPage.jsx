@@ -31,7 +31,7 @@ const FAQ_SECTIONS = [
       },
       {
         question: "Is QR Tickets free?",
-        answer: <p>Yes. QR Tickets is currently free to use.</p>,
+        answer: <><p>If you don't sell tickets, you pay nothing.</p><p className="mt-1">You only pay $0.99 per ticket — after it's sold.</p></>,
       },
       {
         question: "Do I need to sign up or create an account?",

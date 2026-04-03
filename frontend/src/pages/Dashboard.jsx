@@ -1597,21 +1597,40 @@ export default function Dashboard() {
                 Get Started &rarr;
               </button>
             </div>
-            <p className="mt-4 text-sm font-semibold" style={{ color: "#6b7280" }}>No credit card required. No setup fees.</p>
-            <div className="mt-3 flex flex-wrap justify-center gap-6">
-              {["No email sign up", "No passwords"].map((t) => (
-                <div key={t} className="flex items-center gap-2 text-sm font-semibold" style={{ color: "#374151" }}>
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full text-xs text-white" style={{ background: "#2979ff" }}>✓</span>
-                  {t}
-                </div>
-              ))}
-            </div>
+            <p className="mt-4 text-sm font-semibold" style={{ color: "#6b7280" }}>If you don't sell tickets, you pay nothing.</p>
+            <p className="mt-1 text-sm font-semibold" style={{ color: "#6b7280" }}>You only pay $0.99 per ticket — after it's sold.</p>
           </div>
         </section>
 
         {/* Footer */}
-        <footer className="px-6 py-8 text-center" style={{ background: "#111827", borderTop: "1px solid #1f2937" }}>
-          <p className="text-xs" style={{ color: "#4b5563" }}>© {new Date().getFullYear()} Connsura. All rights reserved.</p>
+        <footer className="px-6 py-12" style={{ background: "#111827", borderTop: "1px solid #1f2937" }}>
+          <div className="mx-auto max-w-5xl flex flex-col gap-10 sm:flex-row sm:justify-between">
+            {/* Support */}
+            <div>
+              <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-white">Support</p>
+              <ul className="space-y-2">
+                <li><a href="/help" className="text-sm text-white hover:underline">Help Center</a></li>
+                <li><a href="/contact-support" className="text-sm text-white hover:underline">Contact Support</a></li>
+                <li><a href="/contact-support" className="text-sm text-white hover:underline">Report an Issue</a></li>
+              </ul>
+            </div>
+
+            {/* Legal */}
+            <div>
+              <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-white">Legal</p>
+              <ul className="space-y-2">
+                <li><a href="/terms" className="text-sm text-white hover:underline">Terms of Service</a></li>
+                <li><a href="/privacy" className="text-sm text-white hover:underline">Privacy Policy</a></li>
+                <li><a href="/data-payments" className="text-sm text-white hover:underline">Data &amp; Payments</a></li>
+              </ul>
+            </div>
+
+            {/* Copyright */}
+            <div className="sm:text-right">
+              <p className="text-sm font-semibold text-white">© 2026 Connsura Technologies, Inc.</p>
+              <p className="mt-1 text-xs text-white">All rights reserved.</p>
+            </div>
+          </div>
         </footer>
       </div>
       ) : (

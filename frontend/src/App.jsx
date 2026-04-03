@@ -20,6 +20,10 @@ import AdminSettingsPage from "./pages/admin/AdminSettingsPage";
 import AdminAuditLogPage from "./pages/admin/AdminAuditLogPage";
 import AdminClientDashTokensPage from "./pages/admin/AdminClientDashTokensPage";
 import HelpPage from "./pages/HelpPage";
+import TermsPage from "./pages/TermsPage";
+import PrivacyPage from "./pages/PrivacyPage";
+import DataPaymentsPage from "./pages/DataPaymentsPage";
+import ContactSupportPage from "./pages/ContactSupportPage";
 import AdminSupportPage from "./pages/admin/AdminSupportPage";
 
 export default function App() {
@@ -144,6 +148,10 @@ export default function App() {
         <Route path="/dashboard/promoters/:id" element={<DashboardPromoterDetailPage />} />
         <Route path="/scanner" element={<Scanner />} />
         <Route path="/help" element={<HelpPage />} />
+        <Route path="/terms" element={<TermsPage />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
+        <Route path="/data-payments" element={<DataPaymentsPage />} />
+        <Route path="/contact-support" element={<ContactSupportPage />} />
         <Route path="/e/:eventSlug" element={<PublicEventPage />} />
         <Route path="/e/:eventSlug/confirm" element={<PublicEventConfirmPage />} />
         <Route path="/client" element={<ClientDashboardPage />} />

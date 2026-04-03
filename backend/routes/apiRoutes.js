@@ -62,8 +62,15 @@ const {
   createClientRequestMessageByToken,
 } = require("../controllers/chatController");
 const { chatAttachmentUpload } = require("../middleware/chatUpload");
+const { sendContactSupportEmail, sendOtpEmail } = require("../utils/mailer");
 
 const router = express.Router();
+
+// In-memory store for contact-form OTPs and used emails
+// { email -> { code, expiresAt } }
+const contactOtpStore = new Map();
+// Set of emails that have already successfully submitted a support message
+const contactUsedEmails = new Set();
 
 router.post("/events", createLiveEvent);
 router.post("/demo/events", createDemoEvent);
@@ -100,6 +107,66 @@ router.post("/public/recover-organizer-code/confirm", confirmOrganizerRecoveryOt
 router.post("/public/support/conversations", createSupportConversation);
 router.get("/public/support/conversations/:conversationToken/messages", getSupportConversationMessages);
 router.post("/public/support/conversations/:conversationToken/messages", sendSupportConversationMessage);
+router.post("/public/contact/send-otp", async (req, res) => {
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  if (!email) return res.status(400).json({ error: "Email is required." });
+
+  if (contactUsedEmails.has(email)) {
+    return res.status(409).json({ duplicate: true });
+  }
+
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const expiresAt = Date.now() + 10 * 60 * 1000; // 10 min
+  contactOtpStore.set(email, { code, expiresAt });
+
+  try {
+    await sendOtpEmail({ to: email, code, eventName: null });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("Contact OTP email failed:", err);
+    return res.status(500).json({ error: "Failed to send verification code. Please try again." });
+  }
+});
+
+router.post("/public/contact", async (req, res) => {
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  const message = String(req.body?.message || "").trim();
+  const otp = String(req.body?.otp || "").trim();
+
+  if (!email || !message || !otp) {
+    return res.status(400).json({ error: "Email, message, and verification code are required." });
+  }
+  if (message.length > 5000) {
+    return res.status(400).json({ error: "Message is too long." });
+  }
+
+  if (contactUsedEmails.has(email)) {
+    return res.status(409).json({ duplicate: true });
+  }
+
+  const record = contactOtpStore.get(email);
+  if (!record) {
+    return res.status(400).json({ error: "No verification code was sent to this email. Please request a new code." });
+  }
+  if (Date.now() > record.expiresAt) {
+    contactOtpStore.delete(email);
+    return res.status(400).json({ error: "Verification code has expired. Please request a new one." });
+  }
+  if (record.code !== otp) {
+    return res.status(400).json({ error: "Incorrect verification code." });
+  }
+
+  contactOtpStore.delete(email);
+
+  try {
+    await sendContactSupportEmail({ fromEmail: email, message });
+    contactUsedEmails.add(email);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("Contact support email failed:", err);
+    return res.status(500).json({ error: "Failed to send message. Please try again." });
+  }
+});
 
 router.get("/events/by-code/:accessCode/ticket-requests", getOrganizerTicketRequests);
 router.get("/events/by-code/:accessCode/auto-approve", getEventAutoApprove);
