@@ -921,7 +921,18 @@ export default function Dashboard() {
       setNotifEmailChanging(false);
       setNotifEmailFb("success", "Email verified and saved.");
     } catch (err) {
-      setNotifEmailFb("error", err.response?.data?.error || "Verification failed.");
+      if (err.response?.data?.code === "EMAIL_ALREADY_REGISTERED") {
+        setGateEmailInput(notifEmailInput);
+        setGateOtpInput("");
+        setGateOtpSent(false);
+        setGateEmailFb("", "");
+        setGateMode("recovery");
+        setRecoveryCodeInput("");
+        setRecoveryFb("", "");
+        setVerifyGateModal({ open: true, pendingAction: null });
+      } else {
+        setNotifEmailFb("error", err.response?.data?.error || "Verification failed.");
+      }
     } finally {
       setVerifyingNotifOtp(false);
     }
