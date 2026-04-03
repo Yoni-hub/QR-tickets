@@ -1069,7 +1069,7 @@ export default function Dashboard() {
     if (!summary?.event?.id || !accessCode) return;
     await loadTicketsForEvent(summary.event.id);
     setTicketPage(1);
-    setTicketFb("success", "Tickets generated! Go to Ticket Requests to manage incoming requests.");
+    setTicketFb("success", "Tickets generated! Start sharing your event to get buyers.");
   };
 
   const saveEventInline = async () => {
@@ -1881,7 +1881,7 @@ export default function Dashboard() {
               <FeedbackBanner className="mb-3" kind={ticketFb.kind} message={ticketFb.message} />
               {ticketFb.kind === "success" && ticketFb.message.startsWith("Tickets generated") ? (
                 <div className="mb-3">
-                  <AppButton variant="primary" onClick={() => setActiveMenu("requests")}>Go to Ticket Requests →</AppButton>
+                  <AppButton variant="primary" onClick={shareEvent}>Share Event →</AppButton>
                 </div>
               ) : null}
               <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
