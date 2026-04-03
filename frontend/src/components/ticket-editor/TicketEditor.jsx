@@ -211,20 +211,9 @@ export default function TicketEditor({
                     <span className={`font-medium ${group.ticketType ? "text-slate-800" : "text-slate-400"}`}>
                       {group.ticketType || "Ticket type"}
                     </span>
-                    <div className="flex items-center gap-2">
-                      {canDeleteTicketTypes && settings.ticketGroups.length > 1 ? (
-                        <span
-                          role="button"
-                          className="text-xs text-red-400 hover:text-red-600"
-                          onClick={(e) => { e.stopPropagation(); removeTicketType(index); }}
-                        >
-                          Remove
-                        </span>
-                      ) : null}
-                      <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 text-slate-400 transition-transform duration-150 ${isExpanded ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </div>
+                    <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 text-slate-400 transition-transform duration-150 ${isExpanded ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
                   </button>
 
                   {/* Expanded fields */}
@@ -272,6 +261,18 @@ export default function TicketEditor({
                         placeholder="0"
                         onChange={(e) => updateTicketGroup(index, "quantity", e.target.value)}
                       />
+                      {canDeleteTicketTypes && settings.ticketGroups.length > 1 ? (
+                        <>
+                          <span />
+                          <button
+                            type="button"
+                            className="text-xs text-red-500 hover:text-red-700 text-left"
+                            onClick={() => removeTicketType(index)}
+                          >
+                            Remove this ticket type
+                          </button>
+                        </>
+                      ) : null}
                     </div>
                   ) : null}
                 </div>

@@ -70,7 +70,6 @@ const TICKET_STATUS_FILTERS = {
   TOTAL: "TOTAL",
   SOLD: "SOLD",
   SCANNED: "SCANNED",
-  REMAINING: "REMAINING",
 };
 
 const DEFAULT_TICKET_TYPE = "General";
@@ -388,9 +387,6 @@ export default function Dashboard() {
 
       if (ticketStatusFilter === TICKET_STATUS_FILTERS.SOLD) return isTicketSold(ticket);
       if (ticketStatusFilter === TICKET_STATUS_FILTERS.SCANNED) return ticket.status === "USED";
-      if (ticketStatusFilter === TICKET_STATUS_FILTERS.REMAINING) {
-        return !isTicketSold(ticket);
-      }
       return true;
     });
   }, [tickets, ticketTypeFilter, buyerSearch, ticketStatusFilter, summary?.event?.ticketType]);
@@ -398,10 +394,6 @@ export default function Dashboard() {
   const pagedTickets = filteredTickets.slice((ticketPage - 1) * 5, ticketPage * 5);
   const soldTicketsCount = useMemo(() => tickets.filter((ticket) => isTicketSold(ticket)).length, [tickets]);
   const scannedTicketsCount = useMemo(() => tickets.filter((ticket) => ticket.status === "USED").length, [tickets]);
-  const remainingTicketsCount = useMemo(
-    () => tickets.filter((ticket) => !isTicketSold(ticket)).length,
-    [tickets],
-  );
 
   useEffect(() => {
     if (!shouldOpenHomeMode) return;
@@ -1997,17 +1989,9 @@ export default function Dashboard() {
                   <p className="text-[10px] uppercase text-slate-500">Scanned</p>
                   <p className="text-lg font-bold leading-none">{scannedTicketsCount}</p>
                 </button>
-                <button
-                  type="button"
-                  className={`rounded border p-2 text-center ${ticketStatusFilter === TICKET_STATUS_FILTERS.REMAINING ? "border-slate-900 bg-slate-100" : "bg-white"}`}
-                  onClick={() => setTicketStatusFilter(TICKET_STATUS_FILTERS.REMAINING)}
-                >
-                  <p className="text-[10px] uppercase text-slate-500">Remaining</p>
-                  <p className="text-lg font-bold leading-none">{remainingTicketsCount}</p>
-                </button>
               </div>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-sm font-semibold">Generated tickets</p>
+                <p className="text-sm font-semibold">Sold tickets</p>
                 <div className="flex flex-wrap items-center gap-2">
                   <label className="text-xs font-medium text-slate-600">Type</label>
                   <select

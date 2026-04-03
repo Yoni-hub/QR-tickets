@@ -218,10 +218,11 @@ async function buildTicketTypeStats(event) {
     const ticketType = normalizeTicketType(group?.ticketType);
     if (!ticketType) continue;
     const price = normalizePrice(group?.ticketPrice);
+    const capacity = Math.max(0, Number.parseInt(String(group?.quantity || "0"), 10) || 0);
     typeMap.set(ticketType, {
       ticketType,
       price,
-      totalGenerated: 0,
+      totalGenerated: capacity,
       sold: 0,
       pending: 0,
       ticketsRemaining: 0,
@@ -276,7 +277,7 @@ async function buildTicketTypeStats(event) {
   const items = Array.from(typeMap.values()).map((item) => {
     const sold = soldMap.get(item.ticketType) || 0;
     const pending = pendingMap.get(item.ticketType) || 0;
-    const ticketsRemaining = Math.max(0, Number(item.totalGenerated || 0) - pending);
+    const ticketsRemaining = Math.max(0, Number(item.totalGenerated || 0) - sold - pending);
     return {
       ticketType: item.ticketType,
       price: item.price,
