@@ -11,6 +11,7 @@ export default function TicketEditor({
   eventId = "",
   initialTicketType = "",
   initialTicketPrice = "",
+  initialDesignJson = null,
   onGenerated = null,
   onDraftChange = null,
   onSave = null,
@@ -20,6 +21,17 @@ export default function TicketEditor({
   const navigate = useNavigate();
 
   const resolveInitialSettings = () => {
+    // Restore all ticket groups from saved designJson.ticketGroups if available
+    const savedGroups = Array.isArray(initialDesignJson?.ticketGroups) ? initialDesignJson.ticketGroups : [];
+    if (savedGroups.length > 0) {
+      return {
+        ticketGroups: savedGroups.map((g) => ({
+          ticketType: String(g.ticketType || ""),
+          ticketPrice: String(g.ticketPrice ?? "0"),
+          quantity: String(g.quantity ?? "0"),
+        })),
+      };
+    }
     return {
       ticketGroups: [
         {
@@ -35,13 +47,14 @@ export default function TicketEditor({
   const [feedback, setFeedback] = useState({ kind: "", message: "" });
   const [result, setResult] = useState(null);
   const [settings, setSettings] = useState(() => resolveInitialSettings());
-  const [currency, setCurrency] = useState("$");
+  const [currency, setCurrency] = useState(() => String(initialDesignJson?.currency || "$"));
 
   useEffect(() => {
     setSettings(resolveInitialSettings());
+    setCurrency(String(initialDesignJson?.currency || "$"));
     setResult(null);
     setFeedback({ kind: "", message: "" });
-  }, [eventId, initialTicketType, initialTicketPrice]);
+  }, [eventId, initialTicketType, initialTicketPrice, initialDesignJson]);
 
   const totalQuantity = useMemo(
     () => Math.max(0, settings.ticketGroups.reduce((sum, group) => sum + (Number.parseInt(group.quantity, 10) || 0), 0)),
@@ -91,7 +104,15 @@ export default function TicketEditor({
     return {
       ticketType: String(primaryGroup.ticketType || "").trim(),
       ticketPrice: String(primaryGroup.ticketPrice || "").trim(),
-      designJson: null,
+      designJson: {
+        ...(initialDesignJson && typeof initialDesignJson === "object" ? initialDesignJson : {}),
+        currency,
+        ticketGroups: nextSettings.ticketGroups.map((g) => ({
+          ticketType: String(g.ticketType || "").trim(),
+          ticketPrice: String(g.ticketPrice ?? "").trim(),
+          quantity: String(g.quantity ?? "0"),
+        })),
+      },
     };
   };
 
@@ -166,39 +187,33 @@ export default function TicketEditor({
 
   return (
     <main className={rootClass}>
-      <section className="space-y-4">
-        {settings.ticketGroups.map((group, index) => (
-          <div key={index} className="rounded border bg-white p-4 space-y-3">
-            {!canDeleteTicketTypes && index === 0 ? (
-              <p className="text-xs text-slate-500">Ticket type, price, and currency are locked after the first batch is generated.</p>
-            ) : null}
-            {canDeleteTicketTypes && settings.ticketGroups.length > 1 ? (
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-slate-700">Ticket Type {index + 1}</p>
-                <button
-                  type="button"
-                  className="text-xs text-red-500 hover:text-red-700"
-                  onClick={() => removeTicketType(index)}
-                >
-                  Remove
-                </button>
-              </div>
-            ) : null}
-            <div>
-              <label className="mb-1 block text-sm font-medium">Ticket Type</label>
-              <input
-                className="w-full rounded border p-2 text-sm disabled:bg-slate-100 disabled:text-slate-500"
-                type="text"
-                value={group.ticketType}
-                placeholder="e.g. General, VIP"
-                disabled={!canDeleteTicketTypes}
-                onChange={(e) => updateTicketGroup(index, "ticketType", e.target.value)}
-              />
-            </div>
-            <div className="flex gap-3">
-              {index === 0 ? (
-                <div className="w-24">
-                  <label className="mb-1 block text-sm font-medium">Currency</label>
+      {mode === "append_to_event" ? (
+        <>
+          {!canDeleteTicketTypes ? (
+            <p className="mb-3 text-xs text-slate-500">Type, price and currency are locked once tickets have been approved.</p>
+          ) : null}
+          {settings.ticketGroups.map((group, index) => (
+            <div key={index}>
+              {settings.ticketGroups.length > 1 ? (
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="text-sm font-semibold text-slate-700">Type {index + 1}</p>
+                  {canDeleteTicketTypes ? (
+                    <button type="button" className="text-xs text-red-400 hover:text-red-600" onClick={() => removeTicketType(index)}>Remove</button>
+                  ) : null}
+                </div>
+              ) : null}
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-[120px_1fr] sm:items-center">
+                <p className="font-semibold">Ticket type:</p>
+                <input
+                  className="w-full rounded border p-2 text-sm disabled:bg-slate-100 disabled:text-slate-500"
+                  type="text"
+                  value={group.ticketType}
+                  placeholder="e.g. General, VIP"
+                  disabled={!canDeleteTicketTypes}
+                  onChange={(e) => updateTicketGroup(index, "ticketType", e.target.value)}
+                />
+                <p className="font-semibold">Currency:</p>
+                {index === 0 ? (
                   <input
                     className="w-full rounded border p-2 text-sm disabled:bg-slate-100 disabled:text-slate-500"
                     type="text"
@@ -206,10 +221,10 @@ export default function TicketEditor({
                     disabled={!canDeleteTicketTypes}
                     onChange={(e) => setCurrency(e.target.value)}
                   />
-                </div>
-              ) : <div className="w-24" />}
-              <div className="flex-1">
-                <label className="mb-1 block text-sm font-medium">Price</label>
+                ) : (
+                  <p className="p-2 text-sm text-slate-400">{currency}</p>
+                )}
+                <p className="font-semibold">Price:</p>
                 <input
                   className="w-full rounded border p-2 text-sm disabled:bg-slate-100 disabled:text-slate-500"
                   type="number"
@@ -220,9 +235,7 @@ export default function TicketEditor({
                   disabled={!canDeleteTicketTypes}
                   onChange={(e) => updateTicketGroup(index, "ticketPrice", e.target.value)}
                 />
-              </div>
-              <div className="flex-1">
-                <label className="mb-1 block text-sm font-medium">Quantity</label>
+                <p className="font-semibold">Quantity:</p>
                 <input
                   className="w-full rounded border p-2 text-sm"
                   type="number"
@@ -232,32 +245,60 @@ export default function TicketEditor({
                   onChange={(e) => updateTicketGroup(index, "quantity", e.target.value)}
                 />
               </div>
+              {index < settings.ticketGroups.length - 1 ? <hr className="my-4 border-slate-200" /> : null}
             </div>
+          ))}
+          <div className="mt-4 flex items-center justify-between">
+            <button type="button" className="text-sm text-blue-600 hover:underline" onClick={addMoreTicketTypes}>+ Add type</button>
+            {typeof onSave === "function" ? (
+              <AppButton type="button" variant="primary" onClick={() => onSave(buildDraft(settings))} loading={saveLoading} loadingText="Saving...">
+                Save changes
+              </AppButton>
+            ) : null}
           </div>
-        ))}
-      </section>
+        </>
+      ) : (
+        /* Original spacious layout for create/demo mode */
+        <>
+          <section className="space-y-4">
+            {settings.ticketGroups.map((group, index) => (
+              <div key={index} className="rounded border bg-white p-4 space-y-3">
+                {canDeleteTicketTypes && settings.ticketGroups.length > 1 ? (
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold text-slate-700">Ticket Type {index + 1}</p>
+                    <button type="button" className="text-xs text-red-500 hover:text-red-700" onClick={() => removeTicketType(index)}>Remove</button>
+                  </div>
+                ) : null}
+                <div>
+                  <label className="mb-1 block text-sm font-medium">Ticket Type</label>
+                  <input className="w-full rounded border p-2 text-sm" type="text" value={group.ticketType} placeholder="e.g. General, VIP" onChange={(e) => updateTicketGroup(index, "ticketType", e.target.value)} />
+                </div>
+                <div className="flex gap-3">
+                  {index === 0 ? (
+                    <div className="w-24">
+                      <label className="mb-1 block text-sm font-medium">Currency</label>
+                      <input className="w-full rounded border p-2 text-sm" type="text" value={currency} onChange={(e) => setCurrency(e.target.value)} />
+                    </div>
+                  ) : <div className="w-24" />}
+                  <div className="flex-1">
+                    <label className="mb-1 block text-sm font-medium">Price</label>
+                    <input className="w-full rounded border p-2 text-sm" type="number" min="0" step="0.01" value={group.ticketPrice} placeholder="0" onChange={(e) => updateTicketGroup(index, "ticketPrice", e.target.value)} />
+                  </div>
+                  <div className="flex-1">
+                    <label className="mb-1 block text-sm font-medium">Quantity</label>
+                    <input className="w-full rounded border p-2 text-sm" type="number" min="0" value={group.quantity} placeholder="0" onChange={(e) => updateTicketGroup(index, "quantity", e.target.value)} />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </section>
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <AppButton type="button" variant="secondary" onClick={addMoreTicketTypes}>Add more ticket types</AppButton>
+            <AppButton type="button" onClick={generate} loading={loading} loadingText="Generating..." variant="primary">Generate Tickets</AppButton>
+          </div>
+        </>
+      )}
 
-      <div className="mt-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <AppButton type="button" variant="secondary" onClick={addMoreTicketTypes}>
-            Add more ticket types
-          </AppButton>
-          {mode === "append_to_event" && typeof onSave === "function" ? (
-            <AppButton
-              type="button"
-              variant="secondary"
-              onClick={() => onSave(buildDraft(settings))}
-              loading={saveLoading}
-              loadingText="Saving..."
-            >
-              Save Changes
-            </AppButton>
-          ) : null}
-          <AppButton type="button" onClick={generate} loading={loading} loadingText="Generating..." variant="primary">
-            Generate Tickets
-          </AppButton>
-        </div>
-      </div>
 
       <FeedbackBanner className="mt-3" kind={feedback.kind} message={feedback.message} />
 

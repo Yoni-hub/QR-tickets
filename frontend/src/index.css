@@ -41,6 +41,14 @@ body.modal-open {
   touch-action: none;
 }
 
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 button.btn-clicked {
   filter: saturate(0.9);
   transform: scale(0.98);

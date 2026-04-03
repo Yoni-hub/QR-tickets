@@ -25,13 +25,41 @@ function useFeedback(autoClearMs = 5000) {
   return [fb, set];
 }
 
+const TAB_ICONS = {
+  events: (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+    </svg>
+  ),
+  tickets: (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
+    </svg>
+  ),
+  requests: (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+    </svg>
+  ),
+  chat: (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+    </svg>
+  ),
+  settings: (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+  ),
+};
+
 const DASHBOARD_MENUS_ALL = [
   { id: "events", label: "Events" },
   { id: "tickets", label: "Tickets" },
-  { id: "requests", label: "Ticket Requests" },
+  { id: "requests", label: "Requests" },
   { id: "chat", label: "Chat" },
-  { id: "promoters", label: "Promoters" },
-  { id: "notifications", label: "Notifications" },
+  { id: "settings", label: "Settings" },
 ];
 
 const DASHBOARD_MENUS_PRELOAD = [
@@ -194,7 +222,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const location = useLocation();
   const [params, setParams] = useSearchParams();
-  const VALID_MENU_IDS = ["events", "tickets", "requests", "chat", "promoters", "notifications"];
+  const VALID_MENU_IDS = ["events", "tickets", "requests", "chat", "settings"];
   const activeMenu = VALID_MENU_IDS.includes(String(params.get("menu") || "").toLowerCase())
     ? String(params.get("menu")).toLowerCase()
     : "events";
@@ -287,6 +315,7 @@ export default function Dashboard() {
   const [copiedPublicEventLink, setCopiedPublicEventLink] = useState(false);
   const [copiedTicketPublicId, setCopiedTicketPublicId] = useState("");
   const [copiedPromoterId, setCopiedPromoterId] = useState("");
+  const [showCodePanel, setShowCodePanel] = useState(false);
   const ticketEditorDraftRef = useRef(null);
   const organizerNameRef = useRef(null);
   const dashboardLoadingRef = useRef(false);
@@ -1597,80 +1626,132 @@ export default function Dashboard() {
       ) : (
       <main className="mx-auto w-full max-w-5xl px-4 py-4 sm:px-6 sm:py-6">
       {showLoadDashboard ? (
-        <div className="mt-8 max-w-sm">
-          <h2 className="text-xl font-bold">Load your dashboard</h2>
-          <p className="mt-1 text-sm text-slate-500">Enter your organizer access code to continue.</p>
-          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-            <input
-              className="w-full rounded border p-2"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              placeholder="Enter your organizer access code"
-              autoFocus
-            />
-            <AppButton onClick={load} loading={loading} loadingText="Loading..." variant="primary">Load</AppButton>
-          </div>
-          <div className="mt-4 flex flex-wrap items-center gap-4">
+        <div className="flex min-h-[calc(100vh-5rem)] items-center justify-center">
+          <div className="w-full max-w-sm py-12">
+            {/* Logo */}
+            <div className="mb-8 flex justify-center">
+              <img src="/ticket-logo1.png" alt="Connsura" className="h-20 w-auto" />
+            </div>
+
+            <h2 className="text-center text-2xl font-bold text-slate-900">Welcome back</h2>
+            <p className="mt-2 text-center text-sm text-slate-500">Enter your organizer access code to continue.</p>
+
+            <div className="mt-6">
+              <input
+                className="w-full rounded-2xl border-2 border-slate-200 bg-slate-50 p-4 text-center font-mono tracking-widest text-slate-900 placeholder-slate-400 focus:border-slate-900 focus:bg-white focus:outline-none"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                placeholder="Your access code"
+                autoFocus
+                onKeyDown={(e) => { if (e.key === "Enter") load(); }}
+              />
+            </div>
+
+            <FeedbackBanner className="mt-3" kind={loadFb.kind} message={loadFb.message} />
+
             <button
               type="button"
-              className="text-sm text-slate-500 underline hover:text-slate-800"
-              onClick={handleBackToHome}
+              onClick={load}
+              disabled={loading}
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 py-3.5 text-base font-semibold text-white transition hover:bg-slate-700 active:scale-[0.98] disabled:opacity-60"
             >
-              Back to home
+              {loading ? (
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-r-transparent" aria-hidden="true" />
+              ) : null}
+              {loading ? "Loading…" : "Continue →"}
             </button>
-            <Link to="/help?recovery=1" className="text-sm text-red-600 underline hover:text-red-800">
-              Lost your access code?
-            </Link>
+
+            <div className="mt-6 flex flex-col items-center gap-3">
+              <Link to="/help?recovery=1" className="text-sm font-medium text-red-500 hover:text-red-700">
+                Lost your access code?
+              </Link>
+              <button
+                type="button"
+                className="text-sm text-slate-400 hover:text-slate-600"
+                onClick={handleBackToHome}
+              >
+                ← Back to home
+              </button>
+            </div>
           </div>
         </div>
       ) : (
         <>
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-bold sm:text-3xl">Dashboard</h1>
-            <span className="rounded border bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">
-              Organizer Code: <span className="font-mono">{accessCode || "-"}</span>
-            </span>
+          {/* Compact app header */}
+          <div className="flex items-center justify-between">
+            <div className="min-w-0">
+              <h1 className="truncate text-lg font-bold text-slate-900">
+                {summary?.event?.eventName || "Dashboard"}
+              </h1>
+              {summary?.event?.organizerName ? (
+                <p className="truncate text-xs text-slate-500">{summary.event.organizerName}</p>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowCodePanel((o) => !o)}
+              className="ml-3 flex-shrink-0 rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              aria-label="Account options"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+              </svg>
+            </button>
           </div>
-          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-            <input className="w-full rounded border p-2" value={code} onChange={(e) => setCode(e.target.value)} placeholder="Enter your organizer access code" />
-            <AppButton onClick={load} loading={loading} loadingText="Loading..." variant="primary">Load</AppButton>
-          </div>
+
+          {/* Collapsible code panel */}
+          {showCodePanel ? (
+            <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-400">Organizer code</p>
+              <p className="mb-3 break-all font-mono text-sm text-slate-800">{accessCode || "—"}</p>
+              <div className="flex gap-2">
+                <input
+                  className="w-full rounded-xl border border-slate-200 bg-white p-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  placeholder="Load a different code"
+                  onKeyDown={(e) => { if (e.key === "Enter") load(); }}
+                />
+                <AppButton onClick={load} loading={loading} loadingText="..." variant="primary" className="flex-shrink-0 rounded-xl px-3 py-2 text-sm">
+                  Load
+                </AppButton>
+              </div>
+            </div>
+          ) : null}
         </>
       )}
 
-      <FeedbackBanner className="mt-3" kind={loadFb.kind} message={loadFb.message} />
+      {!showLoadDashboard ? <FeedbackBanner className="mt-3" kind={loadFb.kind} message={loadFb.message} /> : null}
 
       {(!showLoadDashboard || summary) && !showHeroSection ? (
-        <div className="mt-4 flex flex-wrap items-center gap-2 text-sm font-semibold">
-          {visibleMenus.map((menu) => (
-            <button
-              key={menu.id}
-              type="button"
-              onClick={() => { setActiveMenu(menu.id); if (menu.id === "notifications") loadNotifications(); }}
-              className={`relative rounded border px-3 py-1.5 ${activeMenu === menu.id ? "bg-slate-900 text-white" : "bg-white text-slate-800"}`}
-            >
-              {menu.label}
-              {menu.id === "chat" && chatUnreadTotal > 0 ? (
-                <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-indigo-600 px-1 text-[10px] font-bold text-white">
-                  {chatUnreadTotal > 99 ? "99+" : chatUnreadTotal}
-                </span>
-              ) : null}
-              {menu.id === "requests" && pendingRequestCount > 0 ? (
-                <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
-                  {pendingRequestCount > 99 ? "99+" : pendingRequestCount}
-                </span>
-              ) : null}
-            </button>
-          ))}
-          {summary?.event?.slug ? (
-            <button
-              type="button"
-              onClick={shareEvent}
-              className="rounded border border-blue-600 bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"
-            >
-              Share Event
-            </button>
-          ) : null}
+        <div className="mt-4 -mx-4 sm:-mx-6 border-b border-slate-200">
+          <div className="flex overflow-x-auto no-scrollbar px-4 sm:px-6">
+            {visibleMenus.map((menu) => (
+              <button
+                key={menu.id}
+                type="button"
+                onClick={() => { setActiveMenu(menu.id); if (menu.id === "settings") loadNotifications(); }}
+                className={`relative flex flex-shrink-0 flex-col items-center gap-0.5 px-4 py-2.5 text-xs font-medium transition-colors ${
+                  activeMenu === menu.id
+                    ? "border-b-2 border-indigo-600 text-indigo-600"
+                    : "border-b-2 border-transparent text-slate-500"
+                }`}
+              >
+                {TAB_ICONS[menu.id]}
+                {menu.label}
+                {menu.id === "chat" && chatUnreadTotal > 0 ? (
+                  <span className="absolute right-1 top-1 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-indigo-600 px-1 text-[9px] font-bold text-white">
+                    {chatUnreadTotal > 99 ? "99+" : chatUnreadTotal}
+                  </span>
+                ) : null}
+                {menu.id === "requests" && pendingRequestCount > 0 ? (
+                  <span className="absolute right-1 top-1 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
+                    {pendingRequestCount > 99 ? "99+" : pendingRequestCount}
+                  </span>
+                ) : null}
+              </button>
+            ))}
+          </div>
         </div>
       ) : null}
 
@@ -1811,15 +1892,6 @@ export default function Dashboard() {
                   >
                     Edit Event
                   </AppButton>
-                  <AppButton
-                    type="button"
-                    variant="primary"
-                    className="!bg-blue-600 hover:!bg-blue-700"
-                    onClick={shareEvent}
-                    disabled={!summary?.event?.slug}
-                  >
-                    Share Event
-                  </AppButton>
                 </div>
                 <FeedbackBanner className="mt-3" kind={eventFb.kind} message={eventFb.message} />
                 {eventEditMode === EVENT_EDIT_MODES.CREATE ? (
@@ -1882,6 +1954,7 @@ export default function Dashboard() {
                   eventId={summary.event.id}
                   initialTicketType={summary.event.ticketType || ""}
                   initialTicketPrice={summary.event.ticketPrice || ""}
+                  initialDesignJson={summary.event.designJson || null}
                   canDeleteTicketTypes={tickets.length < 1}
                   onGenerated={handleTicketsGenerated}
                   onDraftChange={applyTicketEditorDraft}
@@ -1890,11 +1963,6 @@ export default function Dashboard() {
                 />
               </div>
               <FeedbackBanner className="mb-3" kind={ticketFb.kind} message={ticketFb.message} />
-              {ticketFb.kind === "success" && ticketFb.message.startsWith("Tickets generated") ? (
-                <div className="mb-3">
-                  <AppButton variant="primary" onClick={shareEvent}>Share Event →</AppButton>
-                </div>
-              ) : null}
               <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
                 <button
                   type="button"
@@ -2273,7 +2341,8 @@ export default function Dashboard() {
             </section>
           ) : null}
 
-          {activeMenu === "promoters" ? (
+          {activeMenu === "settings" ? (
+            <>
             <section className="mt-4 rounded border p-4">
               <p className="text-sm font-semibold">Promoters</p>
               <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -2316,9 +2385,7 @@ export default function Dashboard() {
                 </div>
               </div>
             </section>
-          ) : null}
 
-          {activeMenu === "notifications" ? (
             <section className="mt-4 rounded border p-4">
               <p className="text-sm font-semibold">Notifications</p>
               <p className="mt-1 text-xs text-slate-500">
@@ -2398,6 +2465,7 @@ export default function Dashboard() {
               </AppButton>
               <FeedbackBanner className="mt-2" kind={notifFb.kind} message={notifFb.message} />
             </section>
+            </>
           ) : null}
 
           {activeMenu === "chat" ? (
@@ -2849,6 +2917,18 @@ export default function Dashboard() {
             </div>
           </section>
         </ModalOverlay>
+      ) : null}
+      {summary?.event?.slug ? (
+        <button
+          type="button"
+          onClick={shareEvent}
+          className="fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full bg-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-xl transition hover:bg-indigo-500 active:scale-95"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+          </svg>
+          Share Event
+        </button>
       ) : null}
     </main>
       )}
