@@ -756,7 +756,7 @@ async function getClientDashboardByToken(req, res) {
     })),
   }));
 
-  res.json({ requests: mappedRequests });
+  res.json({ email: profile.email, requests: mappedRequests });
 }
 
 async function getClientRequestMessagesByToken(req, res) {
