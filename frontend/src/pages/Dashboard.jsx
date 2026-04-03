@@ -392,7 +392,11 @@ export default function Dashboard() {
   }, [tickets, ticketTypeFilter, buyerSearch, ticketStatusFilter, summary?.event?.ticketType]);
   const totalTicketPages = Math.max(1, Math.ceil(filteredTickets.length / 5));
   const pagedTickets = filteredTickets.slice((ticketPage - 1) * 5, ticketPage * 5);
-  const soldTicketsCount = useMemo(() => tickets.filter((ticket) => isTicketSold(ticket)).length, [tickets]);
+  const totalCapacity = useMemo(() => {
+    const groups = Array.isArray(summary?.event?.designJson?.ticketGroups) ? summary.event.designJson.ticketGroups : [];
+    return groups.reduce((sum, g) => sum + (Math.max(0, parseInt(g?.quantity || "0", 10) || 0)), 0);
+  }, [summary?.event?.designJson]);
+  const soldTicketsCount = useMemo(() => tickets.filter((ticket) => Boolean(ticket?.ticketRequestId)).length, [tickets]);
   const scannedTicketsCount = useMemo(() => tickets.filter((ticket) => ticket.status === "USED").length, [tickets]);
 
   useEffect(() => {
@@ -1971,7 +1975,7 @@ export default function Dashboard() {
                   onClick={() => setTicketStatusFilter(TICKET_STATUS_FILTERS.TOTAL)}
                 >
                   <p className="text-[10px] uppercase text-slate-500">Total</p>
-                  <p className="text-lg font-bold leading-none">{tickets.length}</p>
+                  <p className="text-lg font-bold leading-none">{totalCapacity}</p>
                 </button>
                 <button
                   type="button"
