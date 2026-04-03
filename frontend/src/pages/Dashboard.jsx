@@ -146,39 +146,25 @@ function DateTimeInput({ value, onChange, minDate, className = "" }) {
   const h24 = parseInt(hStr || "", 10);
   const m = parseInt(mStr || "", 10);
   const isPm = !isNaN(h24) && h24 >= 12;
-  const h12 = isNaN(h24) ? null : (h24 % 12 || 12);
-
-  const [hourText, setHourText] = useState(() => h12 === null ? "" : String(h12));
-  const [minText, setMinText] = useState(() => isNaN(m) ? "" : String(m).padStart(2, "0"));
-
-  useEffect(() => {
-    setHourText(h12 === null ? "" : String(h12));
-    setMinText(isNaN(m) ? "" : String(m).padStart(2, "0"));
-  }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
+  const h12 = isNaN(h24) ? 12 : (h24 % 12 || 12);
+  const minutes = isNaN(m) ? 0 : m;
 
   const emit = (d, newH24, newM) =>
     onChange(`${d || ""}T${String(newH24 ?? 0).padStart(2, "0")}:${String(newM ?? 0).padStart(2, "0")}`);
 
   const handleHourChange = (e) => {
-    const raw = e.target.value.replace(/\D/g, "").slice(0, 2);
-    setHourText(raw);
-    const n = parseInt(raw, 10);
-    if (n >= 1 && n <= 12) {
-      const newH24 = isPm ? (n === 12 ? 12 : n + 12) : (n === 12 ? 0 : n);
-      emit(datePart, newH24, isNaN(m) ? 0 : m);
-    }
+    const n = parseInt(e.target.value, 10);
+    const newH24 = isPm ? (n === 12 ? 12 : n + 12) : (n === 12 ? 0 : n);
+    emit(datePart, newH24, minutes);
   };
 
   const handleMinChange = (e) => {
-    const raw = e.target.value.replace(/\D/g, "").slice(0, 2);
-    setMinText(raw);
-    const n = parseInt(raw, 10);
-    if (raw.length === 2 && n >= 0 && n <= 59) emit(datePart, isNaN(h24) ? 0 : h24, n);
+    emit(datePart, isNaN(h24) ? 0 : h24, parseInt(e.target.value, 10));
   };
 
   const toggleAmPm = () => {
     if (isNaN(h24)) return;
-    emit(datePart, isPm ? h24 - 12 : h24 + 12, isNaN(m) ? 0 : m);
+    emit(datePart, isPm ? h24 - 12 : h24 + 12, minutes);
   };
 
   return (
@@ -187,28 +173,30 @@ function DateTimeInput({ value, onChange, minDate, className = "" }) {
         type="date"
         value={datePart || ""}
         min={minDate}
-        onChange={(e) => emit(e.target.value, isNaN(h24) ? 0 : h24, isNaN(m) ? 0 : m)}
+        onChange={(e) => emit(e.target.value, isNaN(h24) ? 0 : h24, minutes)}
         className="min-w-0 flex-1 border-0 bg-transparent p-1.5 text-xs focus:outline-none"
       />
       <div className="flex shrink-0 items-center gap-0.5 border-l px-1.5 py-1.5">
-        <input
-          type="text"
-          inputMode="numeric"
-          placeholder="H"
-          value={hourText}
+        <select
+          value={h12}
           onChange={handleHourChange}
-          className="w-6 rounded border bg-slate-50 p-0.5 text-center text-xs font-mono focus:outline-none focus:ring-1 focus:ring-slate-300"
-        />
+          className="w-10 border-0 bg-transparent text-xs focus:outline-none"
+        >
+          {[1,2,3,4,5,6,7,8,9,10,11,12].map((h) => (
+            <option key={h} value={h}>{h}</option>
+          ))}
+        </select>
         <span className="text-xs text-slate-400">:</span>
-        <input
-          type="text"
-          inputMode="numeric"
-          placeholder="MM"
-          value={minText}
+        <select
+          value={minutes}
           onChange={handleMinChange}
-          className="w-7 rounded border bg-slate-50 p-0.5 text-center text-xs font-mono focus:outline-none focus:ring-1 focus:ring-slate-300"
-        />
-        <div className="ml-0.5 flex overflow-hidden rounded border text-xs font-semibold">
+          className="w-12 border-0 bg-transparent text-xs focus:outline-none"
+        >
+          {Array.from({ length: 60 }, (_, i) => (
+            <option key={i} value={i}>{String(i).padStart(2, "0")}</option>
+          ))}
+        </select>
+        <div className="ml-1 flex overflow-hidden rounded text-[10px] font-semibold">
           <button type="button" onClick={() => !isPm || toggleAmPm()} className={`px-1.5 py-0.5 ${!isPm ? "bg-slate-800 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}>AM</button>
           <button type="button" onClick={() => isPm || toggleAmPm()} className={`px-1.5 py-0.5 ${isPm ? "bg-slate-800 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}>PM</button>
         </div>
@@ -216,6 +204,7 @@ function DateTimeInput({ value, onChange, minDate, className = "" }) {
     </div>
   );
 }
+
 
 export default function Dashboard() {
   const { containerRef: turnstileRef, getToken: getTurnstileToken } = useTurnstile();
@@ -316,8 +305,8 @@ export default function Dashboard() {
   const [copiedTicketPublicId, setCopiedTicketPublicId] = useState("");
   const [copiedPromoterId, setCopiedPromoterId] = useState("");
   const [showCodePanel, setShowCodePanel] = useState(false);
-  const [promotersOpen, setPromotersOpen] = useState(true);
-  const [notificationsOpen, setNotificationsOpen] = useState(true);
+  const [promotersOpen, setPromotersOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const ticketEditorDraftRef = useRef(null);
   const organizerNameRef = useRef(null);
   const dashboardLoadingRef = useRef(false);
@@ -1630,11 +1619,6 @@ export default function Dashboard() {
       {showLoadDashboard ? (
         <div className="flex min-h-[calc(100vh-5rem)] items-center justify-center">
           <div className="w-full max-w-sm py-12">
-            {/* Logo */}
-            <div className="mb-8 flex justify-center">
-              <img src="/ticket-logo1.png" alt="Connsura" className="h-20 w-auto" />
-            </div>
-
             <h2 className="text-center text-2xl font-bold text-slate-900">Welcome back</h2>
             <p className="mt-2 text-center text-sm text-slate-500">Enter your organizer access code to continue.</p>
 
