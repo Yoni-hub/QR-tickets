@@ -2,7 +2,7 @@ const { Prisma } = require("@prisma/client");
 const prisma = require("../utils/prisma");
 const { LIMITS, sanitizeText, safeError } = require("../utils/sanitize");
 const { resolveImageUrl, uploadDataUrlToS3, isS3Configured } = require("../utils/s3");
-const { getPublicBaseUrl } = require("../services/eventService");
+const { getPublicBaseUrl, buildQrPayload } = require("../services/eventService");
 const {
   CHAT_CONVERSATION_TYPE,
   resolveActorFromOrganizer,
@@ -14,6 +14,7 @@ const {
   sendTicketApprovedEmail,
   sendTicketCancelledEmail,
 } = require("../utils/mailer");
+const { generateTicketPublicId } = require("../utils/ticketPublicId");
 
 const MAX_CHAT_MESSAGE_LENGTH = 1200;
 
@@ -215,91 +216,73 @@ async function getOrganizerTicketRequests(req, res) {
 
 async function createTicketsForRequest({ event, request }, tx = null) {
   const db = tx || prisma;
+
+  // Build selections from request or fall back to event's current ticket definition
   const rawSelections = Array.isArray(request.ticketSelections) ? request.ticketSelections : [];
   const normalizedSelections = rawSelections.length
     ? rawSelections
-      .map((item) => ({
-        ticketType: String(item?.ticketType || "").trim(),
-        quantity: Math.max(0, Number.parseInt(String(item?.quantity || "0"), 10) || 0),
-      }))
-      .filter((item) => item.ticketType && item.quantity > 0)
+        .map((item) => ({
+          ticketType: String(item?.ticketType || "").trim(),
+          ticketPrice: item?.ticketPrice != null ? Number(item.ticketPrice) : null,
+          quantity: Math.max(0, Number.parseInt(String(item?.quantity || "0"), 10) || 0),
+        }))
+        .filter((item) => item.ticketType && item.quantity > 0)
     : [{
-      ticketType: request.ticketType || event.ticketType || "General",
-      quantity: request.quantity,
-    }];
+        ticketType: request.ticketType || event.ticketType || "General",
+        ticketPrice: request.ticketPrice != null ? Number(request.ticketPrice) : (event.ticketPrice != null ? Number(event.ticketPrice) : null),
+        quantity: request.quantity,
+      }];
 
-  const unsoldTickets = await db.ticket.findMany({
-    where: {
-      eventId: event.id,
-      ticketRequestId: null,
-      isInvalidated: false,
-      status: "UNUSED",
-      deliveries: { none: { status: "SENT" } },
-    },
-    orderBy: { createdAt: "asc" },
-    select: { id: true, ticketPublicId: true, qrPayload: true, ticketType: true },
-  });
+  // Derive designJson template from event (carries currency, styling, etc.)
+  const eventDesignJson = event.designJson && typeof event.designJson === "object" ? event.designJson : {};
+  const currency = String(eventDesignJson.currency || "$").trim();
 
-  const usedIds = new Set();
-  const assigned = [];
+  // Generate unique public IDs (collision-safe within this batch)
+  const existingIds = new Set();
+  const created = [];
+
   for (const selection of normalizedSelections) {
-    const matching = unsoldTickets.filter(
-      (ticket) =>
-        !usedIds.has(ticket.id) &&
-        String(ticket.ticketType || event.ticketType || "General").trim() === String(selection.ticketType).trim(),
-    );
-    if (matching.length < selection.quantity) {
-      const error = new Error(
-        `Not enough ${selection.ticketType} tickets available. Requested ${selection.quantity}, available ${matching.length}. Generate more tickets.`,
-      );
-      error.statusCode = 400;
-      throw error;
-    }
+    for (let i = 0; i < selection.quantity; i++) {
+      let ticketPublicId = generateTicketPublicId();
+      while (existingIds.has(ticketPublicId)) {
+        ticketPublicId = generateTicketPublicId();
+      }
+      existingIds.add(ticketPublicId);
 
-    for (let index = 0; index < selection.quantity; index += 1) {
-      const ticket = matching[index];
-      usedIds.add(ticket.id);
-      assigned.push({ ...ticket, ticketType: selection.ticketType });
+      const price = selection.ticketPrice;
+      const priceText = price != null && Number.isFinite(price) && price > 0
+        ? `${currency}${price.toFixed(2)}`
+        : "Free";
+
+      const ticketDesignJson = {
+        ...eventDesignJson,
+        ticketTypeLabel: String(selection.ticketType).toUpperCase(),
+        priceText,
+      };
+
+      const ticket = await db.ticket.create({
+        data: {
+          eventId: event.id,
+          ticketPublicId,
+          qrPayload: buildQrPayload(ticketPublicId),
+          status: "UNUSED",
+          ticketType: selection.ticketType,
+          ticketPrice: price,
+          designJson: ticketDesignJson,
+          attendeeName: request.name,
+          attendeePhone: request.phone || null,
+          attendeeEmail: request.email || null,
+          promoterId: request.promoterId || null,
+          ticketRequestId: request.id,
+        },
+        select: { id: true, ticketPublicId: true, qrPayload: true, ticketType: true },
+      });
+
+      created.push(ticket);
     }
   }
 
-  if (tx) {
-    // Already inside a transaction — update directly
-    await Promise.all(
-      assigned.map((ticket) =>
-        tx.ticket.update({
-          where: { id: ticket.id },
-          data: {
-            ticketType: ticket.ticketType,
-            attendeeName: request.name,
-            attendeePhone: request.phone,
-            attendeeEmail: request.email,
-            promoterId: request.promoterId,
-            ticketRequestId: request.id,
-          },
-        }),
-      ),
-    );
-  } else {
-    // No outer transaction — use batch transaction for atomicity
-    await prisma.$transaction(
-      assigned.map((ticket) =>
-        prisma.ticket.update({
-          where: { id: ticket.id },
-          data: {
-            ticketType: ticket.ticketType,
-            attendeeName: request.name,
-            attendeePhone: request.phone,
-            attendeeEmail: request.email,
-            promoterId: request.promoterId,
-            ticketRequestId: request.id,
-          },
-        }),
-      ),
-    );
-  }
-
-  return assigned;
+  return created;
 }
 
 
