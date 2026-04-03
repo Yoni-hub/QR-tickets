@@ -1880,7 +1880,7 @@ export default function Dashboard() {
                   mode="append_to_event"
                   accessCode={accessCode}
                   eventId={summary.event.id}
-                  initialTicketType={summary.event.ticketType || "General"}
+                  initialTicketType={summary.event.ticketType || ""}
                   initialTicketPrice={summary.event.ticketPrice || ""}
                   canDeleteTicketTypes={tickets.length < 1}
                   onGenerated={handleTicketsGenerated}
@@ -2743,7 +2743,7 @@ export default function Dashboard() {
                     Load Account
                   </AppButton>
                   <button type="button" className="w-full text-xs text-blue-600 underline" onClick={() => { setGateMode("otp"); setGateOtpSent(false); setGateOtpInput(""); setGateEmailFb("", ""); }}>
-                    Start over
+                    Use a different email
                   </button>
                 </div>
               </>

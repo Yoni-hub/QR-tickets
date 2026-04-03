@@ -23,7 +23,7 @@ export default function TicketEditor({
     return {
       ticketGroups: [
         {
-          ticketType: initialTicketType || "General",
+          ticketType: initialTicketType || "",
           ticketPrice: String(initialTicketPrice || "0"),
           quantity: "0",
         },
@@ -169,6 +169,9 @@ export default function TicketEditor({
       <section className="space-y-4">
         {settings.ticketGroups.map((group, index) => (
           <div key={index} className="rounded border bg-white p-4 space-y-3">
+            {!canDeleteTicketTypes && index === 0 ? (
+              <p className="text-xs text-slate-500">Ticket type, price, and currency are locked after the first batch is generated.</p>
+            ) : null}
             {canDeleteTicketTypes && settings.ticketGroups.length > 1 ? (
               <div className="flex items-center justify-between">
                 <p className="text-sm font-semibold text-slate-700">Ticket Type {index + 1}</p>
@@ -184,10 +187,11 @@ export default function TicketEditor({
             <div>
               <label className="mb-1 block text-sm font-medium">Ticket Type</label>
               <input
-                className="w-full rounded border p-2 text-sm"
+                className="w-full rounded border p-2 text-sm disabled:bg-slate-100 disabled:text-slate-500"
                 type="text"
                 value={group.ticketType}
                 placeholder="e.g. General, VIP"
+                disabled={!canDeleteTicketTypes}
                 onChange={(e) => updateTicketGroup(index, "ticketType", e.target.value)}
               />
             </div>
@@ -196,9 +200,10 @@ export default function TicketEditor({
                 <div className="w-24">
                   <label className="mb-1 block text-sm font-medium">Currency</label>
                   <input
-                    className="w-full rounded border p-2 text-sm"
+                    className="w-full rounded border p-2 text-sm disabled:bg-slate-100 disabled:text-slate-500"
                     type="text"
                     value={currency}
+                    disabled={!canDeleteTicketTypes}
                     onChange={(e) => setCurrency(e.target.value)}
                   />
                 </div>
@@ -206,12 +211,13 @@ export default function TicketEditor({
               <div className="flex-1">
                 <label className="mb-1 block text-sm font-medium">Price</label>
                 <input
-                  className="w-full rounded border p-2 text-sm"
+                  className="w-full rounded border p-2 text-sm disabled:bg-slate-100 disabled:text-slate-500"
                   type="number"
                   min="0"
                   step="0.01"
                   value={group.ticketPrice}
                   placeholder="0"
+                  disabled={!canDeleteTicketTypes}
                   onChange={(e) => updateTicketGroup(index, "ticketPrice", e.target.value)}
                 />
               </div>
