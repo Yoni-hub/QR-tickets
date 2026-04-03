@@ -316,6 +316,8 @@ export default function Dashboard() {
   const [copiedTicketPublicId, setCopiedTicketPublicId] = useState("");
   const [copiedPromoterId, setCopiedPromoterId] = useState("");
   const [showCodePanel, setShowCodePanel] = useState(false);
+  const [promotersOpen, setPromotersOpen] = useState(true);
+  const [notificationsOpen, setNotificationsOpen] = useState(true);
   const ticketEditorDraftRef = useRef(null);
   const organizerNameRef = useRef(null);
   const dashboardLoadingRef = useRef(false);
@@ -1702,19 +1704,23 @@ export default function Dashboard() {
           {/* Collapsible code panel */}
           {showCodePanel ? (
             <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-400">Organizer code</p>
-              <p className="mb-3 break-all font-mono text-sm text-slate-800">{accessCode || "—"}</p>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Load a different code</p>
               <div className="flex gap-2">
                 <input
-                  className="w-full rounded-xl border border-slate-200 bg-white p-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                  className="w-full rounded border border-slate-200 bg-white p-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
-                  placeholder="Load a different code"
+                  placeholder={accessCode || "Your access code"}
                   onKeyDown={(e) => { if (e.key === "Enter") load(); }}
                 />
-                <AppButton onClick={load} loading={loading} loadingText="..." variant="primary" className="flex-shrink-0 rounded-xl px-3 py-2 text-sm">
-                  Load
-                </AppButton>
+                <button
+                  type="button"
+                  onClick={load}
+                  disabled={loading}
+                  className="flex-shrink-0 rounded border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  {loading ? "…" : "Load"}
+                </button>
               </div>
             </div>
           ) : null}
@@ -2344,7 +2350,14 @@ export default function Dashboard() {
           {activeMenu === "settings" ? (
             <>
             <section className="mt-4 rounded border p-4">
-              <p className="text-sm font-semibold">Promoters</p>
+              <button type="button" className="flex w-full items-center justify-between" onClick={() => setPromotersOpen((o) => !o)}>
+                <p className="text-sm font-semibold">Promoters</p>
+                <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 text-slate-400 transition-transform duration-150 ${promotersOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {promotersOpen ? (
+              <>
               <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <input className="rounded border p-2" placeholder="Name" value={promoterForm.name} onChange={(e) => setPromoterForm((prev) => ({ ...prev, name: e.target.value }))} />
               </div>
@@ -2384,10 +2397,19 @@ export default function Dashboard() {
                   {!leaderboard.length ? <p className="text-slate-500">No data yet.</p> : null}
                 </div>
               </div>
+              </>
+              ) : null}
             </section>
 
             <section className="mt-4 rounded border p-4">
-              <p className="text-sm font-semibold">Notifications</p>
+              <button type="button" className="flex w-full items-center justify-between" onClick={() => setNotificationsOpen((o) => !o)}>
+                <p className="text-sm font-semibold">Notifications</p>
+                <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 text-slate-400 transition-transform duration-150 ${notificationsOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {notificationsOpen ? (
+              <>
               <p className="mt-1 text-xs text-slate-500">
                 Verify your email below to receive notifications when customers send a ticket request,
                 reply to a message, or when the admin contacts you.
@@ -2464,6 +2486,8 @@ export default function Dashboard() {
                 Save Preferences
               </AppButton>
               <FeedbackBanner className="mt-2" kind={notifFb.kind} message={notifFb.message} />
+              </>
+              ) : null}
             </section>
             </>
           ) : null}

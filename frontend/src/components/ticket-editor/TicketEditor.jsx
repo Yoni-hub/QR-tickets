@@ -48,10 +48,12 @@ export default function TicketEditor({
   const [result, setResult] = useState(null);
   const [settings, setSettings] = useState(() => resolveInitialSettings());
   const [currency, setCurrency] = useState(() => String(initialDesignJson?.currency || "$"));
+  const [expandedGroupIndex, setExpandedGroupIndex] = useState(0);
 
   useEffect(() => {
     setSettings(resolveInitialSettings());
     setCurrency(String(initialDesignJson?.currency || "$"));
+    setExpandedGroupIndex(0);
     setResult(null);
     setFeedback({ kind: "", message: "" });
   }, [eventId, initialTicketType, initialTicketPrice, initialDesignJson]);
@@ -78,21 +80,24 @@ export default function TicketEditor({
   };
 
   const addMoreTicketTypes = () => {
+    const newIndex = settings.ticketGroups.length;
+    setExpandedGroupIndex(newIndex);
     updateSettings((prev) => ({
       ...prev,
       ticketGroups: [
         ...prev.ticketGroups,
-        {
-          ticketType: `Type ${prev.ticketGroups.length + 1}`,
-          ticketPrice: "0",
-          quantity: "0",
-        },
+        { ticketType: "", ticketPrice: "0", quantity: "0" },
       ],
     }));
   };
 
   const removeTicketType = (groupIndex) => {
     if (!canDeleteTicketTypes || settings.ticketGroups.length <= 1) return;
+    setExpandedGroupIndex((prev) => {
+      if (prev === groupIndex) return Math.max(0, groupIndex - 1);
+      if (prev > groupIndex) return prev - 1;
+      return prev;
+    });
     updateSettings((prev) => ({
       ...prev,
       ticketGroups: prev.ticketGroups.filter((_, index) => index !== groupIndex),
@@ -192,62 +197,87 @@ export default function TicketEditor({
           {!canDeleteTicketTypes ? (
             <p className="mb-3 text-xs text-slate-500">Type, price and currency are locked once tickets have been approved.</p>
           ) : null}
-          {settings.ticketGroups.map((group, index) => (
-            <div key={index}>
-              {settings.ticketGroups.length > 1 ? (
-                <div className="mb-2 flex items-center justify-between">
-                  <p className="text-sm font-semibold text-slate-700">Type {index + 1}</p>
-                  {canDeleteTicketTypes ? (
-                    <button type="button" className="text-xs text-red-400 hover:text-red-600" onClick={() => removeTicketType(index)}>Remove</button>
+          <div className="space-y-1">
+            {settings.ticketGroups.map((group, index) => {
+              const isExpanded = expandedGroupIndex === index;
+              return (
+                <div key={index}>
+                  {/* Accordion header */}
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between rounded border bg-slate-50 px-3 py-2 text-sm hover:bg-slate-100"
+                    onClick={() => setExpandedGroupIndex(isExpanded ? -1 : index)}
+                  >
+                    <span className={`font-medium ${group.ticketType ? "text-slate-800" : "text-slate-400"}`}>
+                      {group.ticketType || "Ticket type"}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      {canDeleteTicketTypes && settings.ticketGroups.length > 1 ? (
+                        <span
+                          role="button"
+                          className="text-xs text-red-400 hover:text-red-600"
+                          onClick={(e) => { e.stopPropagation(); removeTicketType(index); }}
+                        >
+                          Remove
+                        </span>
+                      ) : null}
+                      <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 text-slate-400 transition-transform duration-150 ${isExpanded ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </div>
+                  </button>
+
+                  {/* Expanded fields */}
+                  {isExpanded ? (
+                    <div className="mt-2 grid grid-cols-1 gap-2 px-1 sm:grid-cols-[120px_1fr] sm:items-center">
+                      <p className="font-semibold">Ticket type:</p>
+                      <input
+                        className="w-full rounded border p-2 text-sm disabled:bg-slate-100 disabled:text-slate-500"
+                        type="text"
+                        value={group.ticketType}
+                        placeholder="e.g. General, VIP"
+                        disabled={!canDeleteTicketTypes}
+                        onChange={(e) => updateTicketGroup(index, "ticketType", e.target.value)}
+                      />
+                      <p className="font-semibold">Currency / Price:</p>
+                      <div className="flex gap-2">
+                        {index === 0 ? (
+                          <input
+                            className="w-20 rounded border p-2 text-sm disabled:bg-slate-100 disabled:text-slate-500"
+                            type="text"
+                            value={currency}
+                            disabled={!canDeleteTicketTypes}
+                            onChange={(e) => setCurrency(e.target.value)}
+                          />
+                        ) : (
+                          <span className="flex w-20 items-center rounded border border-transparent px-2 text-sm text-slate-400">{currency}</span>
+                        )}
+                        <input
+                          className="flex-1 rounded border p-2 text-sm disabled:bg-slate-100 disabled:text-slate-500"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={group.ticketPrice}
+                          placeholder="0"
+                          disabled={!canDeleteTicketTypes}
+                          onChange={(e) => updateTicketGroup(index, "ticketPrice", e.target.value)}
+                        />
+                      </div>
+                      <p className="font-semibold">Quantity:</p>
+                      <input
+                        className="w-full rounded border p-2 text-sm"
+                        type="number"
+                        min="0"
+                        value={group.quantity}
+                        placeholder="0"
+                        onChange={(e) => updateTicketGroup(index, "quantity", e.target.value)}
+                      />
+                    </div>
                   ) : null}
                 </div>
-              ) : null}
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-[120px_1fr] sm:items-center">
-                <p className="font-semibold">Ticket type:</p>
-                <input
-                  className="w-full rounded border p-2 text-sm disabled:bg-slate-100 disabled:text-slate-500"
-                  type="text"
-                  value={group.ticketType}
-                  placeholder="e.g. General, VIP"
-                  disabled={!canDeleteTicketTypes}
-                  onChange={(e) => updateTicketGroup(index, "ticketType", e.target.value)}
-                />
-                <p className="font-semibold">Currency:</p>
-                {index === 0 ? (
-                  <input
-                    className="w-full rounded border p-2 text-sm disabled:bg-slate-100 disabled:text-slate-500"
-                    type="text"
-                    value={currency}
-                    disabled={!canDeleteTicketTypes}
-                    onChange={(e) => setCurrency(e.target.value)}
-                  />
-                ) : (
-                  <p className="p-2 text-sm text-slate-400">{currency}</p>
-                )}
-                <p className="font-semibold">Price:</p>
-                <input
-                  className="w-full rounded border p-2 text-sm disabled:bg-slate-100 disabled:text-slate-500"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={group.ticketPrice}
-                  placeholder="0"
-                  disabled={!canDeleteTicketTypes}
-                  onChange={(e) => updateTicketGroup(index, "ticketPrice", e.target.value)}
-                />
-                <p className="font-semibold">Quantity:</p>
-                <input
-                  className="w-full rounded border p-2 text-sm"
-                  type="number"
-                  min="0"
-                  value={group.quantity}
-                  placeholder="0"
-                  onChange={(e) => updateTicketGroup(index, "quantity", e.target.value)}
-                />
-              </div>
-              {index < settings.ticketGroups.length - 1 ? <hr className="my-4 border-slate-200" /> : null}
-            </div>
-          ))}
+              );
+            })}
+          </div>
           <div className="mt-4 flex items-center justify-between">
             <button type="button" className="text-sm text-blue-600 hover:underline" onClick={addMoreTicketTypes}>+ Add type</button>
             {typeof onSave === "function" ? (
