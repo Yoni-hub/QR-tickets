@@ -106,8 +106,10 @@ export default function AdminOrganizersPage() {
                         className="rounded border px-2 py-1 text-xs"
                         onClick={() => navigator.clipboard.writeText(organizer.organizerAccessCode)}
                       >
-                        Copy
+                        Copy Code
                       </button>
+                      <Link className="rounded border px-2 py-1 text-xs" to={`/admin/events?search=${encodeURIComponent(organizer.organizerAccessCode)}`}>Events</Link>
+                      <Link className="rounded border px-2 py-1 text-xs" to={`/admin/tickets?search=${encodeURIComponent(organizer.organizerAccessCode)}`}>Tickets</Link>
                       <button
                         className="rounded border px-2 py-1 text-xs"
                         onClick={() => setExpandedOrganizerCode(isExpanded ? "" : organizer.organizerAccessCode)}
@@ -179,18 +181,20 @@ export default function AdminOrganizersPage() {
                         <td className="px-3 py-2">{organizer.ticketRequestsTotal}</td>
                         <td className="px-3 py-2">{formatDate(organizer.latestEventCreatedAt)}</td>
                         <td className="px-3 py-2">
-                          <div className="flex flex-wrap gap-2">
+                          <div className="flex flex-wrap gap-1">
                             <button
-                              className="rounded border px-2 py-1 text-xs"
+                              className="rounded border px-2 py-1 text-xs hover:bg-slate-50"
                               onClick={() => navigator.clipboard.writeText(organizer.organizerAccessCode)}
                             >
-                              Copy
+                              Copy Code
                             </button>
+                            <Link className="rounded border px-2 py-1 text-xs hover:bg-slate-50" to={`/admin/events?search=${encodeURIComponent(organizer.organizerAccessCode)}`}>Events</Link>
+                            <Link className="rounded border px-2 py-1 text-xs hover:bg-slate-50" to={`/admin/tickets?search=${encodeURIComponent(organizer.organizerAccessCode)}`}>Tickets</Link>
                             <button
-                              className="rounded border px-2 py-1 text-xs"
+                              className="rounded border px-2 py-1 text-xs hover:bg-slate-50"
                               onClick={() => setExpandedOrganizerCode(isExpanded ? "" : organizer.organizerAccessCode)}
                             >
-                              {isExpanded ? "Hide Events" : "View Events"}
+                              {isExpanded ? "Hide" : "Events Detail"}
                             </button>
                           </div>
                         </td>

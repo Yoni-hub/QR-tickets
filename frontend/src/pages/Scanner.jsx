@@ -143,6 +143,15 @@ export default function Scanner() {
       const response = await withMinDelay(
         api.get(`/events/by-code/${encodeURIComponent(organizerAccessCode.trim())}`),
       );
+
+      if (response.data?.event?.scannerLocked) {
+        setScannerUnlocked(false);
+        setEvents([]);
+        setSelectedEventId("");
+        setFeedback({ kind: "error", message: "Scanner is locked by the administrator. Contact support." });
+        return;
+      }
+
       const loadedEvents = Array.isArray(response.data?.events) ? response.data.events : [];
       setEvents(loadedEvents);
       const defaultEventId = String(response.data?.event?.id || loadedEvents[0]?.id || "");

@@ -77,6 +77,7 @@ async function resolveEventContext(organizerAccessCode, selectedEventId) {
       accessCode: true,
       organizerAccessCode: true,
       adminStatus: true,
+      scannerLocked: true,
     },
   });
 
@@ -153,6 +154,24 @@ async function scanTicket(req, res) {
 
   const { selectedEvent, organizerAccessCode: normalizedOrganizerAccessCode } = context;
 
+  if (selectedEvent.scannerLocked) {
+    await logScan({
+      selectedEventId: selectedEvent.id,
+      ticket: null,
+      ticketPublicId,
+      rawScannedValue,
+      scannerSource,
+      outcome: "BLOCKED",
+      note: "OUTCOME:BLOCKED | Scanner is locked by admin",
+    });
+    return res.json({
+      result: "BLOCKED",
+      statusText: resolveScanOutcomeLabel("BLOCKED"),
+      supportingText: "Scanner is locked by the event administrator",
+      scannedAt: new Date(),
+    });
+  }
+
   const ticket = await prisma.ticket.findUnique({
     where: { ticketPublicId },
     include: {
@@ -166,6 +185,7 @@ async function scanTicket(req, res) {
           organizerAccessCode: true,
           accessCode: true,
           adminStatus: true,
+          scannerLocked: true,
         },
       },
       promoter: {
@@ -222,6 +242,7 @@ async function scanTicket(req, res) {
     outcome = "BLOCKED";
     outcomeNote = "Event is not active";
   }
+
 
   if (!isCrossOrganizerTicket && outcome === "INVALID_TICKET" && ticket.isInvalidated) {
     if (ticket.ticketRequest?.status === "REJECTED" || ticket.ticketRequest?.status === "CANCELLED") {

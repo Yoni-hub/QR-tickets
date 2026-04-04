@@ -103,6 +103,7 @@ async function resolveEventGroupByAccessCode(accessCode) {
       salesWindowEnd: true,
       maxTicketsPerEmail: true,
       emailVerified: true,
+      scannerLocked: true,
     },
   });
 

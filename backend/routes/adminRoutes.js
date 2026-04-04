@@ -13,6 +13,8 @@ const {
   enableAdminEvent,
   archiveAdminEvent,
   rotateAdminEventAccessCode,
+  lockAdminScanner,
+  unlockAdminScanner,
   invalidateAdminTicket,
   restoreAdminTicket,
   resetAdminTicketUsage,
@@ -54,6 +56,8 @@ router.patch("/events/:eventId/disable", disableAdminEvent);
 router.patch("/events/:eventId/enable", enableAdminEvent);
 router.patch("/events/:eventId/archive", archiveAdminEvent);
 router.patch("/events/:eventId/rotate-access-code", rotateAdminEventAccessCode);
+router.patch("/events/:eventId/lock-scanner", lockAdminScanner);
+router.patch("/events/:eventId/unlock-scanner", unlockAdminScanner);
 
 router.get("/tickets", listAdminTickets);
 router.patch("/tickets/:ticketPublicId/invalidate", invalidateAdminTicket);

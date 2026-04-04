@@ -265,6 +265,9 @@ async function listAdminEvents(req, res) {
           OR: [
             { eventName: { contains: search, mode: "insensitive" } },
             { accessCode: { contains: search, mode: "insensitive" } },
+            { organizerAccessCode: { contains: search, mode: "insensitive" } },
+            { organizerName: { contains: search, mode: "insensitive" } },
+            { organizerEmail: { contains: search, mode: "insensitive" } },
           ],
         }
       : {}),
@@ -284,8 +287,12 @@ async function listAdminEvents(req, res) {
       eventDate: true,
       eventAddress: true,
       accessCode: true,
+      organizerName: true,
+      organizerEmail: true,
+      organizerAccessCode: true,
       createdAt: true,
       adminStatus: true,
+      scannerLocked: true,
       _count: {
         select: { tickets: true },
       },
@@ -321,11 +328,15 @@ async function listAdminEvents(req, res) {
       eventDate: row.eventDate,
       location: row.eventAddress,
       accessCode: row.accessCode,
+      organizerName: row.organizerName || null,
+      organizerEmail: row.organizerEmail || null,
+      organizerAccessCode: row.organizerAccessCode || null,
       ticketsTotal,
       ticketsScanned,
       ticketsRemaining: Math.max(0, ticketsTotal - ticketsScanned - invalidatedCount),
       createdAt: row.createdAt,
       status: String(row.adminStatus || "ACTIVE").toLowerCase(),
+      scannerLocked: row.scannerLocked ?? false,
       invalidatedCount,
     };
   });
@@ -503,6 +514,7 @@ async function listAdminTickets(req, res) {
             { ticketPublicId: { contains: search, mode: "insensitive" } },
             { event: { eventName: { contains: search, mode: "insensitive" } } },
             { event: { accessCode: { contains: search, mode: "insensitive" } } },
+            { event: { organizerAccessCode: { contains: search, mode: "insensitive" } } },
             { deliveries: { some: { email: { contains: search, mode: "insensitive" } } } },
           ],
         }
@@ -517,6 +529,8 @@ async function listAdminTickets(req, res) {
     select: {
       id: true,
       ticketPublicId: true,
+      ticketType: true,
+      ticketRequestId: true,
       qrPayload: true,
       status: true,
       scannedAt: true,
@@ -557,6 +571,8 @@ async function listAdminTickets(req, res) {
       eventId: ticket.event.id,
       eventName: ticket.event.eventName,
       accessCode: ticket.event.accessCode,
+      ticketType: ticket.ticketType || null,
+      sold: Boolean(ticket.ticketRequestId) || ticket.status === "USED",
       attendeeName: null,
       attendeeEmail: latestDelivery?.email || null,
       ticketUrl: ticket.qrPayload || buildTicketUrl(ticket.ticketPublicId),
@@ -996,6 +1012,40 @@ async function rotateAdminEventAccessCode(req, res) {
   res.json({ event: updated });
 }
 
+async function patchScannerLocked(req, res, locked) {
+  const eventId = String(req.params.eventId || "").trim();
+  if (!eventId) {
+    res.status(400).json({ error: "eventId is required." });
+    return;
+  }
+  const existing = await prisma.userEvent.findUnique({ where: { id: eventId } });
+  if (!existing) {
+    res.status(404).json({ error: "Event not found." });
+    return;
+  }
+  const updated = await prisma.userEvent.update({
+    where: { id: eventId },
+    data: { scannerLocked: locked },
+    select: { id: true, eventName: true, accessCode: true, scannerLocked: true },
+  });
+  await writeAdminAuditLog({
+    action: locked ? "admin.locked-scanner" : "admin.unlocked-scanner",
+    targetType: "event",
+    targetId: updated.id,
+    eventId: updated.id,
+    metadata: { accessCode: updated.accessCode, scannerLocked: locked },
+  });
+  res.json({ event: updated });
+}
+
+async function lockAdminScanner(req, res) {
+  await patchScannerLocked(req, res, true);
+}
+
+async function unlockAdminScanner(req, res) {
+  await patchScannerLocked(req, res, false);
+}
+
 async function invalidateAdminTicket(req, res) {
   const ticketPublicId = String(req.params.ticketPublicId || "").trim();
   if (!ticketPublicId) {
@@ -1187,6 +1237,8 @@ module.exports = {
   enableAdminEvent,
   archiveAdminEvent,
   rotateAdminEventAccessCode,
+  lockAdminScanner,
+  unlockAdminScanner,
   invalidateAdminTicket,
   restoreAdminTicket,
   resetAdminTicketUsage,

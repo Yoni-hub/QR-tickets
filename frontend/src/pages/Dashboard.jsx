@@ -1728,6 +1728,12 @@ export default function Dashboard() {
 
       {!showLoadDashboard ? <FeedbackBanner className="mt-3" kind={loadFb.kind} message={loadFb.message} /> : null}
 
+      {summary?.event?.scannerLocked ? (
+        <div className="mt-3 rounded-2xl border border-orange-300 bg-orange-50 px-4 py-3 text-sm text-orange-800">
+          <span className="font-semibold">Scanner locked.</span> Ticket scanning has been disabled for this event by an administrator. Contact support if you believe this is an error.
+        </div>
+      ) : null}
+
       {(!showLoadDashboard || summary) && !showHeroSection ? (
         <div className="mt-4 -mx-4 sm:-mx-6 border-b border-slate-200">
           <div className="flex overflow-x-auto no-scrollbar px-4 sm:px-6">

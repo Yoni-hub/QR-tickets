@@ -47,12 +47,17 @@ export default function TicketEditor({
   const [feedback, setFeedback] = useState({ kind: "", message: "" });
   const [result, setResult] = useState(null);
   const [settings, setSettings] = useState(() => resolveInitialSettings());
-  const [currency, setCurrency] = useState(() => String(initialDesignJson?.currency || "$"));
+  const VALID_CURRENCIES = ["USD", "EUR", "ETB"];
+  const [currency, setCurrency] = useState(() => {
+    const c = String(initialDesignJson?.currency || "").toUpperCase();
+    return VALID_CURRENCIES.includes(c) ? c : "USD";
+  });
   const [expandedGroupIndex, setExpandedGroupIndex] = useState(0);
 
   useEffect(() => {
     setSettings(resolveInitialSettings());
-    setCurrency(String(initialDesignJson?.currency || "$"));
+    const c = String(initialDesignJson?.currency || "").toUpperCase();
+    setCurrency(VALID_CURRENCIES.includes(c) ? c : "USD");
     setExpandedGroupIndex(0);
     setResult(null);
     setFeedback({ kind: "", message: "" });
@@ -195,7 +200,7 @@ export default function TicketEditor({
       {mode === "append_to_event" ? (
         <>
           {!canDeleteTicketTypes ? (
-            <p className="mb-3 text-xs text-slate-500">Type, price and currency are locked once tickets have been approved.</p>
+            <p className="mb-3 text-xs text-slate-500">Currency is locked once tickets have been approved.</p>
           ) : null}
           <div className="space-y-1">
             {settings.ticketGroups.map((group, index) => {
@@ -225,21 +230,23 @@ export default function TicketEditor({
                         type="text"
                         value={group.ticketType}
                         placeholder="e.g. General, VIP"
-                        disabled={!canDeleteTicketTypes}
                         onChange={(e) => updateTicketGroup(index, "ticketType", e.target.value)}
                       />
                       <p className="font-semibold">Currency / Price:</p>
                       <div className="flex gap-2">
                         {index === 0 ? (
-                          <input
-                            className="w-20 rounded border p-2 text-sm disabled:bg-slate-100 disabled:text-slate-500"
-                            type="text"
+                          <select
+                            className="w-24 rounded border p-2 text-sm disabled:bg-slate-100 disabled:text-slate-500"
                             value={currency}
                             disabled={!canDeleteTicketTypes}
                             onChange={(e) => setCurrency(e.target.value)}
-                          />
+                          >
+                            <option value="USD">USD</option>
+                            <option value="EUR">EUR</option>
+                            <option value="ETB">ETB</option>
+                          </select>
                         ) : (
-                          <span className="flex w-20 items-center rounded border border-transparent px-2 text-sm text-slate-400">{currency}</span>
+                          <span className="flex w-24 items-center rounded border border-transparent px-2 text-sm text-slate-400">{currency}</span>
                         )}
                         <input
                           className="flex-1 rounded border p-2 text-sm disabled:bg-slate-100 disabled:text-slate-500"
@@ -248,7 +255,6 @@ export default function TicketEditor({
                           step="0.01"
                           value={group.ticketPrice}
                           placeholder="0"
-                          disabled={!canDeleteTicketTypes}
                           onChange={(e) => updateTicketGroup(index, "ticketPrice", e.target.value)}
                         />
                       </div>
