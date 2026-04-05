@@ -300,6 +300,7 @@ export default function Dashboard() {
     code: "",
     copied: false,
   });
+  const [capacityErrorModal, setCapacityErrorModal] = useState({ open: false, message: "" });
   const [copiedPublicEventLink, setCopiedPublicEventLink] = useState(false);
   const [copiedTicketPublicId, setCopiedTicketPublicId] = useState("");
   const [copiedPromoterId, setCopiedPromoterId] = useState("");
@@ -1307,8 +1308,12 @@ export default function Dashboard() {
       });
       setTicketFb("success", "Ticket editor changes saved.");
     } catch (requestError) {
-      if (handleTicketLockError(requestError)) return;
-      setTicketFb("error", requestError.response?.data?.error || "Could not save ticket changes.");
+      const errMsg = requestError.response?.data?.error || "Could not save ticket changes.";
+      if (errMsg.toLowerCase().includes("cannot be less than")) {
+        setCapacityErrorModal({ open: true, message: errMsg });
+      } else {
+        setTicketFb("error", errMsg);
+      }
     } finally {
       setSavingTicketDraft(false);
     }
@@ -2798,6 +2803,23 @@ export default function Dashboard() {
             <div className="mt-4 flex justify-end">
               <AppButton type="button" variant="primary" onClick={closeOrganizerCodeModal}>
                 I saved the code
+              </AppButton>
+            </div>
+          </section>
+        </ModalOverlay>
+      ) : null}
+
+      {capacityErrorModal.open ? (
+        <ModalOverlay className="z-50 bg-black/50">
+          <section className="w-full max-w-sm rounded border bg-white p-4 shadow-xl">
+            <p className="font-semibold">Cannot reduce capacity</p>
+            <div className="mt-3 rounded border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 space-y-1">
+              <p className="font-semibold">Tickets already sold.</p>
+              <p>{capacityErrorModal.message}</p>
+            </div>
+            <div className="mt-4 flex justify-end">
+              <AppButton type="button" variant="primary" onClick={() => setCapacityErrorModal({ open: false, message: "" })}>
+                OK
               </AppButton>
             </div>
           </section>

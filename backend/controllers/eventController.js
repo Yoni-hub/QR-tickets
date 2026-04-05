@@ -129,14 +129,6 @@ function resolveSelectedEvent(group, requestedEventId) {
   return group.events[0];
 }
 
-function formatLockedDeliveryMethods(methods) {
-  return methods.map((method) => {
-    if (method === "PDF_DOWNLOAD") return "PDF download";
-    if (method === "EMAIL_LINK") return "email";
-    if (method === "PUBLIC_EVENT_PAGE") return "public event page";
-    return String(method || "").toLowerCase();
-  });
-}
 
 function normalizePriceText(value, currency = "$") {
   const sym = String(currency || "$").trim();
@@ -173,57 +165,6 @@ function resolveTicketGroupsFromDesign(designJson) {
     .filter((group) => group.ticketType);
 }
 
-async function getEventTicketMutationLock(eventId) {
-  const [deliveryMethodsRaw, soldCount, soldByTypeRaw, publicEventPageSoldCount] = await Promise.all([
-    prisma.ticketDelivery.findMany({
-      where: {
-        status: "SENT",
-        ticket: { eventId },
-      },
-      distinct: ["method"],
-      select: { method: true },
-    }),
-    prisma.ticket.count({
-      where: buildSoldTicketWhere(eventId),
-    }),
-    prisma.ticket.groupBy({
-      by: ["ticketType"],
-      where: buildSoldTicketWhere(eventId),
-      _count: { _all: true },
-    }),
-    prisma.ticket.count({
-      where: { eventId, ticketRequestId: { not: null } },
-    }),
-  ]);
-
-  const methods = deliveryMethodsRaw.map((item) => item.method).filter(Boolean);
-  if (publicEventPageSoldCount > 0) methods.push("PUBLIC_EVENT_PAGE");
-  const uniqueMethods = Array.from(new Set(methods));
-  if (!uniqueMethods.length) return null;
-
-  const friendlyMethods = formatLockedDeliveryMethods(uniqueMethods);
-  const soldByType = soldByTypeRaw
-    .map((row) => ({
-      ticketType: String(row?.ticketType || "General").trim() || "General",
-      count: Number(row?._count?._all || 0),
-    }))
-    .filter((row) => row.count > 0)
-    .sort((a, b) => b.count - a.count);
-  const soldTicketType = soldByType.length
-    ? soldByType.map((row) => `${row.count} ${row.ticketType}`).join(", ")
-    : "Mixed";
-  const error = soldCount > 0
-    ? `You cant make changes on the event/ticket(s) ! you already sold ${soldCount} ticket(s) (${soldTicketType}). Create a new event from the events menu.`
-    : `You cant make changes on the event/ticket(s) ! you already deliverd tickets through ${friendlyMethods.join(", ")}. Create a new event from the events menu.`;
-
-  return {
-    code: "EVENT_TICKETS_LOCKED",
-    deliveryMethods: friendlyMethods,
-    soldTicketsCount: soldCount,
-    soldTicketType,
-    error,
-  };
-}
 
 async function createLiveEvent(req, res) {
   const captchaOk = await verifyTurnstile(req.body?.cfTurnstileToken, req.ip);
@@ -537,11 +478,7 @@ async function updateEventInline(req, res) {
     res.status(403).json({ error: "Invalid access code for this event." });
     return;
   }
-  const eventLock = await getEventTicketMutationLock(existing.id);
-  if (eventLock) {
-    res.status(409).json(eventLock);
-    return;
-  }
+
 
   const eventName = sanitizeText(req.body?.eventName, LIMITS.EVENT_NAME);
   const organizerName = sanitizeText(req.body?.organizerName, LIMITS.NAME);
@@ -592,6 +529,25 @@ async function updateEventInline(req, res) {
   if (hasTicketPrice && ticketPriceRaw !== "" && Number.isNaN(parsedTicketPrice)) {
     res.status(400).json({ error: "Invalid ticketPrice." });
     return;
+  }
+
+  // Guard: capacity cannot be set below already-sold count per ticket type
+  if (hasDesignJson && Array.isArray(req.body.designJson?.ticketGroups)) {
+    const soldByType = await prisma.ticket.groupBy({
+      by: ["ticketType"],
+      where: { eventId, OR: [{ ticketRequestId: { not: null } }, { status: "USED" }] },
+      _count: { _all: true },
+    });
+    const soldMap = new Map(soldByType.map((r) => [String(r.ticketType || "").trim(), Number(r._count._all)]));
+    for (const group of req.body.designJson.ticketGroups) {
+      const type = String(group?.ticketType || "").trim();
+      const newQty = Math.max(0, parseInt(String(group?.quantity || "0"), 10) || 0);
+      const sold = soldMap.get(type) || 0;
+      if (sold > 0 && newQty < sold) {
+        res.status(400).json({ error: `Capacity for "${type || "General"}" cannot be less than the ${sold} ticket(s) already sold.` });
+        return;
+      }
+    }
   }
 
   const nextSlug =
