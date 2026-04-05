@@ -205,6 +205,66 @@ function DateTimeInput({ value, onChange, minDate, className = "" }) {
 }
 
 
+function DraggableShareButton({ onClick }) {
+  const dragState = useRef({ dragging: false, startX: 0, startY: 0, origX: 0, origY: 0, moved: false });
+  const btnRef = useRef(null);
+
+  const onPointerDown = (e) => {
+    if (e.button !== undefined && e.button !== 0) return;
+    const btn = btnRef.current;
+    if (!btn) return;
+    const rect = btn.getBoundingClientRect();
+    dragState.current = {
+      dragging: true,
+      startX: e.clientX,
+      startY: e.clientY,
+      origX: rect.left,
+      origY: rect.top,
+      moved: false,
+    };
+    btn.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  };
+
+  const onPointerMove = (e) => {
+    if (!dragState.current.dragging) return;
+    const dx = e.clientX - dragState.current.startX;
+    const dy = e.clientY - dragState.current.startY;
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) dragState.current.moved = true;
+    const btn = btnRef.current;
+    if (!btn) return;
+    const newLeft = Math.max(0, Math.min(window.innerWidth - btn.offsetWidth, dragState.current.origX + dx));
+    const newTop = Math.max(0, Math.min(window.innerHeight - btn.offsetHeight, dragState.current.origY + dy));
+    btn.style.left = `${newLeft}px`;
+    btn.style.top = `${newTop}px`;
+    btn.style.right = "auto";
+    btn.style.bottom = "auto";
+  };
+
+  const onPointerUp = (e) => {
+    if (!dragState.current.dragging) return;
+    dragState.current.dragging = false;
+    if (!dragState.current.moved) onClick();
+  };
+
+  return (
+    <button
+      ref={btnRef}
+      type="button"
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      className="fixed bottom-6 right-6 z-40 flex touch-none select-none items-center gap-2 rounded-full bg-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-xl transition hover:bg-indigo-500 active:scale-95"
+      style={{ cursor: "grab" }}
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+      </svg>
+      Share Event
+    </button>
+  );
+}
+
 export default function Dashboard() {
   const { containerRef: turnstileRef, getToken: getTurnstileToken } = useTurnstile();
   const navigate = useNavigate();
@@ -2968,16 +3028,7 @@ export default function Dashboard() {
         </ModalOverlay>
       ) : null}
       {summary?.event?.slug ? (
-        <button
-          type="button"
-          onClick={shareEvent}
-          className="fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full bg-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-xl transition hover:bg-indigo-500 active:scale-95"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-          </svg>
-          Share Event
-        </button>
+        <DraggableShareButton onClick={shareEvent} />
       ) : null}
     </main>
       )}
