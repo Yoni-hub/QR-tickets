@@ -701,6 +701,7 @@ async function getClientDashboardByToken(req, res) {
           eventEndDate: true,
           eventAddress: true,
           slug: true,
+          designJson: true,
         },
       },
       tickets: {
@@ -708,6 +709,7 @@ async function getClientDashboardByToken(req, res) {
         select: {
           ticketPublicId: true,
           ticketType: true,
+          ticketPrice: true,
           status: true,
           isInvalidated: true,
           cancelledAt: true,
@@ -742,10 +744,12 @@ async function getClientDashboardByToken(req, res) {
       eventEndDate: request.event?.eventEndDate || null,
       eventAddress: request.event?.eventAddress || "",
       slug: request.event?.slug || null,
+      currency: String(request.event?.designJson?.currency || "$").trim(),
     },
     tickets: (request.tickets || []).map((ticket) => ({
       ticketPublicId: ticket.ticketPublicId,
       ticketType: ticket.ticketType || "General",
+      ticketPrice: ticket.ticketPrice != null ? Number(ticket.ticketPrice) : null,
       status: ticket.status,
       isInvalidated: ticket.isInvalidated,
       cancelledAt: ticket.cancelledAt,

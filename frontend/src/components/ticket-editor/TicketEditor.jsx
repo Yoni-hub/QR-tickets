@@ -199,9 +199,6 @@ export default function TicketEditor({
     <main className={rootClass}>
       {mode === "append_to_event" ? (
         <>
-          {!canDeleteTicketTypes ? (
-            <p className="mb-3 text-xs text-slate-500">Currency is locked once tickets have been approved.</p>
-          ) : null}
           <div className="space-y-1">
             {settings.ticketGroups.map((group, index) => {
               const isExpanded = expandedGroupIndex === index;
@@ -238,7 +235,6 @@ export default function TicketEditor({
                           <select
                             className="w-24 rounded border p-2 text-sm disabled:bg-slate-100 disabled:text-slate-500"
                             value={currency}
-                            disabled={!canDeleteTicketTypes}
                             onChange={(e) => setCurrency(e.target.value)}
                           >
                             <option value="USD">USD</option>

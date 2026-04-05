@@ -935,10 +935,10 @@ async function verifyNotificationEmailOtp(req, res) {
     return;
   }
 
-  // Save verified email and mark emailVerified on all events for this organizer
+  // Save verified email, mark emailVerified, and auto-enable notifications
   await prisma.userEvent.updateMany({
     where: { OR: [{ accessCode }, { organizerAccessCode: accessCode }] },
-    data: { organizerEmail: email, emailVerified: true },
+    data: { organizerEmail: email, emailVerified: true, notifyOnRequest: true, notifyOnMessage: true },
   });
 
   res.json({ ok: true });

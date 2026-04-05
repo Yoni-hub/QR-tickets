@@ -381,7 +381,14 @@ export default function ClientDashboardPage() {
                                   return (
                                     <article key={ticket.ticketPublicId} className="rounded border bg-slate-50 p-3">
                                       <div className="flex flex-wrap items-center justify-between gap-2">
-                                        <p className="font-semibold">{ticket.ticketType || "General"}</p>
+                                        <div>
+                                          <p className="font-semibold">{ticket.ticketType || "General"}</p>
+                                          {ticket.ticketPrice != null && ticket.ticketPrice > 0 ? (
+                                            <p className="text-xs text-slate-500">{request.event?.currency || "$"}{Number(ticket.ticketPrice).toFixed(2)}</p>
+                                          ) : ticket.ticketPrice === 0 ? (
+                                            <p className="text-xs text-slate-500">Free</p>
+                                          ) : null}
+                                        </div>
                                         <span className={`rounded px-2 py-0.5 text-xs font-semibold ${resolveTicketStatusClass(ticketStatus)}`}>
                                           {ticketStatus}
                                         </span>
@@ -437,6 +444,11 @@ export default function ClientDashboardPage() {
                       <div>
                         <p className="font-semibold">{ticket.ticketType || "General"}</p>
                         <p className="mt-0.5 text-xs text-slate-500">{ticket.event?.eventName || "-"}</p>
+                        {ticket.ticketPrice != null && ticket.ticketPrice > 0 ? (
+                          <p className="mt-0.5 text-xs text-slate-400">{ticket.event?.currency || "$"}{Number(ticket.ticketPrice).toFixed(2)}</p>
+                        ) : ticket.ticketPrice === 0 ? (
+                          <p className="mt-0.5 text-xs text-slate-400">Free</p>
+                        ) : null}
                       </div>
                       <span className={`rounded px-2 py-0.5 text-xs font-semibold ${resolveTicketStatusClass(ticketStatus)}`}>
                         {ticketStatus}
