@@ -897,12 +897,13 @@ export default function Dashboard() {
     }
   };
 
-  const saveNotifications = async () => {
+  const saveNotifications = async (overrides) => {
     if (!accessCode || savingNotif) return;
     setSavingNotif(true);
+    const payload = overrides ? { ...notifDraft, ...overrides } : notifDraft;
     try {
-      await api.patch(`/events/by-code/${encodeURIComponent(accessCode)}/notifications`, { notifyOnRequest: notifDraft.notifyOnRequest, notifyOnMessage: notifDraft.notifyOnMessage });
-      setNotifFb("success", "Notification preferences saved.");
+      await api.patch(`/events/by-code/${encodeURIComponent(accessCode)}/notifications`, { notifyOnRequest: payload.notifyOnRequest, notifyOnMessage: payload.notifyOnMessage });
+      setNotifFb("success", "Saved.");
     } catch {
       setNotifFb("error", "Could not save preferences.");
     } finally {
@@ -2470,7 +2471,11 @@ export default function Dashboard() {
                     type="checkbox"
                     className="mt-0.5"
                     checked={notifDraft.notifyOnRequest}
-                    onChange={(e) => setNotifDraft((prev) => ({ ...prev, notifyOnRequest: e.target.checked }))}
+                    onChange={(e) => {
+                      const val = e.target.checked;
+                      setNotifDraft((prev) => ({ ...prev, notifyOnRequest: val }));
+                      saveNotifications({ notifyOnRequest: val });
+                    }}
                   />
                   <span>A customer submits a ticket request</span>
                 </label>
@@ -2479,14 +2484,15 @@ export default function Dashboard() {
                     type="checkbox"
                     className="mt-0.5"
                     checked={notifDraft.notifyOnMessage}
-                    onChange={(e) => setNotifDraft((prev) => ({ ...prev, notifyOnMessage: e.target.checked }))}
+                    onChange={(e) => {
+                      const val = e.target.checked;
+                      setNotifDraft((prev) => ({ ...prev, notifyOnMessage: val }));
+                      saveNotifications({ notifyOnMessage: val });
+                    }}
                   />
                   <span>A customer or the admin sends you a message</span>
                 </label>
               </div>
-              <AppButton className="mt-4" onClick={saveNotifications} loading={savingNotif} loadingText="Saving...">
-                Save Preferences
-              </AppButton>
               <FeedbackBanner className="mt-2" kind={notifFb.kind} message={notifFb.message} />
               </>
               ) : null}
