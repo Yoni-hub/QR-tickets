@@ -85,16 +85,22 @@ async function getTicketByPublicId(req, res) {
     status: ticket.event.adminStatus === "ACTIVE" ? "ACTIVE" : "DISABLED",
   };
 
-  // Override priceText in ticket designJson using the event's current currency setting
+  // Resolve price: prefer ticket-level ticketPrice, fall back to matching group in event designJson
   const currency = String(ticket.event.designJson?.currency || "$").trim();
-  let ticketOut = ticket;
-  if (ticket.designJson && typeof ticket.designJson === "object") {
-    const price = ticket.ticketPrice != null ? Number(ticket.ticketPrice) : null;
-    const priceText = price != null && Number.isFinite(price) && price > 0
-      ? `${currency}${price.toFixed(2)}`
-      : ticket.designJson.priceText || "Free";
-    ticketOut = { ...ticket, designJson: { ...ticket.designJson, priceText, currency } };
+  let resolvedPrice = ticket.ticketPrice != null ? Number(ticket.ticketPrice) : null;
+  if (resolvedPrice == null) {
+    const groups = Array.isArray(ticket.event.designJson?.ticketGroups) ? ticket.event.designJson.ticketGroups : [];
+    const matchingGroup = groups.find((g) => String(g.ticketType || "").trim() === String(ticket.ticketType || "").trim());
+    if (matchingGroup?.ticketPrice != null) {
+      resolvedPrice = Number(matchingGroup.ticketPrice);
+    }
   }
+  let ticketOut = ticket;
+  const designJsonBase = ticket.designJson && typeof ticket.designJson === "object" ? ticket.designJson : {};
+  const priceText = resolvedPrice != null && Number.isFinite(resolvedPrice) && resolvedPrice > 0
+    ? `${currency}${resolvedPrice.toFixed(2)}`
+    : "Free";
+  ticketOut = { ...ticket, designJson: { ...designJsonBase, priceText, currency } };
 
   // Strip event.designJson and internal fields from the response
   const { designJson: _eventDesign, emailVerified: _emailVerified, ...eventOut } = ticket.event;
