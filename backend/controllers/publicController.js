@@ -615,6 +615,16 @@ async function createPublicTicketRequest(req, res) {
         },
       }).catch(() => {});
 
+      if (event.organizerEmail && event.notifyOnRequest) {
+        const baseUrl = getPublicBaseUrl();
+        const dashboardUrl = `${baseUrl}/dashboard?code=${encodeURIComponent(event.organizerAccessCode || event.accessCode)}`;
+        sendOrganizerNewRequestEmail({
+          to: event.organizerEmail,
+          eventName: event.eventName,
+          dashboardUrl,
+        }).catch((err) => console.error("organizer notify email failed", err));
+      }
+
       res.status(201).json({
         request: { ...request, status: "APPROVED" },
         payment: { selections: normalizedSelections, totalQuantity, totalPrice },

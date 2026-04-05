@@ -223,7 +223,7 @@ async function createTicketsForRequest({ event, request }, tx = null) {
     ? rawSelections
         .map((item) => ({
           ticketType: String(item?.ticketType || "").trim(),
-          ticketPrice: item?.ticketPrice != null ? Number(item.ticketPrice) : null,
+          ticketPrice: item?.ticketPrice != null ? Number(item.ticketPrice) : (item?.unitPrice != null ? Number(item.unitPrice) : null),
           quantity: Math.max(0, Number.parseInt(String(item?.quantity || "0"), 10) || 0),
         }))
         .filter((item) => item.ticketType && item.quantity > 0)

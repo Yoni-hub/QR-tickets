@@ -80,6 +80,7 @@ export default function ClientDashboardPage() {
   const [activeTab, setActiveTab] = useState("events");
   const [showTokenPanel, setShowTokenPanel] = useState(false);
   const [expandedEvents, setExpandedEvents] = useState(() => new Set());
+  const [chatUnread, setChatUnread] = useState(0);
 
   const normalizedToken = useMemo(() => String(routeToken || sessionToken || "").trim(), [routeToken, sessionToken]);
 
@@ -318,7 +319,14 @@ export default function ClientDashboardPage() {
                   : "border-b-2 border-transparent text-slate-500"
               }`}
             >
-              {TAB_ICONS[tab.id]}
+              <span className="relative">
+                {TAB_ICONS[tab.id]}
+                {tab.id === "chat" && chatUnread > 0 ? (
+                  <span className="absolute -right-2 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white">
+                    {chatUnread > 99 ? "99+" : chatUnread}
+                  </span>
+                ) : null}
+              </span>
               {tab.label}
             </button>
           ))}
@@ -486,6 +494,7 @@ export default function ClientDashboardPage() {
             api={chatApi}
             quickStarts={quickStarts}
             socketCredentials={{ clientAccessToken: normalizedToken || tokenInput }}
+            onUnreadCountChange={setChatUnread}
           />
         </div>
       ) : null}
