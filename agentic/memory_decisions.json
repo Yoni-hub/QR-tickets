@@ -47,6 +47,42 @@
   },
   "agentic_decisions": [
     {
+      "id": "ADEC-005",
+      "date": "2026-04-06",
+      "title": "Fix chat attachment path by moving to existing volume rather than adding a new volume mount",
+      "context": "BUG-011: chat attachments were stored at /app/storage/private/chat which was outside the Docker volume. Two options: (a) change the path constant to /app/uploads/private/chat, or (b) add a second volume mount in docker-compose.yml for /app/storage.",
+      "decision": "Option (a): change CHAT_STORAGE_ROOT constant in chatAttachmentService.js to resolve under /app/uploads. No infrastructure change required. Reuses existing volume mount.",
+      "alternatives_rejected": [
+        "Add second volume mount (/app/storage) — adds infrastructure complexity, requires deploy script change, more surface area"
+      ],
+      "consequence": "Chat attachments now survive container rebuilds. Existing attachments at the old path (pre-fix) were already ephemeral and no migration needed.",
+      "review_trigger": "If /app/uploads grows large and needs to be split, a separate volume for chat can be added then"
+    },
+    {
+      "id": "ADEC-006",
+      "date": "2026-04-06",
+      "title": "Use existing otpLimiter for recover-organizer-code; create separate contactLimiter for contact form",
+      "context": "BUG-012: recovery/contact endpoints had no rate limiting. Options: (a) reuse existing limiters, (b) create new dedicated limiters.",
+      "decision": "Reuse otpLimiter (5/hr) for recover-organizer-code (same threat model as other OTP endpoints). Create new contactLimiter (3/hr) for contact form — stricter because contact form sends email to admin and one submission per hour is the normal case.",
+      "alternatives_rejected": [
+        "Single global limiter for all public endpoints — too broad, would affect unrelated endpoints"
+      ],
+      "consequence": "All 7 unauthenticated email-sending endpoints are now rate limited. contactLimiter is tighter (3/hr) reflecting the lower expected volume of legitimate contact form submissions.",
+      "review_trigger": "If legitimate users hit contactLimiter too often, raise to 5/hr"
+    },
+    {
+      "id": "ADEC-007",
+      "date": "2026-04-06",
+      "title": "Run npm audit fix without --force on both packages",
+      "context": "BUG-014: 8 HIGH vulnerabilities in backend, 2 in frontend. npm audit fix without --force only applies safe (semver-compatible) fixes.",
+      "decision": "Run npm audit fix (no --force) only. This updates transitive dependencies in package-lock.json without changing declared versions in package.json. Result: 0 vulnerabilities in both packages.",
+      "alternatives_rejected": [
+        "npm audit fix --force — could introduce breaking major version changes; not needed since safe fix resolved all issues"
+      ],
+      "consequence": "0 vulnerabilities. package.json unchanged. Only package-lock.json updated with 18 transitive package version changes.",
+      "review_trigger": "Run npm audit on every CI pipeline run (TASK-006)"
+    }
+    {
       "id": "ADEC-001",
       "date": "2026-04-05",
       "title": "Establish /agentic/ as the persistent memory layer inside the repo",

@@ -227,7 +227,38 @@
       "estimated_sessions": 3
     }
   ],
-  "completed_tasks": [],
+  "completed_tasks": [
+    {
+      "id": "TASK-001",
+      "title": "Add CLAUDE.md root enforcement file",
+      "completed": "2026-04-05",
+      "commit": "d49fa7c"
+    },
+    {
+      "id": "TASK-002",
+      "title": "Rewrite orchestrator + specialist agent prompts",
+      "completed": "2026-04-05",
+      "commit": "d49fa7c"
+    },
+    {
+      "id": "BUGFIX-BUG-011",
+      "title": "Fix chat attachment data loss (Docker volume path)",
+      "completed": "2026-04-06",
+      "commit": "fb1861c"
+    },
+    {
+      "id": "BUGFIX-BUG-012",
+      "title": "Add rate limiting to recovery/contact OTP endpoints",
+      "completed": "2026-04-06",
+      "commit": "fde05c0"
+    },
+    {
+      "id": "BUGFIX-BUG-014",
+      "title": "Resolve npm CVEs in backend and frontend",
+      "completed": "2026-04-06",
+      "commit": "fde05c0"
+    }
+  ],
   "task_summary": {
     "p0_ready": 2,
     "p1_ready": 4,

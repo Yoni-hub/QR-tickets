@@ -72,6 +72,11 @@
       "No OWASP audit process",
       "Rate limiting not per-user/session, only per-IP",
       "Admin key is a simple shared string (no rotation policy)"
+    ],
+    "fixed_2026_04_06": [
+      "Recovery/contact OTP endpoints now have rate limiting (BUG-012, commit fde05c0)",
+      "npm CVEs resolved — 0 vulnerabilities in backend and frontend (BUG-014, commit fde05c0)",
+      "Chat attachments now stored in persistent Docker volume (BUG-011, commit fb1861c)"
     ]
   },
   "observability": {
@@ -98,8 +103,9 @@
     "note": "0% coverage across entire codebase"
   },
   "agentic_maturity": {
-    "score_overall": 1.5,
-    "last_scored": "2026-04-05",
+    "score_overall": 2.1,
+    "last_scored": "2026-04-06",
+    "previous_score": 1.5,
     "dimensions": {
       "product_intelligence": 1,
       "engineering_autonomy": 1,
