@@ -1,0 +1,91 @@
+{
+  "_meta": {
+    "purpose": "Decisions made by the agentic system and why — separate from product decisions in docs/DECISIONS_LOG.md. This file tracks AGENTIC and ARCHITECTURAL decisions.",
+    "last_updated": "2026-04-05",
+    "updated_by": "agentic-orchestrator",
+    "update_trigger": "initial-audit"
+  },
+  "product_decisions": {
+    "note": "Product decisions live in docs/DECISIONS_LOG.md. Key ones mirrored here for agent context.",
+    "summary": [
+      {
+        "id": "DEC-001",
+        "decision": "Full isolation from Connsura runtime and infrastructure",
+        "consequence": "Independent repo, DB, containers, CI/CD"
+      },
+      {
+        "id": "DEC-002",
+        "decision": "6-char alphanumeric accessCode as organizer credential (no OAuth/JWT)",
+        "consequence": "Simple onboarding; tradeoff is no password recovery (access code IS the credential)"
+      },
+      {
+        "id": "DEC-003",
+        "decision": "QR payload = full URL: ${PUBLIC_BASE_URL}/t/${ticketPublicId}",
+        "consequence": "Scannable as URL or raw ID; users can verify ticket state at /t/:id"
+      },
+      {
+        "id": "DEC-005",
+        "decision": "C:\\Users\\yonat\\Downloads\\QR_Tickets is the ONLY active working repo",
+        "consequence": "OneDrive copy is archived/read-only unless explicitly requested"
+      },
+      {
+        "id": "DEC-007",
+        "decision": "TicketRequest lifecycle with PENDING_VERIFICATION → APPROVED/REJECTED (renamed from PENDING_PAYMENT 2026-03-17)",
+        "consequence": "Payment stays off-platform; organizer controls issuance"
+      },
+      {
+        "id": "DEC-012",
+        "decision": "Store salesWindowStart/End as HH:MM strings (24h), not UTC DateTimes",
+        "consequence": "Timezone-portable; comparison done in server local time"
+      },
+      {
+        "id": "DEC-013",
+        "decision": "Backend serves OG meta tags for social crawlers; nginx routes by User-Agent",
+        "consequence": "Social previews work; no change to React SPA routing for real users"
+      }
+    ]
+  },
+  "agentic_decisions": [
+    {
+      "id": "ADEC-001",
+      "date": "2026-04-05",
+      "title": "Establish /agentic/ as the persistent memory layer inside the repo",
+      "context": "The system had no executable agentic infrastructure — only documentation stubs. A repo-local memory layer enables cross-session continuity without external tooling.",
+      "decision": "Create /agentic/ with JSON memory files + markdown behavior files. JSON for machine-readable state; markdown for human-readable behavior specs.",
+      "alternatives_rejected": [
+        "External vector DB — too much infrastructure for current scale",
+        "Plain markdown memory files only — less structured, harder for agents to parse and update",
+        "Keeping memory in .claude/ only — not visible to humans reviewing the repo"
+      ],
+      "consequence": "Every session can load context from JSON files. Memory is version-controlled alongside code.",
+      "review_trigger": "If memory files become large (>500 lines each), consider splitting by sub-domain"
+    },
+    {
+      "id": "ADEC-002",
+      "date": "2026-04-05",
+      "title": "Phase ordering: foundation before product features",
+      "context": "The system has 0% test coverage, no CI, no structured logging. Building AI features on this base would be building on sand.",
+      "decision": "Phase 1 = engineering + agentic foundation only. No product features until CI, tests, and logging are in place.",
+      "consequence": "Product AI features (approval assist, analytics) deferred to Phase 3 minimum",
+      "review_trigger": "After TASK-006 (CI) and TASK-007+008 (critical path tests) are complete"
+    },
+    {
+      "id": "ADEC-003",
+      "date": "2026-04-05",
+      "title": "Use JSON + Markdown hybrid for agentic memory files",
+      "context": "Pure JSON is machine-readable but poor for complex behavioral instructions. Pure markdown is human-readable but hard to query programmatically.",
+      "decision": "Use JSON for state (memory_*.json files) and Markdown for behavior (agent_loop.md, roles.md, etc.).",
+      "consequence": "Agents load JSON for facts, load Markdown for behavioral instructions",
+      "review_trigger": "If scripted automation needs to read memory, JSON is already machine-parseable"
+    },
+    {
+      "id": "ADEC-004",
+      "date": "2026-04-05",
+      "title": "Do not rewrite working product code during agentic foundation setup",
+      "context": "The product is live and functional. Agentic foundation work must not introduce regressions.",
+      "decision": "Foundation files are all new files or prompt rewrites. No modifications to backend/ or frontend/ in Phase 1.",
+      "consequence": "Phase 1 is zero-risk to the live product",
+      "review_trigger": "Phase 2 tasks begin touching backend code"
+    }
+  ]
+}

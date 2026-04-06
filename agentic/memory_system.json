@@ -1,0 +1,139 @@
+{
+  "_meta": {
+    "purpose": "Overall system understanding — architecture, stack, deployment, constraints, maturity",
+    "last_updated": "2026-04-05",
+    "updated_by": "agentic-orchestrator",
+    "update_trigger": "initial-audit"
+  },
+  "identity": {
+    "product_name": "QR Tickets",
+    "description": "Standalone SaaS QR event ticketing platform for organizers. Buyers request tickets through a public event page, organizers approve, tickets are delivered via client dashboard link, scanned at the door.",
+    "production_url": "https://qr-tickets.connsura.com",
+    "repo": "https://github.com/Yoni-hub/QR-tickets.git",
+    "active_branch": "main",
+    "working_directory": "C:\\Users\\yonat\\Downloads\\QR_Tickets",
+    "isolation_rule": "Standalone from Connsura. No shared runtime, DB, or containers. Shared only: SES, Zoho mail, root domain ownership."
+  },
+  "stack": {
+    "frontend": {
+      "framework": "React 19 + Vite 7 + React Router 7",
+      "styling": "Tailwind CSS 3",
+      "realtime": "socket.io-client 4",
+      "qr_scanning": "html5-qrcode 2",
+      "http": "axios",
+      "build_output": "static SPA served by Docker container on port 4173"
+    },
+    "backend": {
+      "framework": "Express 4",
+      "orm": "Prisma 6 (PostgreSQL)",
+      "realtime": "socket.io 4",
+      "auth": "access codes + client tokens (no JWT/OAuth)",
+      "email": "nodemailer via SMTP (SES/Zoho)",
+      "storage": "AWS S3 (evidence images, attachments)",
+      "pdf": "puppeteer + pdf-lib",
+      "captcha": "Cloudflare Turnstile",
+      "port": 4100
+    },
+    "database": {
+      "engine": "PostgreSQL 16",
+      "access": "Prisma ORM (parameterized queries only)",
+      "local_port": 5434,
+      "prod_port": 5432,
+      "migrations": "prisma migrate deploy"
+    },
+    "infrastructure": {
+      "containers": "Docker Compose (backend + frontend + postgres)",
+      "proxy": "nginx (reverse proxy, WebSocket upgrade, OG crawler UA routing)",
+      "deployment": "manual SSH + docker compose up --build",
+      "ci_cd": "NONE — no GitHub Actions workflows exist",
+      "backup": "daily cron at 02:00 UTC → pg_dump → S3",
+      "health_check": "GET /health"
+    }
+  },
+  "security_posture": {
+    "implemented": [
+      "helmet() global security headers",
+      "express-rate-limit (4 limiters: scan, OTP x2, support)",
+      "failed-scan IP block (in-memory Map, 20 attempts → 15min block)",
+      "Cloudflare Turnstile CAPTCHA on public forms",
+      "HTML tag stripping via sanitize.js",
+      "safeError() prevents internal error leakage",
+      "Prisma parameterized queries (no raw SQL)",
+      "CORS restricted to PUBLIC_BASE_URL origin",
+      "Admin protected by x-admin-key header/query param",
+      "Client tokens: 24-byte crypto.randomBytes hex",
+      "S3 attachment access via authorization-checked routes"
+    ],
+    "missing": [
+      "CSRF protection on state-mutating endpoints",
+      "Zod/Joi schema validation (only manual sanitize.js)",
+      "Redis-backed rate limiting (in-memory resets on restart)",
+      "No dependency CVE scanning in CI",
+      "No OWASP audit process",
+      "Rate limiting not per-user/session, only per-IP",
+      "Admin key is a simple shared string (no rotation policy)"
+    ]
+  },
+  "observability": {
+    "implemented": [
+      "morgan HTTP logging (combined format)",
+      "AdminAuditLog DB table for admin actions",
+      "TicketViewLog for ticket page opens"
+    ],
+    "missing": [
+      "Structured logging (no Winston/Pino)",
+      "Error tracking (no Sentry/Rollbar)",
+      "APM (no response time, DB query monitoring)",
+      "Uptime monitoring (no external health check service)",
+      "Alerting (no PagerDuty, email alerts, Slack alerts)",
+      "Analytics (no funnel data, no user behavior tracking)"
+    ]
+  },
+  "test_coverage": {
+    "unit_tests": 0,
+    "integration_tests": 0,
+    "e2e_tests": 0,
+    "test_framework": "none",
+    "backend_package_json_test_script": "echo 'Error: no test specified'",
+    "note": "0% coverage across entire codebase"
+  },
+  "agentic_maturity": {
+    "score_overall": 1.5,
+    "last_scored": "2026-04-05",
+    "dimensions": {
+      "product_intelligence": 1,
+      "engineering_autonomy": 1,
+      "qa_autonomy": 0,
+      "security_awareness": 3,
+      "operational_autonomy": 2,
+      "memory_context_handling": 4,
+      "orchestration_maturity": 1,
+      "self_improvement_capability": 0
+    },
+    "existing_agent_infrastructure": {
+      "connsura_ai_system_prompts": "stub files only (3-7 lines each)",
+      "agents_directory": "EMPTY",
+      "orchestrator_md": "7 lines — no execution logic",
+      "runtime_llm_calls": "NONE anywhere in application code"
+    }
+  },
+  "environment_variables": {
+    "required": [
+      "PORT", "NODE_ENV", "DATABASE_URL",
+      "PUBLIC_BASE_URL", "ADMIN_PANEL_KEY",
+      "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "MAIL_FROM",
+      "AWS_REGION", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "S3_BUCKET_NAME"
+    ],
+    "optional": ["TURNSTILE_SECRET_KEY"],
+    "secrets_management": "plain .env files — no Vault, no SSM Parameter Store"
+  },
+  "known_constraints": [
+    "Single-instance deployment (in-memory state breaks horizontal scaling)",
+    "No staging environment (documented as placeholder only)",
+    "Manual deploy pipeline (SSH required)",
+    "Blue/green documented but not automated",
+    "Ticket design locked after first generation per event",
+    "PDF/email delivery methods removed — public event page is the ONLY delivery method",
+    "organizerAccessCode is case-sensitive in Postgres (was a bug source)"
+  ]
+}

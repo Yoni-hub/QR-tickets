@@ -1,0 +1,162 @@
+{
+  "_meta": {
+    "purpose": "Product features, user flows, route map, and current capabilities",
+    "last_updated": "2026-04-05",
+    "updated_by": "agentic-orchestrator",
+    "update_trigger": "initial-audit"
+  },
+  "active_routes": {
+    "frontend": [
+      { "path": "/", "component": "Dashboard", "note": "root redirects to /dashboard" },
+      { "path": "/dashboard", "component": "Dashboard", "roles": ["organizer"] },
+      { "path": "/dashboard/ticket-requests", "component": "TicketRequestsPage", "roles": ["organizer"] },
+      { "path": "/dashboard/promoters", "component": "PromotersPage", "roles": ["organizer"] },
+      { "path": "/e/:eventSlug", "component": "PublicEventPage", "roles": ["public"] },
+      { "path": "/e/:eventSlug/confirm", "component": "PublicEventConfirmPage", "roles": ["public"] },
+      { "path": "/client", "component": "ClientDashboardPage", "roles": ["buyer"] },
+      { "path": "/client/:clientAccessToken", "component": "ClientDashboardPage", "roles": ["buyer"] },
+      { "path": "/t/:ticketPublicId", "component": "TicketVerify", "roles": ["public"] },
+      { "path": "/scanner", "component": "Scanner", "roles": ["organizer"] },
+      { "path": "/admin/*", "component": "AdminLayout + sub-pages", "roles": ["admin"], "protection": "x-admin-key" },
+      { "path": "/help", "component": "HelpPage", "roles": ["public"] },
+      { "path": "/terms", "component": "TermsPage", "roles": ["public"] },
+      { "path": "/privacy", "component": "PrivacyPage", "roles": ["public"] },
+      { "path": "/contact-support", "component": "ContactSupportPage", "roles": ["public"] }
+    ],
+    "removed_routes": [
+      "/", "/how-it-works", "/demo — removed 2026-03-14",
+      "/scanner (standalone) — scanner now lives inside dashboard"
+    ]
+  },
+  "core_flows": {
+    "ticket_request_flow": {
+      "description": "Public buyer requests tickets through event page",
+      "steps": [
+        "1. Buyer visits /e/:eventSlug",
+        "2. Fills name/email/phone + ticket type selections",
+        "3. Uploads payment evidence (required for paid events)",
+        "4. OTP sent to buyer email for verification",
+        "5. Buyer verifies OTP",
+        "6. TicketRequest created (status: PENDING_VERIFICATION)",
+        "7. Organizer reviews in dashboard → approve or reject",
+        "8. On approval: tickets generated ON-DEMAND, buyer emailed client dashboard link",
+        "9. Buyer visits /client?token=... to view QR codes",
+        "10. Buyer shows QR at door; organizer scans via dashboard scanner"
+      ],
+      "auto_approve_path": "If organizer has auto-approve enabled, step 7-8 fire immediately on submission",
+      "blocking_conditions": [
+        "salesCutoffAt passed",
+        "Outside salesWindowStart/salesWindowEnd",
+        "Buyer email has reached maxTicketsPerEmail",
+        "Event at capacity (all ticket types sold out)"
+      ]
+    },
+    "organizer_onboarding_flow": {
+      "description": "New organizer sets up their first event",
+      "steps": [
+        "1. Visit /dashboard",
+        "2. Enter organizer name → organizerAccessCode generated on first event save",
+        "3. Configure event: name, date, location, ticket types/prices",
+        "4. Verify email via OTP to publish event (emailVerified gate)",
+        "5. Event published → share /e/:slug link with buyers",
+        "6. Organizer uses dashboard to manage requests, chat, scanner"
+      ],
+      "access_model": "accessCode (6-char alphanumeric) is the organizer's login credential"
+    },
+    "scan_flow": {
+      "description": "Organizer scans QR at event door",
+      "steps": [
+        "1. Organizer opens scanner (inside dashboard OR at /scanner route)",
+        "2. Camera or manual entry of ticketPublicId or full URL",
+        "3. POST /api/scans with accessCode + ticketPublicId",
+        "4. Backend validates: ticket belongs to event, not used, not invalidated, not expired, scanner not locked"
+      ],
+      "outcomes_api_response": ["VALID", "ALREADY_USED", "INVALID_TICKET", "EXPIRED", "BLOCKED"],
+      "outcomes_db_stored": ["VALID", "USED", "INVALID"],
+      "outcome_notes": "BLOCKED fires when UserEvent.scannerLocked=true (set by admin). ALREADY_USED maps to USED in DB. INVALID_TICKET maps to INVALID in DB.",
+      "security": "Cross-organizer tickets always return INVALID_TICKET without ticket details"
+    },
+    "chat_flow": {
+      "description": "Pairwise messaging between organizer/client/admin",
+      "pairs_allowed": ["ORGANIZER<->ADMIN", "ORGANIZER<->CLIENT", "ADMIN<->CLIENT"],
+      "realtime": "socket.io rooms (conv:{conversationId})",
+      "attachments": "IMAGE and PDF via multipart upload, stored locally, served via auth-checked routes"
+    },
+    "admin_flow": {
+      "description": "Internal admin panel for system oversight",
+      "access": "x-admin-key header/query param",
+      "capabilities": [
+        "View all events, tickets, scans, deliveries",
+        "Enable/disable/archive events",
+        "Invalidate/restore/reset tickets",
+        "Mark scans suspicious",
+        "View support/chat inbox",
+        "View audit log",
+        "Manage promoters",
+        "Approve/reject ticket requests"
+      ]
+    }
+  },
+  "ticket_lifecycle": {
+    "statuses": ["UNUSED", "USED"],
+    "admin_flags": ["isInvalidated"],
+    "scan_outcomes": ["VALID (first scan)", "USED (subsequent scan)", "INVALID (wrong event/invalidated)", "EXPIRED (scanned after event end date)"],
+    "generation_model": "ON-DEMAND at approval time (not pre-generated pool)"
+  },
+  "ticket_request_lifecycle": {
+    "statuses": ["PENDING_VERIFICATION", "APPROVED", "REJECTED", "CANCELLED"],
+    "note": "CANCELLED is organizer-initiated; includes cancellation message to buyer"
+  },
+  "sales_controls": {
+    "salesCutoffAt": "DateTime — hard cutoff after which no new requests",
+    "salesWindowStart": "HH:MM string — daily window open time (24h)",
+    "salesWindowEnd": "HH:MM string — daily window close time (24h)",
+    "maxTicketsPerEmail": "Int — max APPROVED+PENDING_VERIFICATION tickets per buyer email per event"
+  },
+  "promoter_system": {
+    "description": "Per-event promoters with referral links",
+    "referral_url": "/e/:slug?ref=:code",
+    "tracking": "TicketRequest.promoterId + Ticket.promoterId",
+    "metrics": "requests, approved tickets, scanned entries per promoter"
+  },
+  "delivery_methods": {
+    "active": ["PUBLIC_EVENT_PAGE (client dashboard link emailed on approval)"],
+    "removed": ["PDF_DOWNLOAD", "EMAIL_LINK (send-links)"],
+    "schema_artifacts_kept": "TicketDelivery model + EMAIL_LINK/PDF_DOWNLOAD enum kept for historical data"
+  },
+  "email_system": {
+    "provider": "nodemailer via SMTP (SES or Zoho)",
+    "triggers": [
+      "OTP verification (buyer + organizer)",
+      "Ticket approval notification to buyer",
+      "Ticket rejection notification to buyer",
+      "Chat new-message notification",
+      "Access code recovery"
+    ]
+  },
+  "og_social_preview": {
+    "mechanism": "nginx routes crawler User-Agents to backend GET /e/:slug which returns static HTML with OG tags",
+    "real_users": "get React SPA directly (no backend hit)"
+  },
+  "admin_pages": [
+    "Dashboard (overview stats)",
+    "Events (list + manage)",
+    "EventDetail (per-event deep view)",
+    "Tickets (search + invalidate)",
+    "Scans (view + mark suspicious)",
+    "Organizers (list)",
+    "Support (chat inbox)",
+    "Settings",
+    "AuditLog",
+    "ClientDashTokens"
+  ],
+  "missing_product_capabilities": [
+    "No analytics/funnel view for organizers",
+    "No AI-assisted approval (fraud/pattern detection)",
+    "No scan anomaly detection",
+    "No organizer insights dashboard (conversion rate, peak times)",
+    "No multi-event view for organizers (only single access-code context)",
+    "No payment processing (all manual off-platform)",
+    "No monetization layer (planned: $1/scanned ticket, not yet built)"
+  ]
+}
