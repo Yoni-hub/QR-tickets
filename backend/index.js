@@ -61,6 +61,15 @@ const supportLimiter = rateLimit({
   message: { error: "Too many requests. Try again later." },
 });
 
+// 3 contact form submissions per IP per hour — one-time action, tighter cap
+const contactLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 3,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests. Try again later." },
+});
+
 // Failed scan tracker — blocks IPs that repeatedly send invalid ticket IDs
 const failedScanCounts = new Map();
 const FAILED_SCAN_THRESHOLD = 20;
@@ -84,6 +93,8 @@ app.use("/api/scans", scanLimiter, failedScanGuard);
 app.use("/api/public/send-otp", otpLimiter);
 app.use("/api/public/verify-otp", otpLimiter);
 app.use("/api/public/recover-client-token", otpLimiter);
+app.use("/api/public/recover-organizer-code", otpLimiter);
+app.use("/api/public/contact", contactLimiter);
 app.use("/api/public/support/conversations", supportLimiter);
 
 app.get("/health", (_req, res) => {
