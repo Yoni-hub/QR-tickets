@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 
-const CHAT_STORAGE_ROOT = path.resolve(__dirname, "..", "storage", "private", "chat");
+const CHAT_STORAGE_ROOT = path.resolve(__dirname, "..", "uploads", "private", "chat");
 
 const MIME_TO_EXTENSION = {
   "image/png": "png",
