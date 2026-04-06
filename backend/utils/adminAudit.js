@@ -1,4 +1,5 @@
 const prisma = require("./prisma");
+const logger = require("./logger");
 
 async function writeAdminAuditLog({ action, targetType, targetId, eventId = null, metadata = null }) {
   try {
@@ -12,7 +13,7 @@ async function writeAdminAuditLog({ action, targetType, targetId, eventId = null
       },
     });
   } catch (error) {
-    console.error("writeAdminAuditLog failed", error);
+    logger.error("writeAdminAuditLog failed", error);
   }
 }
 

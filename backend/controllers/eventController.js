@@ -3,6 +3,7 @@ const prisma = require("../utils/prisma");
 const { generateAccessCode } = require("../utils/accessCode");
 const { LIMITS, sanitizeText, safeError } = require("../utils/sanitize");
 const { createEvent, buildQrPayload } = require("../services/eventService");
+const { isOrganizerBlockedFromNewEvents, getPreEventUnpaidWarning, BLOCK_NEW_EVENT_MESSAGE } = require("../services/organizerInvoiceService");
 const { generateTicketPublicId } = require("../utils/ticketPublicId");
 const { checkDailyTicketCap } = require("../utils/dailyCaps");
 const { verifyTurnstile } = require("../utils/turnstile");
@@ -11,6 +12,7 @@ const {
   DEFAULT_TICKET_TYPE,
   reservePendingTicketIds,
 } = require("../services/pendingTicketReservations");
+const logger = require("../utils/logger");
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const NOTIF_OTP_SLUG = "__organizer_notif__";
@@ -222,6 +224,14 @@ async function getEventByCode(req, res) {
     take: 100,
     select: { ticketPublicId: true, result: true, scannedAt: true },
   });
+  const billingWarnings = [];
+  const preEventWarning = await getPreEventUnpaidWarning(event.id, event.eventDate);
+  if (preEventWarning) {
+    billingWarnings.push({
+      type: "PRE_EVENT_UNPAID_WARNING",
+      message: preEventWarning,
+    });
+  }
 
   res.json({
     organizerAccessCode: group.organizerAccessCode,
@@ -232,6 +242,7 @@ async function getEventByCode(req, res) {
     scannedTickets,
     remainingTickets: Math.max(0, totalTickets - soldTickets),
     scans,
+    billingWarnings,
   });
 }
 
@@ -674,6 +685,11 @@ async function createEventForAccessCode(req, res) {
     res.status(404).json({ error: "Event not found." });
     return;
   }
+  const blockedFromNewEvents = await isOrganizerBlockedFromNewEvents(group.organizerAccessCode);
+  if (blockedFromNewEvents) {
+    res.status(403).json({ error: BLOCK_NEW_EVENT_MESSAGE });
+    return;
+  }
 
   const eventName = sanitizeText(req.body?.eventName, LIMITS.EVENT_NAME);
   const organizerName = sanitizeText(req.body?.organizerName, LIMITS.NAME);
@@ -816,7 +832,7 @@ async function sendNotificationEmailOtp(req, res) {
   try {
     await sendOtpEmail({ to: email, code });
   } catch (err) {
-    console.error("sendNotificationEmailOtp failed", err);
+    logger.error("sendNotificationEmailOtp failed", err);
     res.status(500).json({ error: "Could not send verification email. Please try again." });
     return;
   }
@@ -882,7 +898,7 @@ async function verifyNotificationEmailOtp(req, res) {
     });
     const entries = [{ organizerAccessCode: existingOAC, eventNames: existingEvents.map((e) => e.eventName) }];
     sendOrganizerRecoveryEmail({ to: email, entries }).catch((err) =>
-      console.error("sendOrganizerRecoveryEmail failed", err)
+      logger.error("sendOrganizerRecoveryEmail failed", err)
     );
     res.status(409).json({
       code: "EMAIL_ALREADY_REGISTERED",
@@ -970,7 +986,7 @@ async function mergeOrphanEvent(req, res) {
 
     res.json({ merged: true, event: merged });
   } catch (err) {
-    console.error("mergeOrphanEvent error", err);
+    logger.error("mergeOrphanEvent error", err);
     res.status(500).json({ error: "An unexpected error occurred." });
   }
 }
@@ -989,4 +1005,3 @@ module.exports = {
   verifyNotificationEmailOtp,
   mergeOrphanEvent,
 };
-

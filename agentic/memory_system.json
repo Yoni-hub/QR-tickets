@@ -1,145 +1,270 @@
 {
-  "_meta": {
-    "purpose": "Overall system understanding — architecture, stack, deployment, constraints, maturity",
-    "last_updated": "2026-04-05",
-    "updated_by": "agentic-orchestrator",
-    "update_trigger": "initial-audit"
-  },
-  "identity": {
-    "product_name": "QR Tickets",
-    "description": "Standalone SaaS QR event ticketing platform for organizers. Buyers request tickets through a public event page, organizers approve, tickets are delivered via client dashboard link, scanned at the door.",
-    "production_url": "https://qr-tickets.connsura.com",
-    "repo": "https://github.com/Yoni-hub/QR-tickets.git",
-    "active_branch": "main",
-    "working_directory": "C:\\Users\\yonat\\Downloads\\QR_Tickets",
-    "isolation_rule": "Standalone from Connsura. No shared runtime, DB, or containers. Shared only: SES, Zoho mail, root domain ownership."
-  },
-  "stack": {
-    "frontend": {
-      "framework": "React 19 + Vite 7 + React Router 7",
-      "styling": "Tailwind CSS 3",
-      "realtime": "socket.io-client 4",
-      "qr_scanning": "html5-qrcode 2",
-      "http": "axios",
-      "build_output": "static SPA served by Docker container on port 4173"
+    "_meta": {
+        "purpose": "Overall system understanding — architecture, stack, deployment, constraints, maturity",
+        "last_updated": "2026-04-06",
+        "updated_by": "backend-agent",
+        "update_trigger": "task-017-invoice-partial-payment-mvp"
     },
-    "backend": {
-      "framework": "Express 4",
-      "orm": "Prisma 6 (PostgreSQL)",
-      "realtime": "socket.io 4",
-      "auth": "access codes + client tokens (no JWT/OAuth)",
-      "email": "nodemailer via SMTP (SES/Zoho)",
-      "storage": "AWS S3 (evidence images, attachments)",
-      "pdf": "puppeteer + pdf-lib",
-      "captcha": "Cloudflare Turnstile",
-      "port": 4100
+    "identity": {
+        "product_name": "QR Tickets",
+        "description": "Standalone SaaS QR event ticketing platform for organizers. Buyers request tickets through a public event page, organizers approve, tickets are delivered via client dashboard link, scanned at the door.",
+        "production_url": "https://qr-tickets.connsura.com",
+        "repo": "https://github.com/Yoni-hub/QR-tickets.git",
+        "active_branch": "main",
+        "working_directory": "C:\\Users\\yonat\\Downloads\\QR_Tickets",
+        "isolation_rule": "Standalone from Connsura. No shared runtime, DB, or containers. Shared only: SES, Zoho mail, root domain ownership."
     },
-    "database": {
-      "engine": "PostgreSQL 16",
-      "access": "Prisma ORM (parameterized queries only)",
-      "local_port": 5434,
-      "prod_port": 5432,
-      "migrations": "prisma migrate deploy"
+    "stack": {
+        "frontend": {
+            "framework": "React 19 + Vite 7 + React Router 7",
+            "styling": "Tailwind CSS 3",
+            "realtime": "socket.io-client 4",
+            "qr_scanning": "html5-qrcode 2",
+            "http": "axios",
+            "build_output": "static SPA served by Docker container on port 4173"
+        },
+        "backend": {
+            "framework": "Express 4",
+            "orm": "Prisma 6 (PostgreSQL)",
+            "realtime": "socket.io 4",
+            "auth": "access codes + client tokens (no JWT/OAuth)",
+            "email": "nodemailer via SMTP (SES/Zoho)",
+            "storage": "AWS S3 (evidence images, attachments)",
+            "pdf": "puppeteer + pdf-lib",
+            "captcha": "Cloudflare Turnstile",
+            "port": 4100
+        },
+        "database": {
+            "engine": "PostgreSQL 16",
+            "access": "Prisma ORM (parameterized queries only)",
+            "local_port": 5434,
+            "prod_port": 5432,
+            "migrations": "prisma migrate deploy"
+        },
+        "infrastructure": {
+            "containers": "Docker Compose (backend + frontend + postgres)",
+            "proxy": "nginx (reverse proxy, WebSocket upgrade, OG crawler UA routing)",
+            "deployment": "manual SSH + docker compose up --build",
+            "ci_cd": "GitHub Actions CI with backend/frontend jobs. Backend job provisions Postgres and enforces required integration gates (scan + request/approval + cancellation + organizer-recovery) on PR/push(main).",
+            "backup": "daily cron at 02:00 UTC → pg_dump → S3",
+            "health_check": "GET /health"
+        }
     },
-    "infrastructure": {
-      "containers": "Docker Compose (backend + frontend + postgres)",
-      "proxy": "nginx (reverse proxy, WebSocket upgrade, OG crawler UA routing)",
-      "deployment": "manual SSH + docker compose up --build",
-      "ci_cd": "NONE — no GitHub Actions workflows exist",
-      "backup": "daily cron at 02:00 UTC → pg_dump → S3",
-      "health_check": "GET /health"
-    }
-  },
-  "security_posture": {
-    "implemented": [
-      "helmet() global security headers",
-      "express-rate-limit (4 limiters: scan, OTP x2, support)",
-      "failed-scan IP block (in-memory Map, 20 attempts → 15min block)",
-      "Cloudflare Turnstile CAPTCHA on public forms",
-      "HTML tag stripping via sanitize.js",
-      "safeError() prevents internal error leakage",
-      "Prisma parameterized queries (no raw SQL)",
-      "CORS restricted to PUBLIC_BASE_URL origin",
-      "Admin protected by x-admin-key header/query param",
-      "Client tokens: 24-byte crypto.randomBytes hex",
-      "S3 attachment access via authorization-checked routes"
-    ],
-    "missing": [
-      "CSRF protection on state-mutating endpoints",
-      "Zod/Joi schema validation (only manual sanitize.js)",
-      "Redis-backed rate limiting (in-memory resets on restart)",
-      "No dependency CVE scanning in CI",
-      "No OWASP audit process",
-      "Rate limiting not per-user/session, only per-IP",
-      "Admin key is a simple shared string (no rotation policy)"
-    ],
-    "fixed_2026_04_06": [
-      "Recovery/contact OTP endpoints now have rate limiting (BUG-012, commit fde05c0)",
-      "npm CVEs resolved — 0 vulnerabilities in backend and frontend (BUG-014, commit fde05c0)",
-      "Chat attachments now stored in persistent Docker volume (BUG-011, commit fb1861c)"
+    "security_posture": {
+        "implemented": [
+            "helmet() global security headers",
+            "express-rate-limit (4 limiters: scan, OTP x2, support)",
+            "failed-scan IP block (in-memory Map, 20 attempts → 15min block)",
+            "Cloudflare Turnstile CAPTCHA on public forms",
+            "HTML tag stripping via sanitize.js",
+            "safeError() prevents internal error leakage",
+            "Prisma parameterized queries (no raw SQL)",
+            "CORS restricted to PUBLIC_BASE_URL origin",
+            "Admin protected by x-admin-key header/query param",
+            "Client tokens: 24-byte crypto.randomBytes hex",
+            "S3 attachment access via authorization-checked routes",
+            "Zod request validation middleware on public/non-admin routes (params/query/body)"
+        ],
+        "missing": [
+            "CSRF protection on state-mutating endpoints",
+            "Redis-backed rate limiting (in-memory resets on restart)",
+            "No dependency CVE scanning in CI",
+            "No OWASP audit process",
+            "Rate limiting not per-user/session, only per-IP",
+            "Admin key is a simple shared string (no rotation policy)"
+        ],
+        "fixed_2026_04_06": [
+            "Recovery/contact OTP endpoints now have rate limiting (BUG-012, commit fde05c0)",
+            "npm CVEs resolved — 0 vulnerabilities in backend and frontend (BUG-014, commit fde05c0)",
+            "Chat attachments now stored in persistent Docker volume (BUG-011, commit fb1861c)"
+        ]
+    },
+    "observability": {
+        "implemented": [
+            "morgan HTTP logging (combined format)",
+            "AdminAuditLog DB table for admin actions",
+            "TicketViewLog for ticket page opens",
+            "Winston structured application logging (backend/utils/logger.js)",
+            "Sentry backend error tracking with Express error-handler integration and event scrubbing"
+        ],
+        "missing": [
+            "APM (no response time, DB query monitoring)",
+            "Uptime monitoring (no external health check service)",
+            "Alerting (no PagerDuty, email alerts, Slack alerts)",
+            "Analytics (no funnel data, no user behavior tracking)"
+        ]
+    },
+    "product_intelligence": {
+        "organizer_request_review": {
+            "mvp_status": "LIVE",
+            "approach": "Deterministic explainable risk signals (rules-based, no model inference)",
+            "implemented_signals": [
+                "DUPLICATE_EMAIL",
+                "MISSING_PAYMENT_EVIDENCE",
+                "MULTIPLE_PENDING_SAME_EMAIL",
+                "PRIOR_REJECTED_SAME_EMAIL",
+                "HIGH_QUANTITY_REQUEST"
+            ],
+            "ui_surfaces": [
+                "frontend/src/pages/Dashboard.jsx request review blocks",
+                "frontend/src/pages/DashboardTicketRequests.jsx request review list"
+            ],
+            "queue_actionability": {
+                "status": "LIVE",
+                "default_sort": "riskLevel priority (HIGH->MEDIUM->LOW->NONE), then newest first",
+                "filters": [
+                    "ALL",
+                    "HIGH",
+                    "MEDIUM",
+                    "LOW"
+                ],
+                "status_scope": [
+                    "ALL",
+                    "PENDING ONLY"
+                ],
+                "implementation_scope": "frontend-only (no API contract change)"
+            },
+            "decision_recommendation": {
+                "status": "LIVE",
+                "type": "deterministic-rules",
+                "actions": [
+                    "APPROVE",
+                    "REVIEW",
+                    "REJECT"
+                ],
+                "automation": "none (manual organizer decision support only)",
+                "ui_surfaces": [
+                    "frontend/src/pages/Dashboard.jsx requests mobile/table",
+                    "frontend/src/pages/DashboardTicketRequests.jsx request cards"
+                ]
+            }
+        },
+        "organizer_invoicing": {
+            "mvp_status": "LIVE",
+            "trigger_policy": "Scheduler checks active non-demo events in the next 24h window and generates PRE_EVENT_24H invoice snapshot",
+            "state_model": [
+                "SENT",
+                "PAID",
+                "OVERDUE"
+            ],
+            "manual_action": "Admin can mark invoice as PAID or record incremental partial payments with optional short payment note.",
+            "automatic_transition": "Scheduler marks SENT/PARTIAL_SEND_FAILED invoices as OVERDUE when dueAt has passed and invoice is not PAID",
+            "pricing_rules": {
+                "ETB": 5,
+                "USD": 0.99,
+                "EUR": 0.99
+            },
+            "settlement_model": {
+                "status": "LIVE",
+                "equation": "remaining_balance = total_charges_up_to_event_end - total_payments_received",
+                "invoice_types": [
+                    "PRE_EVENT_24H",
+                    "POST_EVENT_FINAL"
+                ],
+                "final_settlement_trigger": "event end + 30 minutes",
+                "final_due_window": "3 hours after final invoice generation",
+                "enforcement": "Organizer create-new event route is blocked when a POST_EVENT_FINAL invoice is OVERDUE and unpaid."
+            },
+            "snapshot_fields": [
+                "approvedTicketCountSnapshot",
+                "unitPriceSnapshot",
+                "totalAmountSnapshot",
+                "paymentInstructionSnapshot",
+                "generatedAt",
+                "dueAt"
+            ],
+            "accounting_fields": [
+                "totalAmount",
+                "amountPaid",
+                "amountRemaining (derived)",
+                "previousInvoiceId"
+            ],
+            "delivery_channels": [
+                "email (organizerEmail)",
+                "organizer-admin chat message"
+            ],
+            "instruction_source": "AdminCurrencyPaymentInstruction per currency (editable in Admin Settings page)",
+            "safe_failure_behavior": "If instruction missing for invoice currency, invoice is marked BLOCKED_MISSING_INSTRUCTION and not sent.",
+            "admin_visibility": "Admin event detail endpoint and page show latest invoice status, paidAt/paymentNote, amounts, snapshot instruction, and channel errors.",
+            "admin_dashboard": {
+                "status": "LIVE",
+                "route": "/admin/invoices",
+                "api": "GET /api/admin/invoices",
+                "filters": [
+                    "ALL",
+                    "OVERDUE",
+                    "UNPAID",
+                    "BLOCKED"
+                ],
+                "list_fields": [
+                    "eventName",
+                    "organizerEmail",
+                    "currency + totalAmount",
+                    "status",
+                    "dueAt",
+                    "paidAt"
+                ]
+            }
+        }
+    },
+    "test_coverage": {
+        "unit_tests": 0,
+        "integration_tests": 5,
+        "e2e_tests": 0,
+        "test_framework": "node:test + supertest (backend integration)",
+        "backend_package_json_test_script": "node --test --test-concurrency=1",
+        "note": "Backend integration suites now cover scan flow, ticket request/approval flow, organizer ticket cancellation flow, organizer recovery OTP/code flow, and organizer invoicing including settlement scenarios (paid-early delta billing, unpaid full final balance, partial payment math, no-final-invoice when no remaining, final-overdue create-new block, and unblock on payment)."
+    },
+    "agentic_maturity": {
+        "score_overall": 2.1,
+        "last_scored": "2026-04-06",
+        "previous_score": 1.5,
+        "dimensions": {
+            "product_intelligence": 1,
+            "engineering_autonomy": 1,
+            "qa_autonomy": 0,
+            "security_awareness": 3,
+            "operational_autonomy": 2,
+            "memory_context_handling": 4,
+            "orchestration_maturity": 1,
+            "self_improvement_capability": 0
+        },
+        "existing_agent_infrastructure": {
+            "connsura_ai_system_prompts": "stub files only (3-7 lines each)",
+            "agents_directory": "EMPTY",
+            "orchestrator_md": "7 lines — no execution logic",
+            "runtime_llm_calls": "NONE anywhere in application code"
+        }
+    },
+    "environment_variables": {
+        "required": [
+            "PORT",
+            "NODE_ENV",
+            "DATABASE_URL",
+            "PUBLIC_BASE_URL",
+            "ADMIN_PANEL_KEY",
+            "SMTP_HOST",
+            "SMTP_PORT",
+            "SMTP_USER",
+            "SMTP_PASS",
+            "MAIL_FROM",
+            "AWS_REGION",
+            "AWS_ACCESS_KEY_ID",
+            "AWS_SECRET_ACCESS_KEY",
+            "S3_BUCKET_NAME"
+        ],
+        "optional": [
+            "TURNSTILE_SECRET_KEY"
+        ],
+        "secrets_management": "plain .env files — no Vault, no SSM Parameter Store"
+    },
+    "known_constraints": [
+        "Single-instance deployment (in-memory state breaks horizontal scaling)",
+        "No staging environment (documented as placeholder only)",
+        "Manual deploy pipeline (SSH required)",
+        "Blue/green documented but not automated",
+        "Ticket design locked after first generation per event",
+        "PDF/email delivery methods removed — public event page is the ONLY delivery method",
+        "organizerAccessCode is case-sensitive in Postgres (was a bug source)"
     ]
-  },
-  "observability": {
-    "implemented": [
-      "morgan HTTP logging (combined format)",
-      "AdminAuditLog DB table for admin actions",
-      "TicketViewLog for ticket page opens"
-    ],
-    "missing": [
-      "Structured logging (no Winston/Pino)",
-      "Error tracking (no Sentry/Rollbar)",
-      "APM (no response time, DB query monitoring)",
-      "Uptime monitoring (no external health check service)",
-      "Alerting (no PagerDuty, email alerts, Slack alerts)",
-      "Analytics (no funnel data, no user behavior tracking)"
-    ]
-  },
-  "test_coverage": {
-    "unit_tests": 0,
-    "integration_tests": 0,
-    "e2e_tests": 0,
-    "test_framework": "none",
-    "backend_package_json_test_script": "echo 'Error: no test specified'",
-    "note": "0% coverage across entire codebase"
-  },
-  "agentic_maturity": {
-    "score_overall": 2.1,
-    "last_scored": "2026-04-06",
-    "previous_score": 1.5,
-    "dimensions": {
-      "product_intelligence": 1,
-      "engineering_autonomy": 1,
-      "qa_autonomy": 0,
-      "security_awareness": 3,
-      "operational_autonomy": 2,
-      "memory_context_handling": 4,
-      "orchestration_maturity": 1,
-      "self_improvement_capability": 0
-    },
-    "existing_agent_infrastructure": {
-      "connsura_ai_system_prompts": "stub files only (3-7 lines each)",
-      "agents_directory": "EMPTY",
-      "orchestrator_md": "7 lines — no execution logic",
-      "runtime_llm_calls": "NONE anywhere in application code"
-    }
-  },
-  "environment_variables": {
-    "required": [
-      "PORT", "NODE_ENV", "DATABASE_URL",
-      "PUBLIC_BASE_URL", "ADMIN_PANEL_KEY",
-      "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "MAIL_FROM",
-      "AWS_REGION", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "S3_BUCKET_NAME"
-    ],
-    "optional": ["TURNSTILE_SECRET_KEY"],
-    "secrets_management": "plain .env files — no Vault, no SSM Parameter Store"
-  },
-  "known_constraints": [
-    "Single-instance deployment (in-memory state breaks horizontal scaling)",
-    "No staging environment (documented as placeholder only)",
-    "Manual deploy pipeline (SSH required)",
-    "Blue/green documented but not automated",
-    "Ticket design locked after first generation per event",
-    "PDF/email delivery methods removed — public event page is the ONLY delivery method",
-    "organizerAccessCode is case-sensitive in Postgres (was a bug source)"
-  ]
 }

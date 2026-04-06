@@ -1,5 +1,6 @@
 const { resolveOrganizerScope } = require("../services/chatService");
 const prisma = require("../utils/prisma");
+const logger = require("../utils/logger");
 
 const ADMIN_KEY = process.env.ADMIN_PANEL_KEY || "";
 
@@ -64,7 +65,7 @@ function registerSocketHandlers(io) {
         socket.join(room);
         socket.emit("joined", { conversationId });
       } catch (err) {
-        console.error("[socket] join_conversation error:", err);
+        logger.error("[socket] join_conversation error:", err);
         socket.emit("error", { message: "Internal error." });
       }
     });

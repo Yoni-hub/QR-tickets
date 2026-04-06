@@ -130,6 +130,48 @@ function resolveCancellationReasonLabel(reason, otherReason = "") {
   return "-";
 }
 
+function resolveRiskBadgeClass(severity) {
+  if (severity === "HIGH") return "border-red-200 bg-red-50 text-red-700";
+  if (severity === "MEDIUM") return "border-amber-200 bg-amber-50 text-amber-700";
+  if (severity === "LOW") return "border-slate-200 bg-slate-50 text-slate-700";
+  return "border-slate-200 bg-slate-50 text-slate-700";
+}
+
+function resolveRecommendationBadgeClass(action) {
+  if (action === "REJECT") return "border-red-200 bg-red-50 text-red-700";
+  if (action === "REVIEW") return "border-amber-200 bg-amber-50 text-amber-700";
+  if (action === "APPROVE") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  return "border-slate-200 bg-slate-50 text-slate-700";
+}
+
+const REQUEST_RISK_FILTERS = ["ALL", "HIGH", "MEDIUM", "LOW"];
+const REQUEST_RISK_ORDER = { HIGH: 0, MEDIUM: 1, LOW: 2, NONE: 3 };
+const REQUEST_STATUS_SCOPES = [
+  { value: "ALL", label: "ALL" },
+  { value: "PENDING_ONLY", label: "PENDING ONLY" },
+];
+
+function normalizeRiskLevel(value) {
+  const normalized = String(value || "").trim().toUpperCase();
+  if (normalized === "HIGH" || normalized === "MEDIUM" || normalized === "LOW" || normalized === "NONE") return normalized;
+  return "NONE";
+}
+
+function toTimestamp(value) {
+  const parsed = Date.parse(String(value || ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function sortRequestsByRiskAndRecency(items) {
+  return [...items].sort((left, right) => {
+    const leftRisk = normalizeRiskLevel(left?.riskLevel);
+    const rightRisk = normalizeRiskLevel(right?.riskLevel);
+    const riskDelta = REQUEST_RISK_ORDER[leftRisk] - REQUEST_RISK_ORDER[rightRisk];
+    if (riskDelta !== 0) return riskDelta;
+    return toTimestamp(right?.createdAt) - toTimestamp(left?.createdAt);
+  });
+}
+
 function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -297,6 +339,8 @@ export default function Dashboard() {
   const [savingTicketDraft, setSavingTicketDraft] = useState(false);
   const [tickets, setTickets] = useState([]);
   const [ticketRequests, setTicketRequests] = useState([]);
+  const [requestRiskFilter, setRequestRiskFilter] = useState("ALL");
+  const [requestStatusScope, setRequestStatusScope] = useState("ALL");
   const [autoApprove, setAutoApprove] = useState(false);
   const [togglingAutoApprove, setTogglingAutoApprove] = useState(false);
   const [promoters, setPromoters] = useState([]);
@@ -420,10 +464,19 @@ export default function Dashboard() {
   const eventPrimaryActionLabel = isAccessCodeGenerationMode ? "Generate Access Code" : "Save Event";
   const eventPrimaryLoadingLabel = isAccessCodeGenerationMode ? "Generating..." : "Saving...";
   const visibleMenus = summary ? DASHBOARD_MENUS_ALL : DASHBOARD_MENUS_PRELOAD;
+  const billingWarnings = Array.isArray(summary?.billingWarnings) ? summary.billingWarnings : [];
   const pendingRequestCount = useMemo(
     () => ticketRequests.filter((r) => r.status === "PENDING_VERIFICATION").length,
     [ticketRequests],
   );
+  const filteredTicketRequests = useMemo(() => {
+    const filtered = ticketRequests.filter((item) => {
+      if (requestStatusScope === "PENDING_ONLY" && item?.status !== "PENDING_VERIFICATION") return false;
+      if (requestRiskFilter === "ALL") return true;
+      return normalizeRiskLevel(item?.riskLevel) === requestRiskFilter;
+    });
+    return sortRequestsByRiskAndRecency(filtered);
+  }, [ticketRequests, requestRiskFilter, requestStatusScope]);
   const ticketTypeOptions = useMemo(
     () =>
       Array.from(
@@ -1799,6 +1852,11 @@ export default function Dashboard() {
           <span className="font-semibold">Scanner locked.</span> Ticket scanning has been disabled for this event by an administrator. Contact support if you believe this is an error.
         </div>
       ) : null}
+      {billingWarnings.map((warning, index) => (
+        <div key={`${warning.type || "billing-warning"}-${index}`} className="mt-3 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <span className="font-semibold">Billing warning.</span> {warning.message}
+        </div>
+      ))}
 
       {(!showLoadDashboard || summary) && !showHeroSection ? (
         <div className="mt-4 -mx-4 sm:-mx-6 border-b border-slate-200">
@@ -2248,9 +2306,41 @@ export default function Dashboard() {
                 <p className="mt-1 text-xs text-emerald-700">New requests are approved instantly and buyers are notified by email.</p>
               ) : null}
               <FeedbackBanner className="mt-2" kind={requestFb.kind} message={requestFb.message} />
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <span className="text-xs font-semibold text-slate-600">Filter by risk:</span>
+                {REQUEST_RISK_FILTERS.map((filterValue) => (
+                  <button
+                    key={filterValue}
+                    type="button"
+                    onClick={() => setRequestRiskFilter(filterValue)}
+                    className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${requestRiskFilter === filterValue ? "border-slate-700 bg-slate-700 text-white" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-100"}`}
+                  >
+                    {filterValue}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <span className="text-xs font-semibold text-slate-600">Status:</span>
+                {REQUEST_STATUS_SCOPES.map((scope) => (
+                  <button
+                    key={scope.value}
+                    type="button"
+                    onClick={() => setRequestStatusScope(scope.value)}
+                    className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${requestStatusScope === scope.value ? "border-slate-700 bg-slate-700 text-white" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-100"}`}
+                  >
+                    {scope.label}
+                  </button>
+                ))}
+                <span className="text-xs text-slate-500">{filteredTicketRequests.length} shown / {ticketRequests.length} total</span>
+              </div>
+              <p className="mt-1 text-xs text-slate-500">Sorted by risk (HIGH to LOW), then newest first.</p>
               <div className="mt-3 space-y-3 lg:hidden">
-                {ticketRequests.map((item) => {
+                {filteredTicketRequests.map((item) => {
                   const selections = Array.isArray(item.ticketSelections) ? item.ticketSelections : [];
+                  const riskSignals = Array.isArray(item.riskSignals) ? item.riskSignals : [];
+                  const riskLevel = normalizeRiskLevel(item.riskLevel);
+                  const recommendationAction = String(item?.recommendation?.action || "REVIEW").toUpperCase();
+                  const recommendationExplanation = String(item?.recommendation?.explanation || "Manual review is recommended.");
                   const isApproved = item.status === "APPROVED";
                   const isCancelled = item.status === "CANCELLED";
                   const isRejected = item.status === "REJECTED";
@@ -2274,6 +2364,9 @@ export default function Dashboard() {
                             : item.ticketType || "-"}
                         </p>
                         <p><span className="font-semibold">Quantity:</span> {item.quantity}</p>
+                        <p><span className="font-semibold">Risk:</span> <span className={`inline-block rounded border px-2 py-0.5 text-[11px] font-semibold ${resolveRiskBadgeClass(riskLevel)}`}>{riskLevel}</span></p>
+                        <p className="col-span-2"><span className="font-semibold">Recommendation:</span> <span className={`inline-block rounded border px-2 py-0.5 text-[11px] font-semibold ${resolveRecommendationBadgeClass(recommendationAction)}`}>{recommendationAction}</span></p>
+                        <p className="col-span-2 text-[11px] text-slate-600">{recommendationExplanation}</p>
                         <p className="col-span-2"><span className="font-semibold">Status:</span> {item.status}</p>
                         <p className="col-span-2">
                           <span className="font-semibold">Evidence:</span>{" "}
@@ -2283,6 +2376,23 @@ export default function Dashboard() {
                             "-"
                           )}
                         </p>
+                        {riskSignals.length ? (
+                          <div className="col-span-2">
+                            <p><span className="font-semibold">Risk signals:</span></p>
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {riskSignals.map((signal) => (
+                                <span key={`${item.id}-${signal.code}`} className={`inline-block rounded border px-2 py-0.5 text-[11px] font-semibold ${resolveRiskBadgeClass(signal.severity)}`}>
+                                  {signal.severity}: {signal.label}
+                                </span>
+                              ))}
+                            </div>
+                            <div className="mt-1 space-y-1">
+                              {riskSignals.map((signal) => (
+                                <p key={`${item.id}-${signal.code}-explain`} className="text-[11px] text-slate-600">{signal.explanation}</p>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
                         {item.organizerMessage ? <p className="col-span-2 text-slate-600"><span className="font-semibold">Message:</span> {item.organizerMessage}</p> : null}
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2">
@@ -2314,7 +2424,7 @@ export default function Dashboard() {
                     </article>
                   );
                 })}
-                {!ticketRequests.length ? <p className="text-sm text-slate-500">No ticket requests yet.</p> : null}
+                {!filteredTicketRequests.length ? <p className="text-sm text-slate-500">{ticketRequests.length ? "No ticket requests for selected filters." : "No ticket requests yet."}</p> : null}
               </div>
               <div className="mt-3 hidden overflow-x-auto rounded border lg:block">
                 <table className="w-full min-w-[900px] text-left text-sm">
@@ -2331,8 +2441,12 @@ export default function Dashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {ticketRequests.map((item) => {
+                    {filteredTicketRequests.map((item) => {
                       const selections = Array.isArray(item.ticketSelections) ? item.ticketSelections : [];
+                      const riskSignals = Array.isArray(item.riskSignals) ? item.riskSignals : [];
+                      const riskLevel = normalizeRiskLevel(item.riskLevel);
+                      const recommendationAction = String(item?.recommendation?.action || "REVIEW").toUpperCase();
+                      const recommendationExplanation = String(item?.recommendation?.explanation || "Manual review is recommended.");
                       const isApproved = item.status === "APPROVED";
                       const isCancelled = item.status === "CANCELLED";
                       const isRejected = item.status === "REJECTED";
@@ -2366,7 +2480,26 @@ export default function Dashboard() {
                           <td className="p-2 font-mono text-xs break-all">{Array.isArray(item.ticketIds) && item.ticketIds.length ? item.ticketIds.join(", ") : "-"}</td>
                           <td className="p-2">
                             <p>{item.status}</p>
+                            <p className="mt-1"><span className={`inline-block rounded border px-2 py-0.5 text-[11px] font-semibold ${resolveRiskBadgeClass(riskLevel)}`}>Risk: {riskLevel}</span></p>
+                            <p className="mt-1"><span className={`inline-block rounded border px-2 py-0.5 text-[11px] font-semibold ${resolveRecommendationBadgeClass(recommendationAction)}`}>Recommendation: {recommendationAction}</span></p>
+                            <p className="mt-1 text-[11px] text-slate-600">{recommendationExplanation}</p>
                             {item.organizerMessage ? <p className="mt-1 text-xs text-slate-600">{item.organizerMessage}</p> : null}
+                            {riskSignals.length ? (
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {riskSignals.map((signal) => (
+                                  <span key={`${item.id}-${signal.code}`} className={`inline-block rounded border px-2 py-0.5 text-[11px] font-semibold ${resolveRiskBadgeClass(signal.severity)}`}>
+                                    {signal.severity}: {signal.label}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : null}
+                            {riskSignals.length ? (
+                              <div className="mt-1 space-y-1">
+                                {riskSignals.map((signal) => (
+                                  <p key={`${item.id}-${signal.code}-explain`} className="text-[11px] text-slate-500">{signal.explanation}</p>
+                                ))}
+                              </div>
+                            ) : null}
                           </td>
                           <td className="p-2">
                             <div className="flex flex-wrap gap-2">
@@ -2399,9 +2532,9 @@ export default function Dashboard() {
                         </tr>
                       );
                     })}
-                    {!ticketRequests.length ? (
+                    {!filteredTicketRequests.length ? (
                       <tr>
-                        <td className="p-3 text-slate-500" colSpan={9}>No ticket requests yet.</td>
+                        <td className="p-3 text-slate-500" colSpan={9}>{ticketRequests.length ? "No ticket requests for selected filters." : "No ticket requests yet."}</td>
                       </tr>
                     ) : null}
                   </tbody>

@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const fs = require("fs");
 const prisma = require("../utils/prisma");
+const logger = require("../utils/logger");
 const { saveChatAttachment, resolveAttachmentAbsolutePath } = require("./chatAttachmentService");
 const socketManager = require("../socket/socketManager");
 const { sendNewChatMessageEmail, sendOrganizerNewMessageEmail } = require("../utils/mailer");
@@ -720,7 +721,7 @@ async function sendMessageForActor(actor, conversationIdRaw, payload = {}) {
           eventName: resolved.conversation.event.eventName || "",
           senderName: resolved.conversation.ticketRequest?.name || "A customer",
           dashboardUrl,
-        }).catch((err) => console.error("organizer chat notify failed", err));
+        }).catch((err) => logger.error("organizer chat notify failed", err));
       }
     }).catch(() => {});
   }

@@ -35,7 +35,7 @@ function sanitizeText(str, maxLen) {
  */
 function safeError(error, fallback) {
   if (error?.statusCode && error.statusCode < 500) return error.message || fallback;
-  console.error(error);
+  require("./logger").error(error);
   return fallback;
 }
 

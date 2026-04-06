@@ -6,7 +6,10 @@ const {
   listAdminTickets,
   listAdminScans,
   listAdminOrganizers,
+  listAdminInvoices,
   getAdminSettings,
+  getAdminPaymentInstructions,
+  patchAdminPaymentInstructions,
   listAdminAuditLog,
   listAdminClientDashTokens,
   disableAdminEvent,
@@ -19,6 +22,8 @@ const {
   restoreAdminTicket,
   resetAdminTicketUsage,
   markScanSuspicious,
+  markAdminInvoicePaid,
+  addAdminInvoicePayment,
 } = require("../controllers/adminController");
 const { requireAdminAccess } = require("../middleware/adminAuth");
 const {
@@ -67,8 +72,13 @@ router.patch("/tickets/:ticketPublicId/reset-usage", resetAdminTicketUsage);
 router.get("/scans", listAdminScans);
 router.patch("/scans/:scanId/mark-suspicious", markScanSuspicious);
 router.get("/organizers", listAdminOrganizers);
+router.get("/invoices", listAdminInvoices);
 
 router.get("/settings", getAdminSettings);
+router.get("/settings/payment-instructions", getAdminPaymentInstructions);
+router.patch("/settings/payment-instructions", patchAdminPaymentInstructions);
+router.patch("/invoices/:invoiceId/mark-paid", markAdminInvoicePaid);
+router.patch("/invoices/:invoiceId/add-payment", addAdminInvoicePayment);
 router.get("/audit-log", listAdminAuditLog);
 router.get("/client-dash-tokens", listAdminClientDashTokens);
 

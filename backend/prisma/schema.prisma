@@ -45,8 +45,49 @@ model UserEvent {
   promoters   Promoter[]
   supportConversations SupportConversation[]
   chatConversations ChatConversation[]
+  organizerInvoices OrganizerInvoice[]
 
   @@index([organizerAccessCode])
+}
+
+model AdminCurrencyPaymentInstruction {
+  id              String            @id @default(cuid())
+  currency        SupportedCurrency @unique
+  instructionText String
+  updatedAt       DateTime          @updatedAt
+  createdAt       DateTime          @default(now())
+}
+
+model OrganizerInvoice {
+  id                         String                @id @default(cuid())
+  eventId                    String
+  invoiceType                OrganizerInvoiceType  @default(PRE_EVENT_24H)
+  previousInvoiceId          String?
+  organizerEmailSnapshot     String
+  currencySnapshot           SupportedCurrency
+  approvedTicketCountSnapshot Int
+  unitPriceSnapshot          Decimal               @db.Decimal(10, 2)
+  totalAmountSnapshot        Decimal               @db.Decimal(12, 2)
+  totalAmount                Decimal               @db.Decimal(12, 2)
+  amountPaid                 Decimal               @default(0) @db.Decimal(12, 2)
+  paymentInstructionSnapshot String?
+  generatedAt                DateTime              @default(now())
+  dueAt                      DateTime
+  status                     OrganizerInvoiceStatus @default(PENDING)
+  paidAt                     DateTime?
+  paymentNote                String?
+  sentByEmailAt              DateTime?
+  sentByChatAt               DateTime?
+  emailError                 String?
+  chatError                  String?
+  createdAt                  DateTime              @default(now())
+  updatedAt                  DateTime              @updatedAt
+  event                      UserEvent             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, invoiceType])
+  @@index([status, generatedAt])
+  @@index([dueAt])
+  @@index([eventId, status])
 }
 
 model Ticket {
@@ -429,3 +470,23 @@ enum ChatAttachmentStorageType {
   LEGACY_DATA_URL
 }
 
+enum SupportedCurrency {
+  ETB
+  USD
+  EUR
+}
+
+enum OrganizerInvoiceType {
+  PRE_EVENT_24H
+  POST_EVENT_FINAL
+}
+
+enum OrganizerInvoiceStatus {
+  PENDING
+  SENT
+  PAID
+  OVERDUE
+  PARTIAL_SEND_FAILED
+  BLOCKED_MISSING_INSTRUCTION
+  FAILED
+}

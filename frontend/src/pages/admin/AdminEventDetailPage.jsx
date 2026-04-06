@@ -16,6 +16,10 @@ export default function AdminEventDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [data, setData] = useState(null);
+  const [markPaidLoading, setMarkPaidLoading] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentNote, setPaymentNote] = useState("");
+  const [actionMessage, setActionMessage] = useState("");
 
   const load = async () => {
     setLoading(true);
@@ -38,7 +42,49 @@ export default function AdminEventDetailPage() {
   if (error) return <ErrorState message={error} />;
   if (!data) return <EmptyState label="No event detail found." />;
 
-  const { event, configurationSnapshot, scanSummary, deliverySummary } = data;
+  const { event, configurationSnapshot, scanSummary, deliverySummary, invoice } = data;
+  const canMarkPaid = invoice && ["SENT", "OVERDUE", "PARTIAL_SEND_FAILED", "FAILED", "BLOCKED_MISSING_INSTRUCTION", "PENDING"].includes(invoice.status);
+
+  const handleMarkPaid = async () => {
+    if (!invoice?.id) return;
+    setMarkPaidLoading(true);
+    setActionMessage("");
+    try {
+      await adminApi.patch(`/invoices/${encodeURIComponent(invoice.id)}/mark-paid`, {
+        paymentNote,
+      });
+      setActionMessage("Invoice marked as PAID.");
+      await load();
+    } catch (requestError) {
+      setActionMessage(requestError.response?.data?.error || "Could not mark invoice as paid.");
+    } finally {
+      setMarkPaidLoading(false);
+    }
+  };
+
+  const handleAddPayment = async () => {
+    if (!invoice?.id) return;
+    const amount = Number(paymentAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setActionMessage("Enter a valid payment amount greater than 0.");
+      return;
+    }
+    setMarkPaidLoading(true);
+    setActionMessage("");
+    try {
+      await adminApi.patch(`/invoices/${encodeURIComponent(invoice.id)}/add-payment`, {
+        paymentAmount: amount,
+        paymentNote,
+      });
+      setActionMessage("Payment recorded.");
+      setPaymentAmount("");
+      await load();
+    } catch (requestError) {
+      setActionMessage(requestError.response?.data?.error || "Could not record payment.");
+    } finally {
+      setMarkPaidLoading(false);
+    }
+  };
 
   return (
     <section className="space-y-3">
@@ -102,6 +148,79 @@ export default function AdminEventDetailPage() {
           <p className="rounded border p-2">Failed: <span className="font-semibold">{deliverySummary.failed}</span></p>
           <p className="rounded border p-2">Unknown: <span className="font-semibold">{deliverySummary.unknown}</span></p>
         </div>
+      </article>
+
+      <article className="rounded border bg-white p-4">
+        <h3 className="text-lg font-semibold">Organizer Invoice (T-24h Snapshot)</h3>
+        {!invoice ? (
+          <p className="mt-2 text-sm text-slate-600">No invoice generated yet for this event.</p>
+        ) : (
+          <div className="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+            <p><span className="font-semibold">Invoice ID:</span> <span className="font-mono text-xs">{invoice.id}</span></p>
+            <p><span className="font-semibold">Status:</span> {invoice.status}</p>
+            <p><span className="font-semibold">Currency:</span> {invoice.currency}</p>
+            <p><span className="font-semibold">Approved Tickets:</span> {invoice.approvedTicketCount}</p>
+            <p><span className="font-semibold">Unit Price:</span> {invoice.unitPrice}</p>
+            <p><span className="font-semibold">Total Amount:</span> {invoice.totalAmount}</p>
+            <p><span className="font-semibold">Amount Paid:</span> {invoice.amountPaid ?? "-"}</p>
+            <p><span className="font-semibold">Amount Remaining:</span> {invoice.amountRemaining ?? "-"}</p>
+            <p><span className="font-semibold">Generated At:</span> {formatDate(invoice.generatedAt)}</p>
+            <p><span className="font-semibold">Due At:</span> {formatDate(invoice.dueAt)}</p>
+            <p><span className="font-semibold">Paid At:</span> {formatDate(invoice.paidAt)}</p>
+            <p><span className="font-semibold">Sent By Email:</span> {formatDate(invoice.sentByEmailAt)}</p>
+            <p><span className="font-semibold">Sent By Chat:</span> {formatDate(invoice.sentByChatAt)}</p>
+            <p><span className="font-semibold">Email Error:</span> {invoice.emailError || "-"}</p>
+            <p><span className="font-semibold">Chat Error:</span> {invoice.chatError || "-"}</p>
+            <div className="sm:col-span-2">
+              <p className="font-semibold">Payment Instruction Snapshot</p>
+              <pre className="mt-1 whitespace-pre-wrap rounded border bg-slate-50 p-2 text-xs">{invoice.paymentInstructionSnapshot || "-"}</pre>
+            </div>
+            <div className="sm:col-span-2">
+              <p className="font-semibold">Payment Note</p>
+              <pre className="mt-1 whitespace-pre-wrap rounded border bg-slate-50 p-2 text-xs">{invoice.paymentNote || "-"}</pre>
+            </div>
+            {canMarkPaid ? (
+              <div className="sm:col-span-2 rounded border bg-slate-50 p-3">
+                <p className="text-sm font-semibold">Record Payment</p>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  value={paymentAmount}
+                  onChange={(eventValue) => setPaymentAmount(eventValue.target.value)}
+                  className="mt-2 w-full rounded border px-3 py-2 text-xs"
+                  placeholder="Payment amount"
+                />
+                <textarea
+                  rows={2}
+                  value={paymentNote}
+                  onChange={(eventValue) => setPaymentNote(eventValue.target.value)}
+                  className="mt-2 w-full rounded border px-3 py-2 text-xs"
+                  placeholder="Optional payment note"
+                />
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleAddPayment}
+                    disabled={markPaidLoading}
+                    className="rounded bg-emerald-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-60"
+                  >
+                    {markPaidLoading ? "Saving..." : "Add Payment"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleMarkPaid}
+                    disabled={markPaidLoading}
+                    className="rounded border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 disabled:opacity-60"
+                  >
+                    {markPaidLoading ? "Saving..." : "Mark Remaining as PAID"}
+                  </button>
+                  {actionMessage ? <p className="text-xs text-slate-600">{actionMessage}</p> : null}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        )}
       </article>
     </section>
   );

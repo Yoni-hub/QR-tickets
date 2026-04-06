@@ -59,6 +59,130 @@ function buildCancellationMessage({ ticketPublicId, reason, otherReason, cancell
   return `Ticket ${ticketPublicId} was cancelled on ${new Date(cancelledAt).toLocaleString()}. Reason: ${label}.`;
 }
 
+function toFiniteNumber(value, fallback = 0) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function normalizeEmail(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function buildRequestRiskSignals({ request, statsForEmail, event }) {
+  const signals = [];
+  const totalPrice = toFiniteNumber(request.totalPrice, 0);
+  const quantity = Math.max(0, toFiniteNumber(request.quantity, 0));
+  const hasEvidence = Boolean(request.evidenceImageDataUrl || request.evidenceS3Key);
+  const maxTicketsPerEmail = Math.max(0, toFiniteNumber(event?.maxTicketsPerEmail, 0));
+  const highQuantityThreshold = maxTicketsPerEmail > 0
+    ? Math.max(2, Math.ceil(maxTicketsPerEmail * 0.8))
+    : 6;
+
+  if (request.duplicateEmailWarning) {
+    signals.push({
+      code: "DUPLICATE_EMAIL",
+      severity: "MEDIUM",
+      deterministic: true,
+      label: "Duplicate requester email",
+      explanation: "This email already appears on another active request for this event.",
+    });
+  }
+
+  if (totalPrice > 0 && !hasEvidence) {
+    signals.push({
+      code: "MISSING_PAYMENT_EVIDENCE",
+      severity: "HIGH",
+      deterministic: true,
+      label: "Missing payment evidence",
+      explanation: "This paid request has no uploaded payment evidence image.",
+    });
+  }
+
+  if (statsForEmail?.pendingCount > 1) {
+    signals.push({
+      code: "MULTIPLE_PENDING_SAME_EMAIL",
+      severity: "MEDIUM",
+      deterministic: true,
+      label: "Multiple pending requests",
+      explanation: `This email currently has ${statsForEmail.pendingCount} pending requests for this event.`,
+    });
+  }
+
+  if (statsForEmail?.rejectedCount > 0) {
+    signals.push({
+      code: "PRIOR_REJECTED_SAME_EMAIL",
+      severity: "LOW",
+      deterministic: true,
+      label: "Prior rejected history",
+      explanation: `This email has ${statsForEmail.rejectedCount} previously rejected request(s) for this event.`,
+    });
+  }
+
+  if (quantity >= highQuantityThreshold) {
+    signals.push({
+      code: "HIGH_QUANTITY_REQUEST",
+      severity: maxTicketsPerEmail > 0 ? "MEDIUM" : "LOW",
+      deterministic: true,
+      label: "High requested quantity",
+      explanation: maxTicketsPerEmail > 0
+        ? `Requested quantity (${quantity}) is near the per-email cap (${maxTicketsPerEmail}).`
+        : `Requested quantity (${quantity}) is higher than common single-request volume.`,
+    });
+  }
+
+  const severityOrder = { HIGH: 3, MEDIUM: 2, LOW: 1 };
+  const riskLevel = signals.reduce((current, signal) => (
+    severityOrder[signal.severity] > severityOrder[current] ? signal.severity : current
+  ), "NONE");
+
+  return { signals, riskLevel };
+}
+
+function buildRequestRecommendation({ riskSignals, riskLevel }) {
+  const signalCodes = new Set((riskSignals || []).map((signal) => signal.code));
+  const mediumCount = (riskSignals || []).filter((signal) => signal.severity === "MEDIUM").length;
+  const hasHigh = riskLevel === "HIGH";
+  const hasMissingPaymentEvidence = signalCodes.has("MISSING_PAYMENT_EVIDENCE");
+  const hasDuplicateOrBurst = signalCodes.has("DUPLICATE_EMAIL") || signalCodes.has("MULTIPLE_PENDING_SAME_EMAIL");
+
+  // Conservative reject criteria: missing paid evidence plus corroborating duplicate/burst pattern.
+  if (hasHigh && hasMissingPaymentEvidence && hasDuplicateOrBurst) {
+    return {
+      action: "REJECT",
+      explanation: "Paid request has missing evidence and repeated requester pattern; rejecting is recommended unless manual proof is verified.",
+      deterministic: true,
+      basedOnSignals: ["MISSING_PAYMENT_EVIDENCE", ...(hasDuplicateOrBurst ? ["DUPLICATE_EMAIL_OR_MULTIPLE_PENDING"] : [])],
+    };
+  }
+
+  if (hasHigh || mediumCount > 0) {
+    return {
+      action: "REVIEW",
+      explanation: "Risk signals need manual verification before approving this request.",
+      deterministic: true,
+      basedOnSignals: Array.from(signalCodes),
+    };
+  }
+
+  // Low/no-signal requests default to approve recommendation (manual action still required).
+  const hasOnlyLowSignals = (riskSignals || []).length > 0 && (riskSignals || []).every((signal) => signal.severity === "LOW");
+  if (riskLevel === "NONE" || hasOnlyLowSignals) {
+    return {
+      action: "APPROVE",
+      explanation: "No major risk signals detected for this request.",
+      deterministic: true,
+      basedOnSignals: Array.from(signalCodes),
+    };
+  }
+
+  return {
+    action: "REVIEW",
+    explanation: "Mixed signals detected; manual review is recommended.",
+    deterministic: true,
+    basedOnSignals: Array.from(signalCodes),
+  };
+}
+
 async function findEventByAccessCode(accessCode, eventId = "") {
   if (!accessCode) return null;
   const directEvent = await prisma.userEvent.findUnique({
@@ -160,6 +284,23 @@ async function getOrganizerTicketRequests(req, res) {
     },
   });
 
+  const requestStatsByEmail = new Map();
+  for (const request of requests) {
+    const key = normalizeEmail(request.email);
+    if (!key) continue;
+    const stats = requestStatsByEmail.get(key) || {
+      pendingCount: 0,
+      approvedCount: 0,
+      rejectedCount: 0,
+      cancelledCount: 0,
+    };
+    if (request.status === "PENDING_VERIFICATION") stats.pendingCount += 1;
+    else if (request.status === "APPROVED") stats.approvedCount += 1;
+    else if (request.status === "REJECTED") stats.rejectedCount += 1;
+    else if (request.status === "CANCELLED") stats.cancelledCount += 1;
+    requestStatsByEmail.set(key, stats);
+  }
+
   const items = await Promise.all(requests.map(async (request) => {
     const tickets = Array.isArray(request.tickets) ? request.tickets : [];
     const latestStatuses = tickets
@@ -191,11 +332,21 @@ async function getOrganizerTicketRequests(req, res) {
       resolveImageUrl(request.cancellationEvidenceS3Key, request.cancellationEvidenceImageDataUrl),
     ]);
 
+    const { signals: riskSignals, riskLevel } = buildRequestRiskSignals({
+      request,
+      statsForEmail: requestStatsByEmail.get(normalizeEmail(request.email)) || null,
+      event,
+    });
+    const recommendation = buildRequestRecommendation({ riskSignals, riskLevel });
+
     const { tickets: _tickets, messages: _messages, evidenceS3Key: _esk, cancellationEvidenceS3Key: _cesk, ...requestWithoutTickets } = request;
     return {
       ...requestWithoutTickets,
       evidenceImageDataUrl,
       cancellationEvidenceImageDataUrl,
+      riskSignals,
+      riskLevel,
+      recommendation,
       deliveryStatus,
       unreadClientMessages,
       ticketIds: tickets.map((ticket) => ticket.ticketPublicId).filter(Boolean),
@@ -925,5 +1076,3 @@ module.exports = {
   setEventAutoApprove,
   createTicketsForRequest,
 };
-
-

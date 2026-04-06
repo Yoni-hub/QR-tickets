@@ -12,6 +12,7 @@ const {
 } = require("../services/chatService");
 const { sendTicketApprovedEmail, sendOrganizerNewRequestEmail, sendOrganizerNewMessageEmail, sendOtpEmail, sendClientRecoveryEmail, sendOrganizerRecoveryEmail } = require("../utils/mailer");
 const { createTicketsForRequest } = require("./organizerController");
+const logger = require("../utils/logger");
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -622,7 +623,7 @@ async function createPublicTicketRequest(req, res) {
           to: event.organizerEmail,
           eventName: event.eventName,
           dashboardUrl,
-        }).catch((err) => console.error("organizer notify email failed", err));
+        }).catch((err) => logger.error("organizer notify email failed", err));
       }
 
       res.status(201).json({
@@ -659,7 +660,7 @@ async function createPublicTicketRequest(req, res) {
       to: event.organizerEmail,
       eventName: event.eventName,
       dashboardUrl,
-    }).catch((err) => console.error("organizer notify email failed", err));
+    }).catch((err) => logger.error("organizer notify email failed", err));
   }
 }
 
@@ -868,7 +869,7 @@ async function createClientRequestMessageByToken(req, res) {
       eventName: eventForNotif.eventName,
       senderName: request.name || "A customer",
       dashboardUrl,
-    }).catch((err) => console.error("organizer message notify failed", err));
+    }).catch((err) => logger.error("organizer message notify failed", err));
   }
 }
 
@@ -945,7 +946,7 @@ async function sendOtp(req, res) {
   try {
     await sendOtpEmail({ to: email, code, eventName: event.eventName });
   } catch (err) {
-    console.error("sendOtpEmail failed", err);
+    logger.error("sendOtpEmail failed", err);
     res.status(500).json({ error: "Could not send verification email. Please try again." });
     return;
   }
@@ -1037,7 +1038,7 @@ async function sendRecoveryOtp(req, res) {
       },
     });
 
-    sendOtpEmail({ to: email, code }).catch((err) => console.error("recovery OTP email failed", err));
+    sendOtpEmail({ to: email, code }).catch((err) => logger.error("recovery OTP email failed", err));
   }
 
   // Always respond with success to avoid email enumeration
@@ -1100,7 +1101,7 @@ async function confirmRecoveryOtp(req, res) {
     const baseUrl = getPublicBaseUrl();
     const dashboardLinks = [{ eventName: "All your tickets", dashboardUrl: `${baseUrl}/client/${clientProfile.clientAccessToken}`, requestDate: "" }];
     sendClientRecoveryEmail({ to: email, dashboardLinks }).catch((err) =>
-      console.error("client recovery email failed", err),
+      logger.error("client recovery email failed", err),
     );
   }
 
@@ -1131,7 +1132,7 @@ async function sendOrganizerRecoveryOtp(req, res) {
       data: { email, eventSlug: ORGANIZER_RECOVERY_SLUG, code, expiresAt: new Date(Date.now() + OTP_EXPIRY_MS) },
     });
 
-    sendOtpEmail({ to: email, code }).catch((err) => console.error("organizer recovery OTP email failed", err));
+    sendOtpEmail({ to: email, code }).catch((err) => logger.error("organizer recovery OTP email failed", err));
   }
 
   // Always respond with success to avoid email enumeration
@@ -1186,7 +1187,7 @@ async function confirmOrganizerRecoveryOtp(req, res) {
       codeMap.get(key).push(ev.eventName || "Unnamed event");
     }
     const entries = Array.from(codeMap.entries()).map(([organizerAccessCode, eventNames]) => ({ organizerAccessCode, eventNames }));
-    sendOrganizerRecoveryEmail({ to: email, entries }).catch((err) => console.error("organizer recovery email failed", err));
+    sendOrganizerRecoveryEmail({ to: email, entries }).catch((err) => logger.error("organizer recovery email failed", err));
   }
 
   // Always respond with success to avoid enumeration
@@ -1206,4 +1207,3 @@ module.exports = {
   sendOrganizerRecoveryOtp,
   confirmOrganizerRecoveryOtp,
 };
-

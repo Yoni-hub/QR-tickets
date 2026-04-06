@@ -22,6 +22,48 @@ function parseCsvRows(text) {
   });
 }
 
+function resolveRiskBadgeClass(severity) {
+  if (severity === "HIGH") return "border-red-200 bg-red-50 text-red-700";
+  if (severity === "MEDIUM") return "border-amber-200 bg-amber-50 text-amber-700";
+  if (severity === "LOW") return "border-slate-200 bg-slate-50 text-slate-700";
+  return "border-slate-200 bg-slate-50 text-slate-700";
+}
+
+function resolveRecommendationBadgeClass(action) {
+  if (action === "REJECT") return "border-red-200 bg-red-50 text-red-700";
+  if (action === "REVIEW") return "border-amber-200 bg-amber-50 text-amber-700";
+  if (action === "APPROVE") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  return "border-slate-200 bg-slate-50 text-slate-700";
+}
+
+const REQUEST_RISK_FILTERS = ["ALL", "HIGH", "MEDIUM", "LOW"];
+const REQUEST_RISK_ORDER = { HIGH: 0, MEDIUM: 1, LOW: 2, NONE: 3 };
+const REQUEST_STATUS_SCOPES = [
+  { value: "ALL", label: "ALL" },
+  { value: "PENDING_ONLY", label: "PENDING ONLY" },
+];
+
+function normalizeRiskLevel(value) {
+  const normalized = String(value || "").trim().toUpperCase();
+  if (normalized === "HIGH" || normalized === "MEDIUM" || normalized === "LOW" || normalized === "NONE") return normalized;
+  return "NONE";
+}
+
+function toTimestamp(value) {
+  const parsed = Date.parse(String(value || ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function sortRequestsByRiskAndRecency(items) {
+  return [...items].sort((left, right) => {
+    const leftRisk = normalizeRiskLevel(left?.riskLevel);
+    const rightRisk = normalizeRiskLevel(right?.riskLevel);
+    const riskDelta = REQUEST_RISK_ORDER[leftRisk] - REQUEST_RISK_ORDER[rightRisk];
+    if (riskDelta !== 0) return riskDelta;
+    return toTimestamp(right?.createdAt) - toTimestamp(left?.createdAt);
+  });
+}
+
 export default function DashboardTicketRequestsPage() {
   const [params] = useSearchParams();
   const accessCode = useMemo(() => String(params.get("code") || "").trim(), [params]);
@@ -33,6 +75,8 @@ export default function DashboardTicketRequestsPage() {
   const [csvText, setCsvText] = useState("");
   const [approvingRequestIds, setApprovingRequestIds] = useState(() => new Set());
   const [rejectingRequestIds, setRejectingRequestIds] = useState(() => new Set());
+  const [riskFilter, setRiskFilter] = useState("ALL");
+  const [statusScope, setStatusScope] = useState("ALL");
 
   const load = async () => {
     if (!accessCode) return;
@@ -55,6 +99,15 @@ export default function DashboardTicketRequestsPage() {
   useEffect(() => {
     load();
   }, [accessCode]);
+
+  const displayedItems = useMemo(() => {
+    const filtered = items.filter((item) => {
+      if (statusScope === "PENDING_ONLY" && item?.status !== "PENDING_VERIFICATION") return false;
+      if (riskFilter === "ALL") return true;
+      return normalizeRiskLevel(item?.riskLevel) === riskFilter;
+    });
+    return sortRequestsByRiskAndRecency(filtered);
+  }, [items, riskFilter, statusScope]);
 
   const approve = async (id) => {
     const requestItem = items.find((item) => item.id === id);
@@ -160,8 +213,40 @@ export default function DashboardTicketRequestsPage() {
       <section className="mt-4 rounded border bg-white p-4">
         <h2 className="text-lg font-semibold">Requests</h2>
         <p className="mt-1 text-xs text-slate-500">Buyer messaging is now handled in Dashboard ? Chat.</p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="text-xs font-semibold text-slate-600">Filter by risk:</span>
+          {REQUEST_RISK_FILTERS.map((filterValue) => (
+            <button
+              key={filterValue}
+              type="button"
+              onClick={() => setRiskFilter(filterValue)}
+              className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${riskFilter === filterValue ? "border-slate-700 bg-slate-700 text-white" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-100"}`}
+            >
+              {filterValue}
+            </button>
+          ))}
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <span className="text-xs font-semibold text-slate-600">Status:</span>
+          {REQUEST_STATUS_SCOPES.map((scope) => (
+            <button
+              key={scope.value}
+              type="button"
+              onClick={() => setStatusScope(scope.value)}
+              className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${statusScope === scope.value ? "border-slate-700 bg-slate-700 text-white" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-100"}`}
+            >
+              {scope.label}
+            </button>
+          ))}
+          <span className="text-xs text-slate-500">{displayedItems.length} shown / {items.length} total</span>
+        </div>
+        <p className="mt-1 text-xs text-slate-500">Sorted by risk (HIGH to LOW), then newest first.</p>
         <div className="mt-3 space-y-2">
-          {items.map((item) => {
+          {displayedItems.map((item) => {
+            const riskSignals = Array.isArray(item.riskSignals) ? item.riskSignals : [];
+            const riskLevel = normalizeRiskLevel(item.riskLevel);
+            const recommendationAction = String(item?.recommendation?.action || "REVIEW").toUpperCase();
+            const recommendationExplanation = String(item?.recommendation?.explanation || "Manual review is recommended.");
             const isApproved = item.status === "APPROVED";
             const isRejected = item.status === "REJECTED";
             const isCancelled = item.status === "CANCELLED";
@@ -179,6 +264,26 @@ export default function DashboardTicketRequestsPage() {
                 <p className="mt-1">Quantity: {item.quantity}</p>
                 <p className="mt-1">Promoter: {item.promoter?.name || "-"}</p>
                 <p className="mt-1">Status: {item.status}</p>
+                <p className="mt-1">Risk: <span className={`inline-block rounded border px-2 py-0.5 text-[11px] font-semibold ${resolveRiskBadgeClass(riskLevel)}`}>{riskLevel}</span></p>
+                <p className="mt-1">Recommendation: <span className={`inline-block rounded border px-2 py-0.5 text-[11px] font-semibold ${resolveRecommendationBadgeClass(recommendationAction)}`}>{recommendationAction}</span></p>
+                <p className="mt-1 text-[11px] text-slate-600">{recommendationExplanation}</p>
+                {riskSignals.length ? (
+                  <div className="mt-1">
+                    <p className="text-xs font-semibold text-slate-700">Risk signals</p>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {riskSignals.map((signal) => (
+                        <span key={`${item.id}-${signal.code}`} className={`inline-block rounded border px-2 py-0.5 text-[11px] font-semibold ${resolveRiskBadgeClass(signal.severity)}`}>
+                          {signal.severity}: {signal.label}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="mt-1 space-y-1">
+                      {riskSignals.map((signal) => (
+                        <p key={`${item.id}-${signal.code}-explain`} className="text-[11px] text-slate-600">{signal.explanation}</p>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
                 {item.organizerMessage ? <p className="mt-1 text-xs text-slate-600">Message: {item.organizerMessage}</p> : null}
                 <div className="mt-2 flex flex-wrap gap-2">
                   <AppButton
@@ -213,7 +318,7 @@ export default function DashboardTicketRequestsPage() {
               </article>
             );
           })}
-          {!items.length ? <p className="text-sm text-slate-500">No ticket requests yet.</p> : null}
+          {!displayedItems.length ? <p className="text-sm text-slate-500">{items.length ? "No ticket requests for selected filters." : "No ticket requests yet."}</p> : null}
         </div>
       </section>
 

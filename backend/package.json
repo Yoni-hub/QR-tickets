@@ -3,7 +3,12 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --test --test-concurrency=1",
+    "test:scan": "node --test --test-concurrency=1 tests/scan.test.js",
+    "test:request-approval": "node --test --test-concurrency=1 tests/ticketRequestApproval.test.js",
+    "test:cancellation": "node --test --test-concurrency=1 tests/ticketCancellation.test.js",
+    "test:organizer-recovery": "node --test --test-concurrency=1 tests/organizerRecovery.test.js",
+    "test:organizer-invoice": "node --test --test-concurrency=1 tests/organizerInvoice.test.js",
     "start": "node index.js",
     "dev": "nodemon index.js",
     "prisma:generate": "prisma generate",
@@ -17,6 +22,7 @@
     "@aws-sdk/client-s3": "^3.1014.0",
     "@aws-sdk/s3-request-presigner": "^3.1014.0",
     "@prisma/client": "^6.16.2",
+    "@sentry/node": "^10.47.0",
     "axios": "^1.13.6",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
@@ -34,9 +40,12 @@
     "sharp": "^0.34.5",
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3",
-    "uuid": "^13.0.0"
+    "uuid": "^13.0.0",
+    "winston": "^3.19.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14"
+    "nodemon": "^3.1.14",
+    "supertest": "^7.2.2"
   }
 }

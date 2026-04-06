@@ -1,127 +1,402 @@
 {
-  "_meta": {
-    "purpose": "Decisions made by the agentic system and why — separate from product decisions in docs/DECISIONS_LOG.md. This file tracks AGENTIC and ARCHITECTURAL decisions.",
-    "last_updated": "2026-04-05",
-    "updated_by": "agentic-orchestrator",
-    "update_trigger": "initial-audit"
-  },
-  "product_decisions": {
-    "note": "Product decisions live in docs/DECISIONS_LOG.md. Key ones mirrored here for agent context.",
-    "summary": [
-      {
-        "id": "DEC-001",
-        "decision": "Full isolation from Connsura runtime and infrastructure",
-        "consequence": "Independent repo, DB, containers, CI/CD"
-      },
-      {
-        "id": "DEC-002",
-        "decision": "6-char alphanumeric accessCode as organizer credential (no OAuth/JWT)",
-        "consequence": "Simple onboarding; tradeoff is no password recovery (access code IS the credential)"
-      },
-      {
-        "id": "DEC-003",
-        "decision": "QR payload = full URL: ${PUBLIC_BASE_URL}/t/${ticketPublicId}",
-        "consequence": "Scannable as URL or raw ID; users can verify ticket state at /t/:id"
-      },
-      {
-        "id": "DEC-005",
-        "decision": "C:\\Users\\yonat\\Downloads\\QR_Tickets is the ONLY active working repo",
-        "consequence": "OneDrive copy is archived/read-only unless explicitly requested"
-      },
-      {
-        "id": "DEC-007",
-        "decision": "TicketRequest lifecycle with PENDING_VERIFICATION → APPROVED/REJECTED (renamed from PENDING_PAYMENT 2026-03-17)",
-        "consequence": "Payment stays off-platform; organizer controls issuance"
-      },
-      {
-        "id": "DEC-012",
-        "decision": "Store salesWindowStart/End as HH:MM strings (24h), not UTC DateTimes",
-        "consequence": "Timezone-portable; comparison done in server local time"
-      },
-      {
-        "id": "DEC-013",
-        "decision": "Backend serves OG meta tags for social crawlers; nginx routes by User-Agent",
-        "consequence": "Social previews work; no change to React SPA routing for real users"
-      }
+    "_meta": {
+        "purpose": "Decisions made by the agentic system and why - separate from product decisions in docs/DECISIONS_LOG.md. This file tracks AGENTIC and ARCHITECTURAL decisions.",
+        "last_updated": "2026-04-06",
+        "updated_by": "backend-agent",
+        "update_trigger": "task-017-invoice-partial-payment-mvp"
+    },
+    "product_decisions": {
+        "note": "Product decisions live in docs/DECISIONS_LOG.md. Key ones mirrored here for agent context.",
+        "summary": [
+            {
+                "id": "DEC-001",
+                "decision": "Full isolation from Connsura runtime and infrastructure",
+                "consequence": "Independent repo, DB, containers, CI/CD"
+            },
+            {
+                "id": "DEC-002",
+                "decision": "6-char alphanumeric accessCode as organizer credential (no OAuth/JWT)",
+                "consequence": "Simple onboarding; tradeoff is no password recovery (access code IS the credential)"
+            },
+            {
+                "id": "DEC-003",
+                "decision": "QR payload = full URL: ${PUBLIC_BASE_URL}/t/${ticketPublicId}",
+                "consequence": "Scannable as URL or raw ID; users can verify ticket state at /t/:id"
+            },
+            {
+                "id": "DEC-005",
+                "decision": "C:\\Users\\yonat\\Downloads\\QR_Tickets is the ONLY active working repo",
+                "consequence": "OneDrive copy is archived/read-only unless explicitly requested"
+            },
+            {
+                "id": "DEC-007",
+                "decision": "TicketRequest lifecycle with PENDING_VERIFICATION -> APPROVED/REJECTED (renamed from PENDING_PAYMENT on 2026-03-17)",
+                "consequence": "Payment stays off-platform; organizer controls issuance"
+            },
+            {
+                "id": "DEC-012",
+                "decision": "Store salesWindowStart/End as HH:MM strings (24h), not UTC DateTimes",
+                "consequence": "Timezone-portable; comparison done in server local time"
+            },
+            {
+                "id": "DEC-013",
+                "decision": "Backend serves OG meta tags for social crawlers; nginx routes by User-Agent",
+                "consequence": "Social previews work; no change to React SPA routing for real users"
+            }
+        ]
+    },
+    "agentic_decisions": [
+        {
+            "id": "ADEC-001",
+            "date": "2026-04-05",
+            "title": "Establish /agentic/ as the persistent memory layer inside the repo",
+            "context": "The system had no executable agentic infrastructure - only documentation stubs. A repo-local memory layer enables cross-session continuity without external tooling.",
+            "decision": "Create /agentic/ with JSON memory files plus markdown behavior files. JSON for machine-readable state; markdown for human-readable behavior specs.",
+            "alternatives_rejected": [
+                "External vector DB - too much infrastructure for current scale",
+                "Plain markdown memory files only - less structured, harder for agents to parse and update",
+                "Keeping memory in .claude/ only - not visible to humans reviewing the repo"
+            ],
+            "consequence": "Every session can load context from JSON files. Memory is version-controlled alongside code.",
+            "review_trigger": "If memory files become large (>500 lines each), consider splitting by sub-domain"
+        },
+        {
+            "id": "ADEC-002",
+            "date": "2026-04-05",
+            "title": "Phase ordering: foundation before product features",
+            "context": "The system had 0% test coverage, no CI, and no structured logging. Building AI features on this base would be unstable.",
+            "decision": "Phase 1 = engineering and agentic foundation only. No product features until CI, tests, and logging are in place.",
+            "consequence": "Product AI features (approval assist, analytics) deferred to Phase 3 minimum",
+            "review_trigger": "After TASK-006 (CI) and TASK-007/TASK-008 (critical path tests) are complete"
+        },
+        {
+            "id": "ADEC-003",
+            "date": "2026-04-05",
+            "title": "Use JSON + Markdown hybrid for agentic memory files",
+            "context": "Pure JSON is machine-readable but poor for complex behavioral instructions. Pure markdown is human-readable but hard to query programmatically.",
+            "decision": "Use JSON for state (memory_*.json files) and Markdown for behavior (agent_loop.md, roles.md, etc.).",
+            "consequence": "Agents load JSON for facts and Markdown for behavioral instructions",
+            "review_trigger": "If scripted automation needs to read memory, JSON is already machine-parseable"
+        },
+        {
+            "id": "ADEC-004",
+            "date": "2026-04-05",
+            "title": "Do not rewrite working product code during agentic foundation setup",
+            "context": "The product is live and functional. Agentic foundation work must not introduce regressions.",
+            "decision": "Foundation files are new files or prompt rewrites. No backend/frontend product logic changes in Phase 1.",
+            "consequence": "Phase 1 was zero-risk to the live product",
+            "review_trigger": "Phase 2 tasks begin touching backend code"
+        },
+        {
+            "id": "ADEC-005",
+            "date": "2026-04-06",
+            "title": "Fix chat attachment path by moving to existing volume rather than adding a new volume mount",
+            "context": "BUG-011: chat attachments were stored outside the Docker volume.",
+            "decision": "Change CHAT_STORAGE_ROOT to /app/uploads path under the existing mounted volume.",
+            "alternatives_rejected": [
+                "Add a second volume mount for /app/storage"
+            ],
+            "consequence": "Chat attachments survive container rebuilds without infrastructure changes.",
+            "review_trigger": "If uploads grow too large, split chat storage into its own volume"
+        },
+        {
+            "id": "ADEC-006",
+            "date": "2026-04-06",
+            "title": "Use existing otpLimiter for recover-organizer-code; create separate contactLimiter",
+            "context": "BUG-012: recovery/contact endpoints lacked rate limiting.",
+            "decision": "Reuse otpLimiter for recover-organizer-code and add stricter contactLimiter for contact form.",
+            "alternatives_rejected": [
+                "Single global limiter for all public endpoints"
+            ],
+            "consequence": "All unauthenticated email-sending endpoints are now rate limited.",
+            "review_trigger": "If legitimate users hit contact limits too often, raise threshold"
+        },
+        {
+            "id": "ADEC-007",
+            "date": "2026-04-06",
+            "title": "Run npm audit fix without --force",
+            "context": "BUG-014: dependency vulnerabilities in backend/frontend.",
+            "decision": "Use npm audit fix without --force to keep semver-safe upgrades only.",
+            "alternatives_rejected": [
+                "npm audit fix --force"
+            ],
+            "consequence": "Vulnerabilities were resolved without forcing major breaking upgrades.",
+            "review_trigger": "Run npm audit in CI once TASK-006 is implemented"
+        },
+        {
+            "id": "ADEC-008",
+            "date": "2026-04-06",
+            "title": "Gate Sentry behind DSN and scrub request payloads before send",
+            "context": "TASK-004 required backend error tracking without leaking OTPs, passwords, access codes, tokens, request bodies, or env secrets.",
+            "decision": "Initialize Sentry only when SENTRY_DSN exists. Use Express error-handler integration and default global handlers. Apply beforeSend scrubbing to remove bodies/cookies, strip query strings, redact sensitive URL segments, and allowlist safe headers.",
+            "alternatives_rejected": [
+                "Always initialize Sentry even without DSN",
+                "Capture full request payloads"
+            ],
+            "consequence": "Unhandled exceptions and Express error-chain failures are captured when configured, with sensitive request data excluded.",
+            "review_trigger": "If more context is needed, expand explicit allowlists instead of enabling raw body capture"
+        },
+        {
+            "id": "ADEC-009",
+            "date": "2026-04-06",
+            "title": "Phase Zod rollout on highest-risk public endpoints first",
+            "context": "TASK-005 scope was broad across public-facing inputs; full coverage in one patch increased behavior-change risk.",
+            "decision": "Implement shared validate middleware + public schemas, wire first to /api/public core flows, /api/scans, and key token/code param routes. Leave remaining organizer access-code routes for follow-up hardening.",
+            "alternatives_rejected": [
+                "Validate every non-admin route in one sweep - higher regression risk and larger diff"
+            ],
+            "consequence": "Most abuse-prone public paths now reject malformed input consistently with structured 400 responses; residual endpoints still depend on manual checks.",
+            "review_trigger": "Complete schema wiring for remaining access-code organizer routes and promoter/request mutation endpoints."
+        },
+        {
+            "id": "ADEC-010",
+            "date": "2026-04-06",
+            "title": "Complete Zod rollout for remaining organizer/public mutation routes using existing middleware pattern",
+            "context": "Phase 1 covered highest-risk public flows, but organizer access-code and mutation endpoints still had manual checks only.",
+            "decision": "Extend publicSchemas + validateRequest wiring to remaining non-admin routes in apiRoutes.js, preserving controller/service behavior and using standardized 400 validation responses.",
+            "alternatives_rejected": [
+                "Leave residual manual validation in place (inconsistent and weaker boundary checks)",
+                "Large controller refactor to move business validation logic (out of scope for TASK-005)"
+            ],
+            "consequence": "Public-facing organizer/code/token mutation endpoints now reject malformed input consistently before business logic runs.",
+            "review_trigger": "If admin routes are later exposed publicly, apply the same schema boundary and revisit constraints from real traffic."
+        },
+        {
+            "id": "ADEC-011",
+            "date": "2026-04-06",
+            "title": "Adopt a minimal two-job CI baseline before test rollout",
+            "context": "TASK-006 requires immediate regression safeguards without introducing flaky or secret-dependent steps. Test suites are not yet implemented.",
+            "decision": "Implement GitHub Actions CI with separate backend and frontend jobs, running npm ci, backend syntax checks, frontend build, and npm audit high+ on pull_request and push to main.",
+            "alternatives_rejected": [
+                "Run npm test (currently intentionally failing placeholder in backend)",
+                "Single monolithic job (reduced clarity and slower feedback)",
+                "Secrets-dependent deploy/runtime checks in baseline CI"
+            ],
+            "consequence": "Repository now has automatic baseline breakage/security checks per PR and main push, ready for future extension with integration tests.",
+            "review_trigger": "When TASK-007/008 tests exist, add deterministic test jobs and tighten quality gates."
+        },
+        {
+            "id": "ADEC-012",
+            "date": "2026-04-06",
+            "title": "Use node:test + supertest with Prisma schema-isolated Postgres setup for first backend integration gate",
+            "context": "TASK-007 needed stable scan-flow integration coverage with minimum dependencies and no external secrets/services.",
+            "decision": "Adopt built-in Node test runner plus supertest for HTTP integration tests, and initialize a dedicated test schema via prisma db push before test execution.",
+            "alternatives_rejected": [
+                "Jest/Vitest runner adoption for the first slice (additional setup overhead)",
+                "Mock-only controller tests (would miss route/middleware integration behavior)"
+            ],
+            "consequence": "Scan flow now has deterministic integration tests that can be wired into CI once DB service provisioning is added to workflow.",
+            "review_trigger": "When adding TASK-008 and broader suites, re-evaluate parallelization and move DB provisioning fully into CI workflow."
+        },
+        {
+            "id": "ADEC-013",
+            "date": "2026-04-06",
+            "title": "Keep request/approval integration tests focused on deterministic DB-backed transitions",
+            "context": "TASK-008 required stable behavioral tests without introducing flaky external dependencies.",
+            "decision": "Test public request creation and organizer approve/reject transitions through real API routes using schema-isolated DB setup, while avoiding external SMTP/S3 dependencies in assertions.",
+            "alternatives_rejected": [
+                "End-to-end delivery channel testing in this phase (too broad for minimum stable slice)",
+                "Controller-level mocks instead of route+DB integration tests"
+            ],
+            "consequence": "Critical ticket-fulfillment state transitions now have repeatable backend integration coverage and are ready for CI gate wiring in the next task.",
+            "review_trigger": "When CI DB service is wired, enforce both scan and request/approval suites as required gates."
+        },
+        {
+            "id": "ADEC-014",
+            "date": "2026-04-06",
+            "title": "Gate backend merges on serial DB-backed integration suites in CI",
+            "context": "After TASK-007 and TASK-008, stable integration suites existed but were not enforced in CI.",
+            "decision": "Extend backend CI job with a Postgres service and run npm run test:scan then npm run test:request-approval in sequence as required gates.",
+            "alternatives_rejected": [
+                "Run integration suites in parallel (higher risk of DB lock/contention)",
+                "Keep CI at syntax/audit only (insufficient behavioral regression protection)"
+            ],
+            "consequence": "Critical scanner and ticket-fulfillment regressions are now blocked before merge when CI is required on branches.",
+            "review_trigger": "When additional deterministic backend suites are added, append them in serial order or isolate DB schemas per parallel job."
+        },
+        {
+            "id": "ADEC-015",
+            "date": "2026-04-06",
+            "title": "Add organizer cancellation integration suite as the third backend behavioral gate candidate",
+            "context": "Cancellation is a high-risk post-sale state transition that impacts ticket validity, request state, and downstream scan behavior.",
+            "decision": "Implement deterministic backend integration tests for /api/tickets/:ticketPublicId/cancel covering sold/nonexistent/already-cancelled/unsold/request-linked cancellation paths and scan impact for CANCELLED requests.",
+            "alternatives_rejected": [
+                "Broader OTP/recovery suite first (lower immediate fulfillment risk coverage)",
+                "Mocked unit tests only (insufficient route+DB transition assurance)"
+            ],
+            "consequence": "The platform now has three critical backend behavioral suites ready to be enforced as required CI gates.",
+            "review_trigger": "When wiring CI gates, add npm run test:cancellation after existing scan and request/approval suites."
+        },
+        {
+            "id": "ADEC-016",
+            "date": "2026-04-06",
+            "title": "Enforce three backend behavioral gates in CI using explicit serial suite commands",
+            "context": "Standalone suites were stable, while aggregate npm test still had cross-suite DB deadlock risk.",
+            "decision": "Keep CI backend integration checks explicit and serial: npm run test:scan, npm run test:request-approval, npm run test:cancellation. Do not use aggregate npm test yet.",
+            "alternatives_rejected": [
+                "Use aggregate npm test in CI immediately",
+                "Run suites in parallel against shared Postgres service"
+            ],
+            "consequence": "CI blocks merges on three critical backend behaviors while avoiding known deadlock-prone aggregate execution.",
+            "review_trigger": "Revisit once shared test DB cleanup deadlock is resolved and aggregate test execution is proven stable."
+        },
+        {
+            "id": "ADEC-017",
+            "date": "2026-04-06",
+            "title": "Prioritize organizer recovery OTP/code flow as next integration target after cancellation",
+            "context": "Post-cancellation ranking compared unguarded flows: recovery/token flows, organizer mutation edges, and auto-approve branch. Organizer recovery directly protects account-access credential recovery and enumeration-safe behavior.",
+            "decision": "Add deterministic integration coverage for /api/public/recover-organizer-code/send-otp and /api/public/recover-organizer-code/confirm before lower-sensitivity organizer mutation edges.",
+            "alternatives_rejected": [
+                "Auto-approve branch first (high business impact but lower security sensitivity)",
+                "Broader organizer mutation edge suite first (wider scope and less focused risk reduction)"
+            ],
+            "consequence": "Critical recovery OTP state transitions (creation, confirmation, attempt throttling behavior) are now regression-protected with DB-backed integration tests.",
+            "review_trigger": "Next, cover client recovery OTP/token flow and auto-approve ticket request branch to continue closing high-risk unguarded paths."
+        },
+        {
+            "id": "ADEC-018",
+            "date": "2026-04-06",
+            "title": "Enforce organizer recovery as the fourth serial backend behavioral gate in CI",
+            "context": "Organizer recovery integration suite was added and validated as stable enough to gate merges alongside scan, request/approval, and cancellation suites.",
+            "decision": "Update backend CI required integration test step to run four explicit serial commands: test:scan, test:request-approval, test:cancellation, test:organizer-recovery. Keep aggregate npm test excluded.",
+            "alternatives_rejected": [
+                "Keep organizer recovery suite optional/off-CI",
+                "Switch to aggregate npm test despite known intermittent cleanup deadlock risk"
+            ],
+            "consequence": "Infrastructure foundation phase now has four backend behavioral gates enforced in CI with explicit serial execution.",
+            "review_trigger": "Before broader expansion, stabilize shared DB cleanup deadlock behavior in request-approval suite."
+        },
+        {
+            "id": "ADEC-019",
+            "date": "2026-04-06",
+            "title": "Stabilize request-approval suite by adding deadlock-aware retry around shared TRUNCATE reset",
+            "context": "Intermittent Postgres 40P01 deadlocks occurred in request-approval after-hook cleanup while async fire-and-forget chat side-effects could still hold locks.",
+            "decision": "Keep cleanup scope and coverage intact, but add bounded deadlock retry with short backoff in shared reset helper used by integration suites.",
+            "alternatives_rejected": [
+                "Remove or skip cleanup steps",
+                "Drop request-approval from CI gates",
+                "Refactor product runtime logic for test-only stabilization"
+            ],
+            "consequence": "Cleanup no longer fails immediately on transient deadlock contention, improving repeat-run stability without reducing assertions.",
+            "review_trigger": "If instability reappears, move to per-suite unique schema per run plus explicit synchronization of async side-effects before teardown."
+        },
+        {
+            "id": "ADEC-020",
+            "date": "2026-04-06",
+            "title": "Ship organizer approval assist MVP as deterministic risk signals (no model inference)",
+            "context": "TASK-011 requested an audit-first product MVP that is immediately useful, explainable, and low-risk without introducing a large AI system.",
+            "decision": "Generate risk signals server-side in organizer ticket-request review responses using deterministic rules (duplicate email, missing payment evidence, repeated pending requests per email, prior rejected history, high quantity threshold) and render them in existing organizer dashboard request views.",
+            "alternatives_rejected": [
+                "Integrate an LLM risk scorer in this first slice",
+                "Delay UI until a full scoring platform exists"
+            ],
+            "consequence": "Organizers now see explainable risk indicators during review with no behavior change to approval/rejection actions and no dependency on external AI infrastructure.",
+            "review_trigger": "Next slice can add stronger signals (IP/session velocity, client recovery linkage, historical fraud outcomes) once data availability and false-positive risk are validated."
+        },
+        {
+            "id": "ADEC-021",
+            "date": "2026-04-06",
+            "title": "Make organizer risk signals actionable via frontend-only queue prioritization and filters",
+            "context": "TASK-011 Phase 2 required turning existing riskLevel/riskSignals into an operational decision tool without expanding backend scope.",
+            "decision": "Apply deterministic client-side ordering and controls in both organizer request UIs: default sort by riskLevel (HIGH->MEDIUM->LOW->NONE) then createdAt descending, plus risk filter chips (ALL/HIGH/MEDIUM/LOW). Reuse existing riskLevel from API with no endpoint changes.",
+            "alternatives_rejected": [
+                "Backend-side sorting/filter query params in this phase",
+                "Introducing additional risk signals before queue actionability"
+            ],
+            "consequence": "Organizers can quickly triage high-risk requests first while approval/rejection actions and request-fetching contracts remain unchanged.",
+            "review_trigger": "If organizers need larger queues, add server-side pagination/sort params while preserving the same risk semantics."
+        },
+        {
+            "id": "ADEC-022",
+            "date": "2026-04-06",
+            "title": "Add pending-only status scope toggle to organizer request queues without backend changes",
+            "context": "TASK-011 Phase 3 targeted decision-fatigue reduction by focusing review on actionable requests while preserving existing risk filtering/sorting.",
+            "decision": "Add frontend-only status scope control (ALL/PENDING ONLY) in Dashboard and DashboardTicketRequests, layered into existing derived list logic before risk filtering and shared sorting.",
+            "alternatives_rejected": [
+                "Add status filtering query params/API changes",
+                "Create a separate pending-only page"
+            ],
+            "consequence": "Organizers can isolate pending requests instantly while still using risk filters and default risk-priority order.",
+            "review_trigger": "If organizers request more triage controls, consider adding optional status chips for APPROVED/REJECTED/CANCELLED in the same compact filter row."
+        },
+        {
+            "id": "ADEC-023",
+            "date": "2026-04-06",
+            "title": "Add deterministic organizer decision recommendations (APPROVE/REVIEW/REJECT) from existing risk signals",
+            "context": "TASK-011 next product step required explainable recommendation support without LLM inference, automation, or approval flow changes.",
+            "decision": "Generate recommendation server-side in organizer ticket-request response using existing risk signals/riskLevel. Conservative mapping: REJECT only when missing payment evidence is paired with duplicate/burst requester pattern; REVIEW for HIGH or any MEDIUM signal; APPROVE for NONE/LOW-only signals.",
+            "alternatives_rejected": [
+                "Model-based inference in this MVP",
+                "Auto-approving/auto-rejecting requests from recommendation output"
+            ],
+            "consequence": "Organizers now get explainable, deterministic recommendation badges and rationale per request while all final actions remain manual.",
+            "review_trigger": "If recommendation precision is insufficient, tune rules with observed organizer outcomes and keep REVIEW as default for uncertainty."
+        },
+        {
+            "id": "ADEC-024",
+            "date": "2026-04-06",
+            "title": "Implement organizer invoicing MVP with currency instruction snapshots and safe blocking behavior",
+            "context": "Organizer billing needed timed pre-event invoices with clear instructions, but instruction text had to remain editable by admin for future invoices without mutating historical records.",
+            "decision": "Add AdminCurrencyPaymentInstruction (ETB/USD/EUR) as admin-managed source and OrganizerInvoice as immutable snapshot record per event/invoice type. Scheduler generates at T-24h, sets dueAt to T-5h, snapshots approved-ticket count and instruction text, and sends via email + organizer-admin chat. If instruction is missing for invoice currency, block generation with explicit BLOCKED_MISSING_INSTRUCTION status instead of sending partial/broken invoice.",
+            "alternatives_rejected": [
+                "Read instruction dynamically at render/send time (would rewrite historical invoice meaning after admin edits)",
+                "Send invoice without currency instruction fallback text (unsafe and operationally ambiguous)",
+                "Allow multiple active pre-event invoices per event without strict dedupe"
+            ],
+            "consequence": "Invoices are deterministic and auditable, future admin instruction edits only affect future invoices, and missing configuration is surfaced safely without silent delivery failures.",
+            "review_trigger": "When payment collection is added, extend status lifecycle (e.g., PAID/OVERDUE) while preserving immutable generation snapshots."
+        },
+        {
+            "id": "ADEC-025",
+            "date": "2026-04-06",
+            "title": "Keep invoice payment operations minimal with manual PAID action plus scheduler-driven OVERDUE transition",
+            "context": "After invoice generation MVP, operations needed a usable lifecycle without adding gateway/reminders or broad billing refactors.",
+            "decision": "Extend OrganizerInvoice with PAID/OVERDUE states and paidAt/paymentNote fields. Add admin mark-paid endpoint and UI action. Mark overdue during the existing scheduler cycle only for actionable unpaid statuses (SENT, PARTIAL_SEND_FAILED), while keeping BLOCKED_MISSING_INSTRUCTION/FAILED as configuration-delivery error states.",
+            "alternatives_rejected": [
+                "Overdue transition for every non-PAID state including blocked/failed (would blur operational root cause)",
+                "Introduce payment gateway/webhook collection in this step"
+            ],
+            "consequence": "Invoice operations are now usable: admins can close invoices as paid and overdue debt is auto-identified without changing payment architecture.",
+            "review_trigger": "When reminders or gateway reconciliation are added, expand transition rules and record payment source/reference IDs."
+        },
+        {
+            "id": "ADEC-026",
+            "date": "2026-04-06",
+            "title": "Add a minimal centralized Admin Invoice Dashboard before reminders/integrations",
+            "context": "After adding PAID/OVERDUE handling, invoice visibility was still fragmented in per-event detail pages.",
+            "decision": "Introduce a lightweight GET /api/admin/invoices listing endpoint and a simple admin page with only operational columns and 4 status filters (ALL, OVERDUE, UNPAID, BLOCKED), without pagination/analytics/export.",
+            "alternatives_rejected": [
+                "Build analytics-heavy billing dashboard in the same step",
+                "Add complex query/filter framework before validating basic usage"
+            ],
+            "consequence": "Admin now has a fast triage surface for invoice operations while the billing UI remains minimal and maintainable.",
+            "review_trigger": "Add pagination and date-range filters only when invoice volume makes current list size insufficient."
+        },
+        {
+            "id": "ADEC-027",
+            "date": "2026-04-06",
+            "title": "Adopt event-level settlement billing with PRE_EVENT_24H + POST_EVENT_FINAL invoice types",
+            "context": "Operational billing required correct handling of early payments, no-payments, and partial payments while preventing scope expansion into payment gateway/accounting systems.",
+            "decision": "Use the equation remaining_balance = total_charges_up_to_event_end - total_payments_received. Keep one PRE_EVENT_24H invoice and one POST_EVENT_FINAL invoice per event, track amountPaid per invoice, compute remaining via totalAmount-amountPaid, and generate final invoice at event end + 30 min only when remaining > 0.",
+            "alternatives_rejected": [
+                "Treat each invoice independently without settlement carry-over",
+                "Implement full ledger/payment gateway integration in this phase"
+            ],
+            "consequence": "Billing is now mathematically consistent across early/full/partial payment cases, with minimal schema and workflow changes.",
+            "review_trigger": "If multiple post-event adjustments become necessary, add explicit adjustment entries while preserving the same settlement equation."
+        },
+        {
+            "id": "ADEC-028",
+            "date": "2026-04-06",
+            "title": "Implement additive admin payment recording via dedicated add-payment endpoint",
+            "context": "Mark-paid was all-or-nothing/absolute and did not support operational partial payment entry while maintaining settlement math.",
+            "decision": "Keep existing mark-paid flow, and add PATCH /api/admin/invoices/:invoiceId/add-payment that increments amountPaid, clamps overpayment to totalAmount, recomputes amountRemaining, and sets status to PAID only when remaining <= 0.",
+            "alternatives_rejected": [
+                "Replace mark-paid endpoint semantics directly (higher regression risk)",
+                "Allow unbounded overpayment values in invoice accounting fields"
+            ],
+            "consequence": "Admin can record partial or multiple payments safely without changing invoice-generation or settlement architecture.",
+            "review_trigger": "If reconciliation complexity grows, introduce a separate payment-entry ledger while keeping invoice totals as derived summaries."
+        }
     ]
-  },
-  "agentic_decisions": [
-    {
-      "id": "ADEC-005",
-      "date": "2026-04-06",
-      "title": "Fix chat attachment path by moving to existing volume rather than adding a new volume mount",
-      "context": "BUG-011: chat attachments were stored at /app/storage/private/chat which was outside the Docker volume. Two options: (a) change the path constant to /app/uploads/private/chat, or (b) add a second volume mount in docker-compose.yml for /app/storage.",
-      "decision": "Option (a): change CHAT_STORAGE_ROOT constant in chatAttachmentService.js to resolve under /app/uploads. No infrastructure change required. Reuses existing volume mount.",
-      "alternatives_rejected": [
-        "Add second volume mount (/app/storage) — adds infrastructure complexity, requires deploy script change, more surface area"
-      ],
-      "consequence": "Chat attachments now survive container rebuilds. Existing attachments at the old path (pre-fix) were already ephemeral and no migration needed.",
-      "review_trigger": "If /app/uploads grows large and needs to be split, a separate volume for chat can be added then"
-    },
-    {
-      "id": "ADEC-006",
-      "date": "2026-04-06",
-      "title": "Use existing otpLimiter for recover-organizer-code; create separate contactLimiter for contact form",
-      "context": "BUG-012: recovery/contact endpoints had no rate limiting. Options: (a) reuse existing limiters, (b) create new dedicated limiters.",
-      "decision": "Reuse otpLimiter (5/hr) for recover-organizer-code (same threat model as other OTP endpoints). Create new contactLimiter (3/hr) for contact form — stricter because contact form sends email to admin and one submission per hour is the normal case.",
-      "alternatives_rejected": [
-        "Single global limiter for all public endpoints — too broad, would affect unrelated endpoints"
-      ],
-      "consequence": "All 7 unauthenticated email-sending endpoints are now rate limited. contactLimiter is tighter (3/hr) reflecting the lower expected volume of legitimate contact form submissions.",
-      "review_trigger": "If legitimate users hit contactLimiter too often, raise to 5/hr"
-    },
-    {
-      "id": "ADEC-007",
-      "date": "2026-04-06",
-      "title": "Run npm audit fix without --force on both packages",
-      "context": "BUG-014: 8 HIGH vulnerabilities in backend, 2 in frontend. npm audit fix without --force only applies safe (semver-compatible) fixes.",
-      "decision": "Run npm audit fix (no --force) only. This updates transitive dependencies in package-lock.json without changing declared versions in package.json. Result: 0 vulnerabilities in both packages.",
-      "alternatives_rejected": [
-        "npm audit fix --force — could introduce breaking major version changes; not needed since safe fix resolved all issues"
-      ],
-      "consequence": "0 vulnerabilities. package.json unchanged. Only package-lock.json updated with 18 transitive package version changes.",
-      "review_trigger": "Run npm audit on every CI pipeline run (TASK-006)"
-    }
-    {
-      "id": "ADEC-001",
-      "date": "2026-04-05",
-      "title": "Establish /agentic/ as the persistent memory layer inside the repo",
-      "context": "The system had no executable agentic infrastructure — only documentation stubs. A repo-local memory layer enables cross-session continuity without external tooling.",
-      "decision": "Create /agentic/ with JSON memory files + markdown behavior files. JSON for machine-readable state; markdown for human-readable behavior specs.",
-      "alternatives_rejected": [
-        "External vector DB — too much infrastructure for current scale",
-        "Plain markdown memory files only — less structured, harder for agents to parse and update",
-        "Keeping memory in .claude/ only — not visible to humans reviewing the repo"
-      ],
-      "consequence": "Every session can load context from JSON files. Memory is version-controlled alongside code.",
-      "review_trigger": "If memory files become large (>500 lines each), consider splitting by sub-domain"
-    },
-    {
-      "id": "ADEC-002",
-      "date": "2026-04-05",
-      "title": "Phase ordering: foundation before product features",
-      "context": "The system has 0% test coverage, no CI, no structured logging. Building AI features on this base would be building on sand.",
-      "decision": "Phase 1 = engineering + agentic foundation only. No product features until CI, tests, and logging are in place.",
-      "consequence": "Product AI features (approval assist, analytics) deferred to Phase 3 minimum",
-      "review_trigger": "After TASK-006 (CI) and TASK-007+008 (critical path tests) are complete"
-    },
-    {
-      "id": "ADEC-003",
-      "date": "2026-04-05",
-      "title": "Use JSON + Markdown hybrid for agentic memory files",
-      "context": "Pure JSON is machine-readable but poor for complex behavioral instructions. Pure markdown is human-readable but hard to query programmatically.",
-      "decision": "Use JSON for state (memory_*.json files) and Markdown for behavior (agent_loop.md, roles.md, etc.).",
-      "consequence": "Agents load JSON for facts, load Markdown for behavioral instructions",
-      "review_trigger": "If scripted automation needs to read memory, JSON is already machine-parseable"
-    },
-    {
-      "id": "ADEC-004",
-      "date": "2026-04-05",
-      "title": "Do not rewrite working product code during agentic foundation setup",
-      "context": "The product is live and functional. Agentic foundation work must not introduce regressions.",
-      "decision": "Foundation files are all new files or prompt rewrites. No modifications to backend/ or frontend/ in Phase 1.",
-      "consequence": "Phase 1 is zero-risk to the live product",
-      "review_trigger": "Phase 2 tasks begin touching backend code"
-    }
-  ]
 }

@@ -1,3 +1,5 @@
+const logger = require("./logger");
+
 function sendTicketSms({ to, eventName, ticketUrl }) {
   const provider = String(process.env.SMS_PROVIDER || "").trim().toLowerCase();
 
@@ -6,11 +8,11 @@ function sendTicketSms({ to, eventName, ticketUrl }) {
   // Placeholder for future provider integration.
   // Phase 1 keeps delivery optional and non-blocking.
   if (!provider) {
-    console.log(`[sms:stub] to=${to} event=${eventName} url=${ticketUrl}`);
+    logger.info(`[sms:stub] event=${eventName} url=${ticketUrl}`);
     return Promise.resolve({ skipped: true, reason: "provider-not-configured" });
   }
 
-  console.log(`[sms:${provider}] to=${to} event=${eventName} url=${ticketUrl}`);
+  logger.info(`[sms:${provider}] event=${eventName} url=${ticketUrl}`);
   return Promise.resolve({ sent: true, provider });
 }
 

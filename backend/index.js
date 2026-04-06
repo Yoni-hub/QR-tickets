@@ -1,16 +1,20 @@
+const dotenv = require("dotenv");
+const { initSentry, sentryRequestContext, attachSentryErrorHandler } = require("./utils/sentry");
+dotenv.config();
+initSentry();
+
 const express = require("express");
 const http = require("http");
 const cors = require("cors");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
-const dotenv = require("dotenv");
 const { Server } = require("socket.io");
 const morgan = require("morgan");
+const logger = require("./utils/logger");
 const apiRoutes = require("./routes/apiRoutes");
 const socketManager = require("./socket/socketManager");
 const { registerSocketHandlers } = require("./socket/socketHandler");
-
-dotenv.config();
+const { startOrganizerInvoiceScheduler } = require("./services/organizerInvoiceScheduler");
 
 const app = express();
 app.set("trust proxy", 1);
@@ -33,6 +37,7 @@ app.use(helmet());
 app.use(morgan("combined"));
 app.use(cors({ origin: ALLOWED_ORIGIN }));
 app.use(express.json({ limit: "12mb" }));
+app.use(sentryRequestContext);
 
 // Rate limiters — only on truly open/unauthenticated endpoints
 const scanLimiter = rateLimit({
@@ -143,7 +148,18 @@ app.get("/e/:slug", async (req, res) => {
 });
 
 app.use("/api", apiRoutes);
+attachSentryErrorHandler(app);
 
-server.listen(PORT, () => {
-  console.log(`QR Tickets backend running on port ${PORT}`);
-});
+if (require.main === module) {
+  if (process.env.NODE_ENV !== "test") {
+    startOrganizerInvoiceScheduler();
+  }
+  server.listen(PORT, () => {
+    logger.info(`QR Tickets backend running on port ${PORT}`);
+  });
+}
+
+module.exports = {
+  app,
+  server,
+};

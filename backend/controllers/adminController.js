@@ -3,6 +3,7 @@ const { generateAccessCode } = require("../utils/accessCode");
 const { getPublicBaseUrl } = require("../services/eventService");
 const { resolveConfiguredAdminKey } = require("../middleware/adminAuth");
 const { writeAdminAuditLog } = require("../utils/adminAudit");
+const { SUPPORTED_CURRENCIES, markInvoicePaid, addInvoicePayment } = require("../services/organizerInvoiceService");
 
 function normalizeLimit(rawValue, fallback = 50, min = 1, max = 200) {
   const parsed = Number.parseInt(String(rawValue || ""), 10);
@@ -384,6 +385,7 @@ async function getAdminEventDetail(req, res) {
     deliverySummaryRaw,
     ticketsRaw,
     viewCountsRaw,
+    latestInvoice,
   ] = await Promise.all([
     prisma.ticket.count({ where: { eventId, status: "USED" } }),
     prisma.ticket.count({ where: { eventId, isInvalidated: true } }),
@@ -425,6 +427,30 @@ async function getAdminEventDetail(req, res) {
       by: ["ticketId"],
       where: { ticket: { eventId } },
       _count: { _all: true },
+    }),
+    prisma.organizerInvoice.findFirst({
+      where: { eventId },
+      orderBy: { generatedAt: "desc" },
+      select: {
+        id: true,
+        invoiceType: true,
+        currencySnapshot: true,
+        approvedTicketCountSnapshot: true,
+        unitPriceSnapshot: true,
+        totalAmountSnapshot: true,
+        totalAmount: true,
+        amountPaid: true,
+        paymentInstructionSnapshot: true,
+        generatedAt: true,
+        dueAt: true,
+        status: true,
+        paidAt: true,
+        paymentNote: true,
+        sentByEmailAt: true,
+        sentByChatAt: true,
+        emailError: true,
+        chatError: true,
+      },
     }),
   ]);
 
@@ -500,6 +526,29 @@ async function getAdminEventDetail(req, res) {
     tickets,
     scanSummary,
     deliverySummary,
+    invoice: latestInvoice
+      ? {
+          id: latestInvoice.id,
+          invoiceType: latestInvoice.invoiceType,
+          currency: latestInvoice.currencySnapshot,
+          approvedTicketCount: latestInvoice.approvedTicketCountSnapshot,
+          unitPrice: latestInvoice.unitPriceSnapshot,
+          totalAmountSnapshot: latestInvoice.totalAmountSnapshot,
+          totalAmount: latestInvoice.totalAmount,
+          amountPaid: latestInvoice.amountPaid,
+          amountRemaining: Number(latestInvoice.totalAmount) - Number(latestInvoice.amountPaid || 0),
+          paymentInstructionSnapshot: latestInvoice.paymentInstructionSnapshot,
+          generatedAt: latestInvoice.generatedAt,
+          dueAt: latestInvoice.dueAt,
+          status: latestInvoice.status,
+          paidAt: latestInvoice.paidAt,
+          paymentNote: latestInvoice.paymentNote,
+          sentByEmailAt: latestInvoice.sentByEmailAt,
+          sentByChatAt: latestInvoice.sentByChatAt,
+          emailError: latestInvoice.emailError,
+          chatError: latestInvoice.chatError,
+        }
+      : null,
   });
 }
 
@@ -786,7 +835,80 @@ async function listAdminOrganizers(req, res) {
   res.json({ items });
 }
 
+async function listAdminInvoices(req, res) {
+  const limit = normalizeLimit(req.query.limit, 200, 1, 500);
+  const statusFilter = String(req.query.statusFilter || "ALL").trim().toUpperCase();
+
+  let where = {};
+  if (statusFilter === "OVERDUE") {
+    where = { ...where, status: "OVERDUE" };
+  } else if (statusFilter === "UNPAID") {
+    where = { ...where, status: { in: ["SENT", "OVERDUE"] } };
+  } else if (statusFilter === "BLOCKED") {
+    where = { ...where, status: "BLOCKED_MISSING_INSTRUCTION" };
+  }
+
+  const rows = await prisma.organizerInvoice.findMany({
+    where,
+    orderBy: [{ dueAt: "asc" }, { generatedAt: "desc" }],
+    take: limit,
+    select: {
+      id: true,
+      eventId: true,
+      organizerEmailSnapshot: true,
+      invoiceType: true,
+      currencySnapshot: true,
+      totalAmount: true,
+      amountPaid: true,
+      status: true,
+      dueAt: true,
+      paidAt: true,
+      generatedAt: true,
+      event: {
+        select: {
+          eventName: true,
+          accessCode: true,
+          eventDate: true,
+        },
+      },
+    },
+  });
+
+  const items = rows.map((row) => ({
+    invoiceId: row.id,
+    eventId: row.eventId,
+    eventName: row.event?.eventName || "Unknown event",
+    eventDate: row.event?.eventDate || null,
+    eventAccessCode: row.event?.accessCode || null,
+    organizerEmail: row.organizerEmailSnapshot || null,
+    invoiceType: row.invoiceType,
+    currency: row.currencySnapshot,
+    totalAmount: row.totalAmount,
+    amountPaid: row.amountPaid,
+    amountRemaining: Number(row.totalAmount) - Number(row.amountPaid || 0),
+    status: row.status,
+    dueAt: row.dueAt,
+    paidAt: row.paidAt,
+    generatedAt: row.generatedAt,
+  }));
+
+  res.json({ items });
+}
+
 async function getAdminSettings(_req, res) {
+  const paymentInstructionRows = await prisma.adminCurrencyPaymentInstruction.findMany({
+    select: { currency: true, instructionText: true, updatedAt: true },
+    orderBy: { currency: "asc" },
+  });
+  const paymentInstructions = SUPPORTED_CURRENCIES.map((currency) => {
+    const row = paymentInstructionRows.find((entry) => entry.currency === currency);
+    return {
+      currency,
+      instructionText: row?.instructionText || "",
+      updatedAt: row?.updatedAt || null,
+    };
+  });
+
   res.json({
     systemInfo: {
       appName: "QR Tickets",
@@ -808,7 +930,94 @@ async function getAdminSettings(_req, res) {
       configured: Boolean(resolveConfiguredAdminKey()),
       headerName: "x-admin-key",
     },
+    paymentInstructions,
   });
+}
+
+async function getAdminPaymentInstructions(_req, res) {
+  const rows = await prisma.adminCurrencyPaymentInstruction.findMany({
+    select: { currency: true, instructionText: true, updatedAt: true },
+    orderBy: { currency: "asc" },
+  });
+
+  const items = SUPPORTED_CURRENCIES.map((currency) => {
+    const row = rows.find((entry) => entry.currency === currency);
+    return {
+      currency,
+      instructionText: row?.instructionText || "",
+      updatedAt: row?.updatedAt || null,
+    };
+  });
+
+  res.json({ items });
+}
+
+async function patchAdminPaymentInstructions(req, res) {
+  const payload = req.body && typeof req.body === "object" ? req.body : {};
+  const updates = payload.instructions && typeof payload.instructions === "object" ? payload.instructions : null;
+  if (!updates) {
+    res.status(400).json({ error: "instructions object is required." });
+    return;
+  }
+
+  const normalized = [];
+  for (const currency of SUPPORTED_CURRENCIES) {
+    if (!(currency in updates)) continue;
+    const instructionText = String(updates[currency] || "").trim();
+    if (!instructionText) {
+      res.status(400).json({ error: `${currency} instruction is required when provided.` });
+      return;
+    }
+    if (instructionText.length > 2000) {
+      res.status(400).json({ error: `${currency} instruction is too long.` });
+      return;
+    }
+    normalized.push({ currency, instructionText });
+  }
+
+  if (!normalized.length) {
+    res.status(400).json({ error: "At least one supported currency instruction must be provided." });
+    return;
+  }
+
+  await prisma.$transaction(
+    normalized.map((entry) =>
+      prisma.adminCurrencyPaymentInstruction.upsert({
+        where: { currency: entry.currency },
+        create: {
+          currency: entry.currency,
+          instructionText: entry.instructionText,
+        },
+        update: {
+          instructionText: entry.instructionText,
+        },
+      }),
+    ),
+  );
+
+  await writeAdminAuditLog({
+    action: "admin.updated-payment-instructions",
+    targetType: "settings",
+    targetId: "payment-instructions",
+    metadata: {
+      updatedCurrencies: normalized.map((entry) => entry.currency),
+    },
+  });
+
+  const rows = await prisma.adminCurrencyPaymentInstruction.findMany({
+    select: { currency: true, instructionText: true, updatedAt: true },
+    orderBy: { currency: "asc" },
+  });
+  const items = SUPPORTED_CURRENCIES.map((currency) => {
+    const row = rows.find((entry) => entry.currency === currency);
+    return {
+      currency,
+      instructionText: row?.instructionText || "",
+      updatedAt: row?.updatedAt || null,
+    };
+  });
+
+  res.json({ items });
 }
 
 async function listAdminAuditLog(req, res) {
@@ -1223,6 +1432,86 @@ async function markScanSuspicious(req, res) {
   res.json({ scan: updated });
 }
 
+async function markAdminInvoicePaid(req, res) {
+  const invoiceId = String(req.params.invoiceId || "").trim();
+  if (!invoiceId) {
+    res.status(400).json({ error: "invoiceId is required." });
+    return;
+  }
+  const paymentNote = String(req.body?.paymentNote || "").trim();
+  try {
+    const updated = await markInvoicePaid(invoiceId, { paymentNote });
+    await writeAdminAuditLog({
+      action: "admin.marked-invoice-paid",
+      targetType: "invoice",
+      targetId: updated.id,
+      eventId: updated.eventId,
+      metadata: {
+        status: updated.status,
+        paidAt: updated.paidAt,
+        hasPaymentNote: Boolean(updated.paymentNote),
+      },
+    });
+    res.json({ invoice: updated });
+  } catch (error) {
+    const code = String(error?.code || "");
+    if (code === "BAD_INPUT" || code === "INVALID_TRANSITION") {
+      res.status(400).json({ error: error.message });
+      return;
+    }
+    if (code === "NOT_FOUND") {
+      res.status(404).json({ error: error.message });
+      return;
+    }
+    throw error;
+  }
+}
+
+async function addAdminInvoicePayment(req, res) {
+  const invoiceId = String(req.params.invoiceId || "").trim();
+  if (!invoiceId) {
+    res.status(400).json({ error: "invoiceId is required." });
+    return;
+  }
+  const paymentNote = String(req.body?.paymentNote || "").trim();
+  const paymentAmountRaw = req.body?.paymentAmount ?? req.body?.amount;
+  const paymentAmount = Number(paymentAmountRaw);
+  if (!Number.isFinite(paymentAmount)) {
+    res.status(400).json({ error: "paymentAmount must be a valid number." });
+    return;
+  }
+
+  try {
+    const updated = await addInvoicePayment(invoiceId, { paymentAmount, paymentNote });
+    await writeAdminAuditLog({
+      action: "admin.added-invoice-payment",
+      targetType: "invoice",
+      targetId: updated.id,
+      eventId: updated.eventId,
+      metadata: {
+        status: updated.status,
+        paymentAdded: updated.paymentAdded,
+        amountPaid: updated.amountPaid,
+        amountRemaining: updated.amountRemaining,
+        paidAt: updated.paidAt,
+        hasPaymentNote: Boolean(updated.paymentNote),
+      },
+    });
+    res.json({ invoice: updated });
+  } catch (error) {
+    const code = String(error?.code || "");
+    if (code === "BAD_INPUT" || code === "INVALID_TRANSITION") {
+      res.status(400).json({ error: error.message });
+      return;
+    }
+    if (code === "NOT_FOUND") {
+      res.status(404).json({ error: error.message });
+      return;
+    }
+    throw error;
+  }
+}
+
 module.exports = {
   getAdminOverview,
   listAdminEvents,
@@ -1230,7 +1519,10 @@ module.exports = {
   listAdminTickets,
   listAdminScans,
   listAdminOrganizers,
+  listAdminInvoices,
   getAdminSettings,
+  getAdminPaymentInstructions,
+  patchAdminPaymentInstructions,
   listAdminAuditLog,
   listAdminClientDashTokens,
   disableAdminEvent,
@@ -1243,4 +1535,6 @@ module.exports = {
   restoreAdminTicket,
   resetAdminTicketUsage,
   markScanSuspicious,
+  markAdminInvoicePaid,
+  addAdminInvoicePayment,
 };

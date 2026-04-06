@@ -1,4 +1,5 @@
 const prisma = require("../utils/prisma");
+const logger = require("../utils/logger");
 
 async function getTicketByPublicId(req, res) {
   const ticketPublicId = (req.params.ticketPublicId || "").trim();
@@ -76,7 +77,7 @@ async function getTicketByPublicId(req, res) {
       },
     })
     .catch((error) => {
-      console.error("ticket view log write failed", error);
+      logger.error("ticket view log write failed", error);
     });
 
   const order = {
