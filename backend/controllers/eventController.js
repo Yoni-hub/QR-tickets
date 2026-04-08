@@ -3,7 +3,13 @@ const prisma = require("../utils/prisma");
 const { generateAccessCode } = require("../utils/accessCode");
 const { LIMITS, sanitizeText, safeError } = require("../utils/sanitize");
 const { createEvent, buildQrPayload } = require("../services/eventService");
-const { isOrganizerBlockedFromNewEvents, getPreEventUnpaidWarning, BLOCK_NEW_EVENT_MESSAGE } = require("../services/organizerInvoiceService");
+const {
+  isOrganizerBlockedFromNewEvents,
+  getPreEventUnpaidWarning,
+  BLOCK_NEW_EVENT_MESSAGE,
+  submitInvoicePaymentEvidenceForOrganizer,
+  listInvoicePaymentEvidence,
+} = require("../services/organizerInvoiceService");
 const { generateTicketPublicId } = require("../utils/ticketPublicId");
 const { checkDailyTicketCap } = require("../utils/dailyCaps");
 const { verifyTurnstile } = require("../utils/turnstile");
@@ -67,6 +73,34 @@ function toEventListItem(event) {
   };
 }
 
+function formatTicketTypeBreakdown(rows = []) {
+  const parts = rows
+    .map((row) => {
+      const type = String(row?.ticketType || "").trim() || "General";
+      const normalizedType = type.toLowerCase() === "general" ? "General admission" : type;
+      const count = Number(row?._count?._all || 0);
+      if (count < 1) return null;
+      return `${count}x ${normalizedType}`;
+    })
+    .filter(Boolean);
+  return parts.join(", ");
+}
+
+async function buildInvoiceTicketTypeBreakdown(eventId) {
+  const where = {
+    eventId,
+    cancelledAt: null,
+    ticketRequestId: { not: null },
+    ticketRequest: { status: "APPROVED" },
+  };
+  const rows = await prisma.ticket.groupBy({
+    by: ["ticketType"],
+    where,
+    _count: { _all: true },
+  });
+  return formatTicketTypeBreakdown(rows);
+}
+
 async function resolveEventGroupByAccessCode(accessCode) {
   if (!accessCode) return null;
   const direct = await prisma.userEvent.findUnique({
@@ -105,6 +139,8 @@ async function resolveEventGroupByAccessCode(accessCode) {
       salesWindowEnd: true,
       maxTicketsPerEmail: true,
       emailVerified: true,
+      organizerEmail: true,
+      invoiceEvidenceAutoApprove: true,
       scannerLocked: true,
     },
   });
@@ -218,12 +254,92 @@ async function getEventByCode(req, res) {
   const scannedTickets = await prisma.ticket.count({ where: { eventId: event.id, status: "USED" } });
   const soldTickets = await prisma.ticket.count({ where: buildSoldTicketWhere(event.id) });
 
-  const scans = await prisma.scanRecord.findMany({
-    where: { eventId: event.id },
-    orderBy: { scannedAt: "desc" },
-    take: 100,
-    select: { ticketPublicId: true, result: true, scannedAt: true },
-  });
+  const requestedInvoiceId = String(req.query?.invoiceId || "").trim();
+  const [scans, latestInvoice, organizerInvoicesRaw] = await Promise.all([
+    prisma.scanRecord.findMany({
+      where: { eventId: event.id },
+      orderBy: { scannedAt: "desc" },
+      take: 100,
+      select: { ticketPublicId: true, result: true, scannedAt: true },
+    }),
+    requestedInvoiceId
+      ? prisma.organizerInvoice.findFirst({
+          where: { id: requestedInvoiceId, eventId: event.id },
+          select: {
+            id: true,
+            invoiceType: true,
+            status: true,
+            currencySnapshot: true,
+            totalAmount: true,
+            amountPaid: true,
+            dueAt: true,
+            generatedAt: true,
+          },
+        })
+      : prisma.organizerInvoice.findFirst({
+          where: { eventId: event.id },
+          orderBy: { generatedAt: "desc" },
+          select: {
+            id: true,
+            invoiceType: true,
+            status: true,
+            currencySnapshot: true,
+            totalAmount: true,
+            amountPaid: true,
+            dueAt: true,
+            generatedAt: true,
+          },
+        }),
+    prisma.organizerInvoice.findMany({
+      where: { eventId: event.id },
+      orderBy: { generatedAt: "asc" },
+      select: {
+        id: true,
+        invoiceType: true,
+        status: true,
+        currencySnapshot: true,
+        approvedTicketCountSnapshot: true,
+        unitPriceSnapshot: true,
+        totalAmount: true,
+        amountPaid: true,
+        paymentInstructionSnapshot: true,
+        dueAt: true,
+        generatedAt: true,
+        evidenceUploadAllowance: true,
+        paymentEvidence: {
+          orderBy: { submittedAt: "desc" },
+          take: 1,
+          select: {
+            id: true,
+            evidenceImageDataUrl: true,
+            status: true,
+            submittedAt: true,
+          },
+        },
+      },
+    }),
+  ]);
+  const organizerInvoices = await Promise.all(
+    organizerInvoicesRaw.map(async (invoice) => ({
+      id: invoice.id,
+      invoiceType: invoice.invoiceType,
+      status: invoice.status,
+      currency: invoice.currencySnapshot,
+      approvedTicketCount: Number(invoice.approvedTicketCountSnapshot || 0),
+      ticketTypeBreakdown: await buildInvoiceTicketTypeBreakdown(event.id),
+      unitPrice: Number(invoice.unitPriceSnapshot || 0),
+      totalAmount: Number(invoice.totalAmount || 0),
+      amountPaid: Number(invoice.amountPaid || 0),
+      amountRemaining: Number(invoice.totalAmount || 0) - Number(invoice.amountPaid || 0),
+      paymentInstruction: String(invoice.paymentInstructionSnapshot || "").trim(),
+      canUploadEvidence: Number(invoice.evidenceUploadAllowance || 0) > 0,
+      lastEvidenceImageDataUrl: String(invoice.paymentEvidence?.[0]?.evidenceImageDataUrl || "").trim() || null,
+      lastEvidenceStatus: invoice.paymentEvidence?.[0]?.status || null,
+      lastEvidenceSubmittedAt: invoice.paymentEvidence?.[0]?.submittedAt || null,
+      dueAt: invoice.dueAt,
+      generatedAt: invoice.generatedAt,
+    })),
+  );
   const billingWarnings = [];
   const preEventWarning = await getPreEventUnpaidWarning(event.id, event.eventDate);
   if (preEventWarning) {
@@ -242,6 +358,21 @@ async function getEventByCode(req, res) {
     scannedTickets,
     remainingTickets: Math.max(0, totalTickets - soldTickets),
     scans,
+    latestInvoice: latestInvoice
+      ? {
+          id: latestInvoice.id,
+          invoiceType: latestInvoice.invoiceType,
+          status: latestInvoice.status,
+          currency: latestInvoice.currencySnapshot,
+          totalAmount: latestInvoice.totalAmount,
+          amountPaid: latestInvoice.amountPaid,
+          amountRemaining: Number(latestInvoice.totalAmount) - Number(latestInvoice.amountPaid || 0),
+          dueAt: latestInvoice.dueAt,
+          generatedAt: latestInvoice.generatedAt,
+        }
+      : null,
+    organizerInvoices,
+    invoiceEvidenceAutoApprove: Boolean(event.invoiceEvidenceAutoApprove),
     billingWarnings,
   });
 }
@@ -727,9 +858,13 @@ async function createEventForAccessCode(req, res) {
   });
   const slug = await generateEventSlug(eventName);
   const groupEmailVerified = group.events.some((e) => e.emailVerified === true);
+  const groupOrganizerEmail = group.events
+    .map((entry) => String(entry.organizerEmail || "").trim().toLowerCase())
+    .find(Boolean) || null;
   const created = await prisma.userEvent.create({
     data: {
       organizerName: organizerName || null,
+      organizerEmail: groupOrganizerEmail,
       eventName,
       eventAddress,
       eventDate: parsedEventDate,
@@ -785,6 +920,75 @@ async function getOrganizerNotifications(req, res) {
     return;
   }
   res.json({ organizerEmail: event.organizerEmail || "", notifyOnRequest: event.notifyOnRequest, notifyOnMessage: event.notifyOnMessage, emailVerified: event.emailVerified });
+}
+
+async function submitOrganizerInvoicePaymentEvidence(req, res) {
+  const accessCode = (req.params.accessCode || "").trim();
+  const invoiceId = String(req.params.invoiceId || "").trim();
+  const eventId = String(req.body?.eventId || "").trim();
+  if (!accessCode || !invoiceId || !eventId) {
+    res.status(400).json({ error: "accessCode, invoiceId and eventId are required." });
+    return;
+  }
+
+  try {
+    const result = await submitInvoicePaymentEvidenceForOrganizer({
+      organizerAccessCode: accessCode,
+      invoiceId,
+      eventId,
+      note: req.body?.note,
+      evidenceImageDataUrl: req.body?.evidenceImageDataUrl,
+    });
+    res.status(201).json(result);
+  } catch (error) {
+    const code = String(error?.code || "");
+    if (code === "BAD_INPUT" || code === "INVALID_TRANSITION") {
+      res.status(400).json({ error: error.message });
+      return;
+    }
+    if (code === "FORBIDDEN") {
+      res.status(403).json({ error: error.message });
+      return;
+    }
+    if (code === "NOT_FOUND") {
+      res.status(404).json({ error: error.message });
+      return;
+    }
+    throw error;
+  }
+}
+
+async function listOrganizerInvoicePaymentEvidence(req, res) {
+  const accessCode = (req.params.accessCode || "").trim();
+  const invoiceId = String(req.params.invoiceId || "").trim();
+  if (!accessCode || !invoiceId) {
+    res.status(400).json({ error: "accessCode and invoiceId are required." });
+    return;
+  }
+
+  const invoice = await prisma.organizerInvoice.findUnique({
+    where: { id: invoiceId },
+    select: {
+      event: {
+        select: {
+          accessCode: true,
+          organizerAccessCode: true,
+        },
+      },
+    },
+  });
+  if (!invoice || !invoice.event) {
+    res.status(404).json({ error: "Invoice not found." });
+    return;
+  }
+  const canonicalCode = String(invoice.event.organizerAccessCode || invoice.event.accessCode || "").trim();
+  if (!canonicalCode || canonicalCode !== accessCode) {
+    res.status(403).json({ error: "Invalid organizer access code for this invoice." });
+    return;
+  }
+
+  const items = await listInvoicePaymentEvidence(invoiceId);
+  res.json({ items });
 }
 
 async function updateOrganizerNotifications(req, res) {
@@ -1003,5 +1207,7 @@ module.exports = {
   updateOrganizerNotifications,
   sendNotificationEmailOtp,
   verifyNotificationEmailOtp,
+  submitOrganizerInvoicePaymentEvidence,
+  listOrganizerInvoicePaymentEvidence,
   mergeOrphanEvent,
 };

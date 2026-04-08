@@ -36,6 +36,7 @@ model UserEvent {
   notifyOnMessage     Boolean @default(false)
   emailVerified       Boolean @default(false)
   scannerLocked       Boolean @default(false)
+  invoiceEvidenceAutoApprove Boolean @default(false)
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
   tickets     Ticket[]
@@ -46,6 +47,7 @@ model UserEvent {
   supportConversations SupportConversation[]
   chatConversations ChatConversation[]
   organizerInvoices OrganizerInvoice[]
+  paymentEvidence  InvoicePaymentEvidence[]
 
   @@index([organizerAccessCode])
 }
@@ -71,6 +73,7 @@ model OrganizerInvoice {
   totalAmount                Decimal               @db.Decimal(12, 2)
   amountPaid                 Decimal               @default(0) @db.Decimal(12, 2)
   paymentInstructionSnapshot String?
+  evidenceUploadAllowance    Int                   @default(1)
   generatedAt                DateTime              @default(now())
   dueAt                      DateTime
   status                     OrganizerInvoiceStatus @default(PENDING)
@@ -83,11 +86,33 @@ model OrganizerInvoice {
   createdAt                  DateTime              @default(now())
   updatedAt                  DateTime              @updatedAt
   event                      UserEvent             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  paymentEvidence            InvoicePaymentEvidence[]
 
   @@unique([eventId, invoiceType])
   @@index([status, generatedAt])
   @@index([dueAt])
   @@index([eventId, status])
+}
+
+model InvoicePaymentEvidence {
+  id                 String                      @id @default(cuid())
+  invoiceId          String
+  eventId            String
+  organizerAccessCode String
+  note               String?
+  evidenceImageDataUrl String
+  status             InvoicePaymentEvidenceStatus @default(PENDING)
+  submittedAt        DateTime                    @default(now())
+  reviewedAt         DateTime?
+  reviewedBy         String?
+  createdAt          DateTime                    @default(now())
+  updatedAt          DateTime                    @updatedAt
+  invoice            OrganizerInvoice            @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  event              UserEvent                   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId, status, submittedAt])
+  @@index([eventId, submittedAt])
+  @@index([organizerAccessCode, status])
 }
 
 model Ticket {
@@ -489,4 +514,11 @@ enum OrganizerInvoiceStatus {
   PARTIAL_SEND_FAILED
   BLOCKED_MISSING_INSTRUCTION
   FAILED
+}
+
+enum InvoicePaymentEvidenceStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  AUTO_APPROVED
 }

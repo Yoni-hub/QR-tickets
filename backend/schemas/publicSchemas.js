@@ -282,7 +282,7 @@ const generateTicketsBodySchema = z
         }),
       )
       .optional(),
-    designJson: z.record(z.any()).optional(),
+    designJson: z.record(z.string(), z.any()).optional(),
   })
   .passthrough();
 
@@ -302,7 +302,7 @@ const updateEventBodySchema = z
     salesWindowStart: optionalTrimmedString(8),
     salesWindowEnd: optionalTrimmedString(8),
     maxTicketsPerEmail: z.union([z.number(), z.string(), z.null()]).optional(),
-    designJson: z.record(z.any()).optional(),
+    designJson: z.record(z.string(), z.any()).optional(),
   })
   .passthrough();
 
@@ -400,6 +400,23 @@ const organizerAttachmentParamsSchema = z.object({
   attachmentId: stringId("attachmentId", 128),
 });
 
+const organizerInvoiceEvidenceParamsSchema = z.object({
+  accessCode: stringId("accessCode", 64),
+  invoiceId: stringId("invoiceId", 128),
+});
+
+const organizerInvoiceEvidenceBodySchema = z
+  .object({
+    eventId: stringId("eventId", 128),
+    note: optionalTrimmedString(1000),
+    evidenceImageDataUrl: z
+      .string({ required_error: "evidenceImageDataUrl is required." })
+      .trim()
+      .min(1, "evidenceImageDataUrl is required.")
+      .max(17 * 1024 * 1024, "Evidence image payload is too large."),
+  })
+  .passthrough();
+
 const organizerConversationMessageBodySchema = z
   .object({
     message: z.string().trim().max(1200, "Message is too long.").optional(),
@@ -482,6 +499,8 @@ module.exports = {
   organizerStartConversationBodySchema,
   organizerConversationParamsSchema,
   organizerAttachmentParamsSchema,
+  organizerInvoiceEvidenceParamsSchema,
+  organizerInvoiceEvidenceBodySchema,
   organizerConversationMessageBodySchema,
   promotersCreateBodySchema,
   promotersUpdateBodySchema,

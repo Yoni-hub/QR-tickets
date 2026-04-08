@@ -1,18 +1,36 @@
 -- CreateEnum
 DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'SupportedCurrency') THEN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_type t
+    JOIN pg_namespace n ON n.oid = t.typnamespace
+    WHERE t.typname = 'SupportedCurrency'
+      AND n.nspname = 'public'
+  ) THEN
     CREATE TYPE "SupportedCurrency" AS ENUM ('ETB', 'USD', 'EUR');
   END IF;
 END $$;
 
 DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'OrganizerInvoiceType') THEN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_type t
+    JOIN pg_namespace n ON n.oid = t.typnamespace
+    WHERE t.typname = 'OrganizerInvoiceType'
+      AND n.nspname = 'public'
+  ) THEN
     CREATE TYPE "OrganizerInvoiceType" AS ENUM ('PRE_EVENT_24H');
   END IF;
 END $$;
 
 DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'OrganizerInvoiceStatus') THEN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_type t
+    JOIN pg_namespace n ON n.oid = t.typnamespace
+    WHERE t.typname = 'OrganizerInvoiceStatus'
+      AND n.nspname = 'public'
+  ) THEN
     CREATE TYPE "OrganizerInvoiceStatus" AS ENUM ('PENDING', 'SENT', 'PARTIAL_SEND_FAILED', 'BLOCKED_MISSING_INSTRUCTION', 'FAILED');
   END IF;
 END $$;

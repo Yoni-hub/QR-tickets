@@ -20,6 +20,7 @@ export default function AdminEventDetailPage() {
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentNote, setPaymentNote] = useState("");
   const [actionMessage, setActionMessage] = useState("");
+  const [autoApproveLoading, setAutoApproveLoading] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -44,6 +45,7 @@ export default function AdminEventDetailPage() {
 
   const { event, configurationSnapshot, scanSummary, deliverySummary, invoice } = data;
   const canMarkPaid = invoice && ["SENT", "OVERDUE", "PARTIAL_SEND_FAILED", "FAILED", "BLOCKED_MISSING_INSTRUCTION", "PENDING"].includes(invoice.status);
+  const canRetryDelivery = invoice && ["FAILED", "PARTIAL_SEND_FAILED", "BLOCKED_MISSING_INSTRUCTION", "PENDING"].includes(invoice.status);
 
   const handleMarkPaid = async () => {
     if (!invoice?.id) return;
@@ -83,6 +85,51 @@ export default function AdminEventDetailPage() {
       setActionMessage(requestError.response?.data?.error || "Could not record payment.");
     } finally {
       setMarkPaidLoading(false);
+    }
+  };
+
+  const handleRetryDelivery = async () => {
+    if (!invoice?.id) return;
+    setMarkPaidLoading(true);
+    setActionMessage("");
+    try {
+      await adminApi.patch(`/invoices/${encodeURIComponent(invoice.id)}/retry-delivery`);
+      setActionMessage("Invoice delivery retried.");
+      await load();
+    } catch (requestError) {
+      setActionMessage(requestError.response?.data?.error || "Could not retry invoice delivery.");
+    } finally {
+      setMarkPaidLoading(false);
+    }
+  };
+
+  const handleApproveEvidence = async (evidenceId) => {
+    if (!evidenceId) return;
+    setMarkPaidLoading(true);
+    setActionMessage("");
+    try {
+      await adminApi.patch(`/invoices/payment-evidence/${encodeURIComponent(evidenceId)}/approve`);
+      setActionMessage("Payment evidence approved.");
+      await load();
+    } catch (requestError) {
+      setActionMessage(requestError.response?.data?.error || "Could not approve payment evidence.");
+    } finally {
+      setMarkPaidLoading(false);
+    }
+  };
+
+  const handleToggleAutoApprove = async (enabled) => {
+    if (!event?.eventId) return;
+    setAutoApproveLoading(true);
+    setActionMessage("");
+    try {
+      await adminApi.patch(`/events/${encodeURIComponent(event.eventId)}/invoice-evidence-auto-approve`, { enabled });
+      setActionMessage(enabled ? "Auto-approve enabled for organizer." : "Auto-approve disabled for organizer.");
+      await load();
+    } catch (requestError) {
+      setActionMessage(requestError.response?.data?.error || "Could not update auto-approve setting.");
+    } finally {
+      setAutoApproveLoading(false);
     }
   };
 
@@ -179,6 +226,59 @@ export default function AdminEventDetailPage() {
               <p className="font-semibold">Payment Note</p>
               <pre className="mt-1 whitespace-pre-wrap rounded border bg-slate-50 p-2 text-xs">{invoice.paymentNote || "-"}</pre>
             </div>
+            <div className="sm:col-span-2 rounded border bg-slate-50 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-semibold">Organizer Payment Evidence Auto-Approve</p>
+                <button
+                  type="button"
+                  onClick={() => handleToggleAutoApprove(!event.invoiceEvidenceAutoApprove)}
+                  disabled={autoApproveLoading}
+                  className="rounded border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 disabled:opacity-60"
+                >
+                  {autoApproveLoading
+                    ? "Saving..."
+                    : event.invoiceEvidenceAutoApprove
+                      ? "Disable Auto-Approve"
+                      : "Enable Auto-Approve"}
+                </button>
+              </div>
+              <p className="mt-1 text-xs text-slate-600">
+                Current: {event.invoiceEvidenceAutoApprove ? "Enabled" : "Disabled"} (applies to organizer account for future evidence submissions).
+              </p>
+            </div>
+            <div className="sm:col-span-2 rounded border bg-slate-50 p-3">
+              <p className="text-sm font-semibold">Submitted Payment Evidence</p>
+              {Array.isArray(invoice.paymentEvidence) && invoice.paymentEvidence.length ? (
+                <div className="mt-2 space-y-2">
+                  {invoice.paymentEvidence.map((evidence) => (
+                    <div key={evidence.id} className="rounded border bg-white p-2 text-xs">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p><span className="font-semibold">Status:</span> {evidence.status}</p>
+                        <p><span className="font-semibold">Submitted:</span> {formatDate(evidence.submittedAt)}</p>
+                      </div>
+                      {evidence.note ? <p className="mt-1 text-slate-700"><span className="font-semibold">Note:</span> {evidence.note}</p> : null}
+                      <a href={evidence.evidenceImageDataUrl} target="_blank" rel="noreferrer" className="mt-2 inline-block">
+                        <img src={evidence.evidenceImageDataUrl} alt="Payment evidence" className="h-20 w-20 rounded border object-cover" />
+                      </a>
+                      {evidence.status === "PENDING" ? (
+                        <div className="mt-2">
+                          <button
+                            type="button"
+                            onClick={() => handleApproveEvidence(evidence.id)}
+                            disabled={markPaidLoading}
+                            className="rounded bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+                          >
+                            {markPaidLoading ? "Saving..." : "Approve Evidence & Mark Paid"}
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-xs text-slate-600">No payment evidence submitted yet.</p>
+              )}
+            </div>
             {canMarkPaid ? (
               <div className="sm:col-span-2 rounded border bg-slate-50 p-3">
                 <p className="text-sm font-semibold">Record Payment</p>
@@ -199,6 +299,16 @@ export default function AdminEventDetailPage() {
                   placeholder="Optional payment note"
                 />
                 <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {canRetryDelivery ? (
+                    <button
+                      type="button"
+                      onClick={handleRetryDelivery}
+                      disabled={markPaidLoading}
+                      className="rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900 disabled:opacity-60"
+                    >
+                      {markPaidLoading ? "Saving..." : "Retry Delivery"}
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     onClick={handleAddPayment}

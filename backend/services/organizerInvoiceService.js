@@ -2,6 +2,7 @@ const prisma = require("../utils/prisma");
 const logger = require("../utils/logger");
 const { sendOrganizerInvoiceEmail, sendOrganizerBillingUpdateEmail } = require("../utils/mailer");
 const { CHAT_ACTOR, CHAT_CONVERSATION_TYPE, startConversationForActor, sendMessageForActor } = require("./chatService");
+const { getPublicBaseUrl } = require("./eventService");
 
 const INVOICE_WINDOW_HOURS_BEFORE_EVENT = 24;
 const INVOICE_DUE_HOURS_BEFORE_EVENT = 5;
@@ -17,7 +18,11 @@ const FINAL_INVOICE_MESSAGE = "This is your final event invoice, including any a
 
 const MARK_PAID_ALLOWED_STATUSES = new Set(["SENT", "OVERDUE", "PARTIAL_SEND_FAILED", "FAILED", "BLOCKED_MISSING_INSTRUCTION"]);
 const ADD_PAYMENT_ALLOWED_STATUSES = new Set(["PENDING", "SENT", "OVERDUE", "PARTIAL_SEND_FAILED", "FAILED", "BLOCKED_MISSING_INSTRUCTION"]);
+const RETRY_DELIVERY_ALLOWED_STATUSES = new Set(["FAILED", "PARTIAL_SEND_FAILED", "BLOCKED_MISSING_INSTRUCTION", "PENDING"]);
 const OVERDUE_ELIGIBLE_STATUSES = ["SENT", "PARTIAL_SEND_FAILED"];
+const PAYMENT_EVIDENCE_NOTE_MAX = 1000;
+const PAYMENT_EVIDENCE_MAX_BYTES = 8 * 1024 * 1024;
+const PAYMENT_EVIDENCE_DATA_URL_PATTERN = /^data:image\/(png|jpeg|jpg|webp);base64,([A-Za-z0-9+/=]+)$/i;
 
 const UNIT_PRICE_BY_CURRENCY = {
   ETB: 5,
@@ -53,6 +58,16 @@ function computeAmountRemaining(totalAmount, amountPaid) {
   return roundMoney(roundMoney(totalAmount) - roundMoney(amountPaid));
 }
 
+function normalizePaymentEvidenceDataUrl(value) {
+  const raw = String(value || "").trim();
+  const match = raw.match(PAYMENT_EVIDENCE_DATA_URL_PATTERN);
+  if (!match) return null;
+  const base64 = match[2];
+  const bytes = Buffer.byteLength(base64, "base64");
+  if (!Number.isFinite(bytes) || bytes <= 0 || bytes > PAYMENT_EVIDENCE_MAX_BYTES) return null;
+  return raw;
+}
+
 function toIsoDate(value) {
   const date = value instanceof Date ? value : new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
@@ -84,6 +99,7 @@ function buildInvoiceChatMessage({
   totalAmount,
   dueAt,
   paymentInstruction,
+  invoiceUrl,
 }) {
   const eventLine = eventDate ? `Event starts: ${new Date(eventDate).toLocaleString()}` : null;
   const message = invoiceType === FINAL_INVOICE_TYPE ? FINAL_INVOICE_MESSAGE : PRE_EVENT_WARNING_MESSAGE;
@@ -96,7 +112,23 @@ function buildInvoiceChatMessage({
     `Payment due by: ${new Date(dueAt).toLocaleString()}`,
     message,
     `Payment instructions: ${paymentInstruction}`,
+    invoiceUrl ? `Open invoice in dashboard: ${invoiceUrl}` : null,
   ].filter(Boolean).join("\n");
+}
+
+function buildOrganizerInvoiceDashboardUrl(event, invoiceId) {
+  const accessCode = String(event?.organizerAccessCode || event?.accessCode || "").trim();
+  const eventId = String(event?.id || "").trim();
+  const normalizedInvoiceId = String(invoiceId || "").trim();
+  if (!accessCode || !eventId || !normalizedInvoiceId) return null;
+  const base = getPublicBaseUrl();
+  const params = new URLSearchParams({
+    code: accessCode,
+    menu: "payment",
+    eventId,
+    invoiceId: normalizedInvoiceId,
+  });
+  return `${base}/dashboard?${params.toString()}#organizer-payment-invoices`;
 }
 
 async function countApprovedTicketsSnapshot(eventId, options = {}) {
@@ -120,15 +152,27 @@ async function sumEventPayments(eventId) {
   return roundMoney(aggregate?._sum?.amountPaid);
 }
 
-async function sendMessageToOrganizerChat(event, message) {
-  const organizerAccessCode = String(event.organizerAccessCode || event.accessCode || "").trim();
+async function sendMessageToOrganizerChat(eventInput, messageInput) {
+  let event = eventInput;
+  let message = messageInput;
+  if (
+    eventInput &&
+    typeof eventInput === "object" &&
+    Object.prototype.hasOwnProperty.call(eventInput, "event") &&
+    Object.prototype.hasOwnProperty.call(eventInput, "message")
+  ) {
+    event = eventInput.event;
+    message = eventInput.message;
+  }
+
+  const organizerAccessCode = String(event?.organizerAccessCode || event?.accessCode || "").trim();
   if (!organizerAccessCode) throw new Error("Organizer access code is missing for invoice chat delivery.");
 
   const adminActor = { type: CHAT_ACTOR.ADMIN };
   const conversationId = await startConversationForActor(adminActor, {
     conversationType: CHAT_CONVERSATION_TYPE.ORGANIZER_ADMIN,
     organizerAccessCode,
-    eventId: event.id,
+    eventId: event?.id,
     subject: "Organizer Invoice",
   });
   await sendMessageForActor(adminActor, conversationId, { message });
@@ -208,6 +252,7 @@ async function upsertBlockedInvoice({
 }
 
 async function sendInvoiceChannels({
+  invoiceId,
   event,
   organizerEmail,
   invoiceType,
@@ -248,6 +293,7 @@ async function sendInvoiceChannels({
   }
 
   try {
+    const invoiceUrl = buildOrganizerInvoiceDashboardUrl(event, invoiceId);
     const chatMessage = buildInvoiceChatMessage({
       invoiceType,
       eventName: event.eventName,
@@ -258,6 +304,7 @@ async function sendInvoiceChannels({
       totalAmount,
       dueAt,
       paymentInstruction,
+      invoiceUrl,
     });
     await sendInvoiceChat({ event, message: chatMessage });
     chatSent = true;
@@ -328,6 +375,7 @@ async function processInvoiceForEvent({
       totalAmount: toDecimalValue(totalAmount),
       amountPaid: "0.00",
       paymentInstructionSnapshot: paymentInstruction,
+      evidenceUploadAllowance: 1,
       generatedAt,
       dueAt,
       status: "PENDING",
@@ -344,6 +392,7 @@ async function processInvoiceForEvent({
       totalAmount: toDecimalValue(totalAmount),
       amountPaid: "0.00",
       paymentInstructionSnapshot: paymentInstruction,
+      evidenceUploadAllowance: 1,
       generatedAt,
       dueAt,
       status: "PENDING",
@@ -357,6 +406,7 @@ async function processInvoiceForEvent({
   });
 
   const channelResult = await sendInvoiceChannels({
+    invoiceId: invoice.id,
     event,
     organizerEmail,
     invoiceType,
@@ -777,6 +827,133 @@ async function addInvoicePayment(invoiceId, options = {}) {
   };
 }
 
+async function retryInvoiceDelivery(invoiceId, options = {}) {
+  const normalizedId = String(invoiceId || "").trim();
+  if (!normalizedId) {
+    const error = new Error("invoiceId is required.");
+    error.code = "BAD_INPUT";
+    throw error;
+  }
+
+  const sendInvoiceEmail = options.sendInvoiceEmail || sendOrganizerInvoiceEmail;
+  const sendInvoiceChat = options.sendInvoiceChat || sendMessageToOrganizerChat;
+  const now = options.now instanceof Date ? options.now : new Date();
+
+  const invoice = await prisma.organizerInvoice.findUnique({
+    where: { id: normalizedId },
+    select: {
+      id: true,
+      eventId: true,
+      invoiceType: true,
+      status: true,
+      organizerEmailSnapshot: true,
+      currencySnapshot: true,
+      approvedTicketCountSnapshot: true,
+      unitPriceSnapshot: true,
+      totalAmountSnapshot: true,
+      totalAmount: true,
+      amountPaid: true,
+      dueAt: true,
+      paymentInstructionSnapshot: true,
+      sentByEmailAt: true,
+      sentByChatAt: true,
+      event: {
+        select: {
+          id: true,
+          eventName: true,
+          eventDate: true,
+          organizerEmail: true,
+          accessCode: true,
+          organizerAccessCode: true,
+        },
+      },
+    },
+  });
+  if (!invoice) {
+    const error = new Error("Invoice not found.");
+    error.code = "NOT_FOUND";
+    throw error;
+  }
+  if (!RETRY_DELIVERY_ALLOWED_STATUSES.has(invoice.status)) {
+    const error = new Error(`Invoice in status ${invoice.status} cannot be retried.`);
+    error.code = "INVALID_TRANSITION";
+    throw error;
+  }
+  if (!invoice.event) {
+    const error = new Error("Invoice event not found.");
+    error.code = "NOT_FOUND";
+    throw error;
+  }
+
+  const organizerEmail = String(invoice.organizerEmailSnapshot || invoice.event.organizerEmail || "").trim().toLowerCase();
+  let paymentInstruction = String(invoice.paymentInstructionSnapshot || "").trim();
+  if (!paymentInstruction) {
+    const instructionRow = await prisma.adminCurrencyPaymentInstruction.findUnique({
+      where: { currency: String(invoice.currencySnapshot || "").trim().toUpperCase() },
+      select: { instructionText: true },
+    });
+    paymentInstruction = String(instructionRow?.instructionText || "").trim();
+  }
+  if (!paymentInstruction) {
+    const error = new Error(`Missing payment instructions for ${invoice.currencySnapshot}.`);
+    error.code = "MISSING_INSTRUCTION";
+    throw error;
+  }
+
+  const channelResult = await sendInvoiceChannels({
+    invoiceId: invoice.id,
+    event: invoice.event,
+    organizerEmail,
+    invoiceType: invoice.invoiceType,
+    currency: invoice.currencySnapshot,
+    approvedTicketCount: Number(invoice.approvedTicketCountSnapshot || 0),
+    unitPrice: Number(invoice.unitPriceSnapshot || 0),
+    totalAmount: Number(invoice.totalAmountSnapshot ?? invoice.totalAmount ?? 0),
+    dueAt: invoice.dueAt,
+    paymentInstruction,
+    sendInvoiceEmail,
+    sendInvoiceChat,
+  });
+  const status = resolveInvoiceStatus({
+    emailSent: channelResult.emailSent,
+    chatSent: channelResult.chatSent,
+    blockedMissingInstruction: false,
+  });
+
+  const updated = await prisma.organizerInvoice.update({
+    where: { id: normalizedId },
+    data: {
+      status,
+      organizerEmailSnapshot: organizerEmail || invoice.organizerEmailSnapshot,
+      paymentInstructionSnapshot: paymentInstruction,
+      sentByEmailAt: channelResult.emailSent ? now : invoice.sentByEmailAt,
+      sentByChatAt: channelResult.chatSent ? now : invoice.sentByChatAt,
+      emailError: channelResult.emailError,
+      chatError: channelResult.chatError,
+    },
+    select: {
+      id: true,
+      eventId: true,
+      status: true,
+      dueAt: true,
+      totalAmount: true,
+      amountPaid: true,
+      paidAt: true,
+      paymentNote: true,
+      invoiceType: true,
+      sentByEmailAt: true,
+      sentByChatAt: true,
+      emailError: true,
+      chatError: true,
+    },
+  });
+
+  return {
+    ...updated,
+    amountRemaining: computeAmountRemaining(updated.totalAmount, updated.amountPaid),
+  };
+}
+
 async function isOrganizerBlockedFromNewEvents(organizerAccessCode) {
   const code = String(organizerAccessCode || "").trim();
   if (!code) return false;
@@ -815,6 +992,319 @@ async function getPreEventUnpaidWarning(eventId, eventDate, options = {}) {
   return PRE_EVENT_WARNING_MESSAGE;
 }
 
+async function submitInvoicePaymentEvidenceForOrganizer({
+  organizerAccessCode,
+  invoiceId,
+  eventId,
+  note,
+  evidenceImageDataUrl,
+  now,
+}) {
+  const normalizedCode = String(organizerAccessCode || "").trim();
+  if (!normalizedCode) {
+    const error = new Error("accessCode is required.");
+    error.code = "BAD_INPUT";
+    throw error;
+  }
+  const normalizedInvoiceId = String(invoiceId || "").trim();
+  if (!normalizedInvoiceId) {
+    const error = new Error("invoiceId is required.");
+    error.code = "BAD_INPUT";
+    throw error;
+  }
+  const normalizedEventId = String(eventId || "").trim();
+  if (!normalizedEventId) {
+    const error = new Error("eventId is required.");
+    error.code = "BAD_INPUT";
+    throw error;
+  }
+
+  const normalizedNote = String(note || "").trim();
+  if (normalizedNote.length > PAYMENT_EVIDENCE_NOTE_MAX) {
+    const error = new Error("Payment note is too long.");
+    error.code = "BAD_INPUT";
+    throw error;
+  }
+  const normalizedEvidence = normalizePaymentEvidenceDataUrl(evidenceImageDataUrl);
+  if (!normalizedEvidence) {
+    const error = new Error("Valid payment evidence image is required.");
+    error.code = "BAD_INPUT";
+    throw error;
+  }
+
+  const invoice = await prisma.organizerInvoice.findUnique({
+    where: { id: normalizedInvoiceId },
+    select: {
+      id: true,
+      eventId: true,
+      status: true,
+      evidenceUploadAllowance: true,
+      event: {
+        select: {
+          id: true,
+          accessCode: true,
+          organizerAccessCode: true,
+          invoiceEvidenceAutoApprove: true,
+        },
+      },
+    },
+  });
+  if (!invoice || !invoice.event) {
+    const error = new Error("Invoice not found.");
+    error.code = "NOT_FOUND";
+    throw error;
+  }
+  if (invoice.eventId !== normalizedEventId) {
+    const error = new Error("Invoice does not belong to selected event.");
+    error.code = "BAD_INPUT";
+    throw error;
+  }
+
+  const canonicalCode = String(invoice.event.organizerAccessCode || invoice.event.accessCode || "").trim();
+  if (!canonicalCode || canonicalCode !== normalizedCode) {
+    const error = new Error("Invalid organizer access code for this invoice.");
+    error.code = "FORBIDDEN";
+    throw error;
+  }
+  if (Number(invoice.evidenceUploadAllowance || 0) < 1) {
+    const error = new Error("Attachment is currently disabled for this invoice. Contact admin to allow one more upload.");
+    error.code = "INVALID_TRANSITION";
+    throw error;
+  }
+
+  const submittedAt = now instanceof Date ? now : new Date();
+  let evidence = null;
+  await prisma.$transaction(async (tx) => {
+    const freshInvoice = await tx.organizerInvoice.findUnique({
+      where: { id: invoice.id },
+      select: { id: true, evidenceUploadAllowance: true },
+    });
+    if (!freshInvoice || Number(freshInvoice.evidenceUploadAllowance || 0) < 1) {
+      const error = new Error("Attachment is currently disabled for this invoice. Contact admin to allow one more upload.");
+      error.code = "INVALID_TRANSITION";
+      throw error;
+    }
+
+    evidence = await tx.invoicePaymentEvidence.create({
+      data: {
+        invoiceId: invoice.id,
+        eventId: invoice.eventId,
+        organizerAccessCode: canonicalCode,
+        note: normalizedNote || null,
+        evidenceImageDataUrl: normalizedEvidence,
+        status: "PENDING",
+        submittedAt,
+      },
+      select: {
+        id: true,
+        invoiceId: true,
+        eventId: true,
+        organizerAccessCode: true,
+        note: true,
+        evidenceImageDataUrl: true,
+        status: true,
+        submittedAt: true,
+        reviewedAt: true,
+        reviewedBy: true,
+      },
+    });
+
+    await tx.organizerInvoice.update({
+      where: { id: invoice.id },
+      data: { evidenceUploadAllowance: { decrement: 1 } },
+    });
+  });
+
+  let updatedInvoice = null;
+  if (invoice.event.invoiceEvidenceAutoApprove) {
+    if (invoice.status !== "PAID") {
+      updatedInvoice = await markInvoicePaid(invoice.id, {
+        paymentNote: normalizedNote
+          ? `Auto-approved organizer payment evidence: ${normalizedNote}`
+          : "Auto-approved organizer payment evidence.",
+        now: submittedAt,
+      });
+    }
+
+    evidence = await prisma.invoicePaymentEvidence.update({
+      where: { id: evidence.id },
+      data: {
+        status: "AUTO_APPROVED",
+        reviewedAt: submittedAt,
+        reviewedBy: "AUTO",
+      },
+      select: {
+        id: true,
+        invoiceId: true,
+        eventId: true,
+        organizerAccessCode: true,
+        note: true,
+        evidenceImageDataUrl: true,
+        status: true,
+        submittedAt: true,
+        reviewedAt: true,
+        reviewedBy: true,
+      },
+    });
+  }
+
+  return { evidence, invoice: updatedInvoice };
+}
+
+async function allowInvoiceEvidenceAttachment(invoiceId) {
+  const normalizedInvoiceId = String(invoiceId || "").trim();
+  if (!normalizedInvoiceId) {
+    const error = new Error("invoiceId is required.");
+    error.code = "BAD_INPUT";
+    throw error;
+  }
+
+  const invoice = await prisma.organizerInvoice.findUnique({
+    where: { id: normalizedInvoiceId },
+    select: { id: true, eventId: true, evidenceUploadAllowance: true },
+  });
+  if (!invoice) {
+    const error = new Error("Invoice not found.");
+    error.code = "NOT_FOUND";
+    throw error;
+  }
+
+  const updated = await prisma.organizerInvoice.update({
+    where: { id: normalizedInvoiceId },
+    data: { evidenceUploadAllowance: 1 },
+    select: { id: true, eventId: true, evidenceUploadAllowance: true },
+  });
+
+  return {
+    invoiceId: updated.id,
+    eventId: updated.eventId,
+    evidenceUploadAllowance: Number(updated.evidenceUploadAllowance || 0),
+  };
+}
+
+async function listInvoicePaymentEvidence(invoiceId) {
+  const normalizedInvoiceId = String(invoiceId || "").trim();
+  if (!normalizedInvoiceId) {
+    const error = new Error("invoiceId is required.");
+    error.code = "BAD_INPUT";
+    throw error;
+  }
+  return prisma.invoicePaymentEvidence.findMany({
+    where: { invoiceId: normalizedInvoiceId },
+    orderBy: { submittedAt: "desc" },
+    select: {
+      id: true,
+      invoiceId: true,
+      eventId: true,
+      organizerAccessCode: true,
+      note: true,
+      evidenceImageDataUrl: true,
+      status: true,
+      submittedAt: true,
+      reviewedAt: true,
+      reviewedBy: true,
+    },
+  });
+}
+
+async function approveInvoicePaymentEvidence(evidenceId, options = {}) {
+  const normalizedEvidenceId = String(evidenceId || "").trim();
+  if (!normalizedEvidenceId) {
+    const error = new Error("evidenceId is required.");
+    error.code = "BAD_INPUT";
+    throw error;
+  }
+
+  const evidence = await prisma.invoicePaymentEvidence.findUnique({
+    where: { id: normalizedEvidenceId },
+    select: {
+      id: true,
+      invoiceId: true,
+      status: true,
+      note: true,
+      invoice: {
+        select: {
+          id: true,
+          status: true,
+        },
+      },
+    },
+  });
+  if (!evidence || !evidence.invoice) {
+    const error = new Error("Payment evidence not found.");
+    error.code = "NOT_FOUND";
+    throw error;
+  }
+  if (evidence.status !== "PENDING") {
+    const error = new Error(`Payment evidence in status ${evidence.status} cannot be approved.`);
+    error.code = "INVALID_TRANSITION";
+    throw error;
+  }
+
+  const now = options.now instanceof Date ? options.now : new Date();
+  let updatedInvoice = null;
+  if (evidence.invoice.status !== "PAID") {
+    updatedInvoice = await markInvoicePaid(evidence.invoice.id, {
+      paymentNote: evidence.note
+        ? `Approved payment evidence: ${evidence.note}`
+        : "Approved payment evidence.",
+      now,
+    });
+  }
+
+  const updatedEvidence = await prisma.invoicePaymentEvidence.update({
+    where: { id: normalizedEvidenceId },
+    data: {
+      status: "APPROVED",
+      reviewedAt: now,
+      reviewedBy: String(options.reviewedBy || "ADMIN").trim() || "ADMIN",
+    },
+    select: {
+      id: true,
+      invoiceId: true,
+      eventId: true,
+      organizerAccessCode: true,
+      note: true,
+      evidenceImageDataUrl: true,
+      status: true,
+      submittedAt: true,
+      reviewedAt: true,
+      reviewedBy: true,
+    },
+  });
+
+  return { evidence: updatedEvidence, invoice: updatedInvoice };
+}
+
+async function setOrganizerInvoiceEvidenceAutoApprove(organizerAccessCode, enabled) {
+  const normalizedCode = String(organizerAccessCode || "").trim();
+  if (!normalizedCode) {
+    const error = new Error("organizerAccessCode is required.");
+    error.code = "BAD_INPUT";
+    throw error;
+  }
+
+  const nextValue = Boolean(enabled);
+  const result = await prisma.userEvent.updateMany({
+    where: {
+      OR: [
+        { organizerAccessCode: normalizedCode },
+        { accessCode: normalizedCode },
+      ],
+    },
+    data: {
+      invoiceEvidenceAutoApprove: nextValue,
+    },
+  });
+  if (!result.count) {
+    const error = new Error("Organizer not found.");
+    error.code = "NOT_FOUND";
+    throw error;
+  }
+
+  return { organizerAccessCode: normalizedCode, enabled: nextValue, updatedEvents: result.count };
+}
+
 module.exports = {
   SUPPORTED_CURRENCIES,
   UNIT_PRICE_BY_CURRENCY,
@@ -829,6 +1319,12 @@ module.exports = {
   markOverdueInvoices,
   markInvoicePaid,
   addInvoicePayment,
+  retryInvoiceDelivery,
+  submitInvoicePaymentEvidenceForOrganizer,
+  listInvoicePaymentEvidence,
+  approveInvoicePaymentEvidence,
+  allowInvoiceEvidenceAttachment,
+  setOrganizerInvoiceEvidenceAutoApprove,
   isOrganizerBlockedFromNewEvents,
   getPreEventUnpaidWarning,
   runOrganizerInvoiceGenerationCycle,

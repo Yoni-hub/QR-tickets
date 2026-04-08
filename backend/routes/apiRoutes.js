@@ -11,6 +11,8 @@ const {
   updateOrganizerNotifications,
   sendNotificationEmailOtp,
   verifyNotificationEmailOtp,
+  submitOrganizerInvoicePaymentEvidence,
+  listOrganizerInvoicePaymentEvidence,
   mergeOrphanEvent,
 } = require("../controllers/eventController");
 const { scanTicket } = require("../controllers/scanController");
@@ -108,6 +110,8 @@ const {
   organizerStartConversationBodySchema,
   organizerConversationParamsSchema,
   organizerAttachmentParamsSchema,
+  organizerInvoiceEvidenceParamsSchema,
+  organizerInvoiceEvidenceBodySchema,
   organizerConversationMessageBodySchema,
   promoterIdParamSchema,
   promotersCreateBodySchema,
@@ -288,6 +292,16 @@ router.post(
   "/events/by-code/:accessCode/merge-event",
   validateRequest({ params: accessCodeWithEventParamsSchema, body: mergeEventBodySchema }),
   mergeOrphanEvent,
+);
+router.get(
+  "/events/by-code/:accessCode/invoices/:invoiceId/payment-evidence",
+  validateRequest({ params: organizerInvoiceEvidenceParamsSchema }),
+  listOrganizerInvoicePaymentEvidence,
+);
+router.post(
+  "/events/by-code/:accessCode/invoices/:invoiceId/payment-evidence",
+  validateRequest({ params: organizerInvoiceEvidenceParamsSchema, body: organizerInvoiceEvidenceBodySchema }),
+  submitOrganizerInvoicePaymentEvidence,
 );
 router.post(
   "/ticket-requests/:id/approve",

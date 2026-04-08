@@ -498,13 +498,28 @@ async function listConversationsForActor(actor, options = {}) {
   const status = String(options.status || "").trim().toUpperCase();
   const conversationType = String(options.conversationType || "").trim().toUpperCase();
   const query = normalizeText(options.q, 100).toLowerCase();
+  const normalizedEventId = options.eventId ? String(options.eventId).trim() : "";
+
+  const eventFilter =
+    normalizedEventId
+      ? (
+        actor.type === CHAT_ACTOR.ORGANIZER
+          ? {
+              OR: [
+                { eventId: normalizedEventId },
+                { conversationType: CHAT_CONVERSATION_TYPE.ORGANIZER_ADMIN },
+              ],
+            }
+          : { eventId: normalizedEventId }
+      )
+      : {};
 
   const items = await prisma.chatConversation.findMany({
     where: {
       ...actorWhere,
       ...(status === CHAT_CONVERSATION_STATUS.OPEN || status === CHAT_CONVERSATION_STATUS.CLOSED ? { status } : {}),
       ...(Object.values(CHAT_CONVERSATION_TYPE).includes(conversationType) ? { conversationType } : {}),
-      ...(options.eventId ? { eventId: String(options.eventId).trim() } : {}),
+      ...eventFilter,
     },
     orderBy: [{ lastMessageAt: "desc" }],
     take: 200,

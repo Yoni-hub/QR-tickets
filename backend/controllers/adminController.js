@@ -3,7 +3,16 @@ const { generateAccessCode } = require("../utils/accessCode");
 const { getPublicBaseUrl } = require("../services/eventService");
 const { resolveConfiguredAdminKey } = require("../middleware/adminAuth");
 const { writeAdminAuditLog } = require("../utils/adminAudit");
-const { SUPPORTED_CURRENCIES, markInvoicePaid, addInvoicePayment } = require("../services/organizerInvoiceService");
+const {
+  SUPPORTED_CURRENCIES,
+  markInvoicePaid,
+  addInvoicePayment,
+  retryInvoiceDelivery,
+  listInvoicePaymentEvidence,
+  approveInvoicePaymentEvidence,
+  allowInvoiceEvidenceAttachment,
+  setOrganizerInvoiceEvidenceAutoApprove,
+} = require("../services/organizerInvoiceService");
 
 function normalizeLimit(rawValue, fallback = 50, min = 1, max = 200) {
   const parsed = Number.parseInt(String(rawValue || ""), 10);
@@ -286,7 +295,13 @@ async function listAdminEvents(req, res) {
       id: true,
       eventName: true,
       eventDate: true,
+      eventEndDate: true,
       eventAddress: true,
+      paymentInstructions: true,
+      salesCutoffAt: true,
+      salesWindowStart: true,
+      salesWindowEnd: true,
+      maxTicketsPerEmail: true,
       accessCode: true,
       organizerName: true,
       organizerEmail: true,
@@ -327,7 +342,13 @@ async function listAdminEvents(req, res) {
       eventId: row.id,
       eventName: row.eventName,
       eventDate: row.eventDate,
+      eventEndDate: row.eventEndDate,
       location: row.eventAddress,
+      paymentMethod: row.paymentInstructions ? "MANUAL_INSTRUCTION" : "NOT_CONFIGURED",
+      stopSellingAfter: row.salesCutoffAt,
+      salesWindowStart: row.salesWindowStart,
+      salesWindowEnd: row.salesWindowEnd,
+      maxTicketsPerEmail: row.maxTicketsPerEmail,
       accessCode: row.accessCode,
       organizerName: row.organizerName || null,
       organizerEmail: row.organizerEmail || null,
@@ -358,8 +379,10 @@ async function getAdminEventDetail(req, res) {
       id: true,
       eventName: true,
       eventDate: true,
+      eventEndDate: true,
       eventAddress: true,
       accessCode: true,
+      organizerAccessCode: true,
       createdAt: true,
       designJson: true,
       quantity: true,
@@ -368,6 +391,7 @@ async function getAdminEventDetail(req, res) {
       adminStatus: true,
       adminDisabledAt: true,
       archivedAt: true,
+      invoiceEvidenceAutoApprove: true,
       _count: { select: { tickets: true } },
     },
   });
@@ -454,6 +478,10 @@ async function getAdminEventDetail(req, res) {
     }),
   ]);
 
+  const invoicePaymentEvidence = latestInvoice
+    ? await listInvoicePaymentEvidence(latestInvoice.id)
+    : [];
+
   const viewCountMap = new Map(viewCountsRaw.map((row) => [row.ticketId, row._count._all]));
   const scanSummary = {
     VALID: 0,
@@ -500,12 +528,15 @@ async function getAdminEventDetail(req, res) {
       eventId: event.id,
       eventName: event.eventName,
       eventDate: event.eventDate,
+      eventEndDate: event.eventEndDate,
       location: event.eventAddress,
       accessCode: event.accessCode,
       createdAt: event.createdAt,
       status: String(event.adminStatus || "ACTIVE").toLowerCase(),
       adminDisabledAt: event.adminDisabledAt,
       archivedAt: event.archivedAt,
+      organizerAccessCode: event.organizerAccessCode || event.accessCode,
+      invoiceEvidenceAutoApprove: Boolean(event.invoiceEvidenceAutoApprove),
       ticketsTotal: event._count.tickets,
       ticketsScanned: scannedCount,
       ticketsRemaining: Math.max(0, event._count.tickets - scannedCount - invalidatedCount),
@@ -547,6 +578,7 @@ async function getAdminEventDetail(req, res) {
           sentByChatAt: latestInvoice.sentByChatAt,
           emailError: latestInvoice.emailError,
           chatError: latestInvoice.chatError,
+          paymentEvidence: invoicePaymentEvidence,
         }
       : null,
   });
@@ -579,6 +611,7 @@ async function listAdminTickets(req, res) {
       id: true,
       ticketPublicId: true,
       ticketType: true,
+      ticketPrice: true,
       ticketRequestId: true,
       qrPayload: true,
       status: true,
@@ -591,7 +624,9 @@ async function listAdminTickets(req, res) {
           id: true,
           eventName: true,
           accessCode: true,
+          organizerAccessCode: true,
           adminStatus: true,
+          designJson: true,
         },
       },
       deliveries: {
@@ -620,8 +655,13 @@ async function listAdminTickets(req, res) {
       eventId: ticket.event.id,
       eventName: ticket.event.eventName,
       accessCode: ticket.event.accessCode,
+      organizerAccessCode: ticket.event.organizerAccessCode || ticket.event.accessCode || null,
       ticketType: ticket.ticketType || null,
+      currency: String(ticket.event?.designJson?.currency || "USD").toUpperCase(),
+      price: ticket.ticketPrice,
+      quantity: 1,
       sold: Boolean(ticket.ticketRequestId) || ticket.status === "USED",
+      soldTickets: (Boolean(ticket.ticketRequestId) || ticket.status === "USED") ? 1 : 0,
       attendeeName: null,
       attendeeEmail: latestDelivery?.email || null,
       ticketUrl: ticket.qrPayload || buildTicketUrl(ticket.ticketPublicId),
@@ -679,6 +719,7 @@ async function listAdminScans(req, res) {
           id: true,
           eventName: true,
           accessCode: true,
+          organizerAccessCode: true,
         },
       },
       ticket: {
@@ -699,6 +740,7 @@ async function listAdminScans(req, res) {
     eventId: row.event?.id || null,
     eventName: row.event?.eventName || "Unknown event",
     accessCode: row.event?.accessCode || "-",
+    organizerAccessCode: row.event?.organizerAccessCode || row.event?.accessCode || "-",
     ticketPublicId: row.ticketPublicId,
     attendeeName: null,
     attendeeEmail: row.ticket?.deliveries?.[0]?.email || null,
@@ -758,7 +800,7 @@ async function listAdminOrganizers(req, res) {
   });
 
   const eventIds = rows.map((row) => row.id);
-  const [usedGrouped, invalidatedGrouped] = eventIds.length
+  const [usedGrouped, invalidatedGrouped, soldGrouped] = eventIds.length
     ? await Promise.all([
         prisma.ticket.groupBy({
           by: ["eventId"],
@@ -770,11 +812,22 @@ async function listAdminOrganizers(req, res) {
           where: { eventId: { in: eventIds }, isInvalidated: true },
           _count: { _all: true },
         }),
+        prisma.ticket.groupBy({
+          by: ["eventId"],
+          where: {
+            eventId: { in: eventIds },
+            cancelledAt: null,
+            ticketRequestId: { not: null },
+            ticketRequest: { status: "APPROVED" },
+          },
+          _count: { _all: true },
+        }),
       ])
-    : [[], []];
+    : [[], [], []];
 
   const usedMap = new Map(usedGrouped.map((row) => [row.eventId, row._count._all]));
   const invalidatedMap = new Map(invalidatedGrouped.map((row) => [row.eventId, row._count._all]));
+  const soldTicketsMap = new Map(soldGrouped.map((row) => [row.eventId, row._count._all]));
   const organizerMap = new Map();
 
   for (const event of rows) {
@@ -782,6 +835,7 @@ async function listAdminOrganizers(req, res) {
     if (!organizerAccessCode) continue;
     const usedCount = usedMap.get(event.id) || 0;
     const invalidatedCount = invalidatedMap.get(event.id) || 0;
+    const soldTicketsCount = soldTicketsMap.get(event.id) || 0;
     const eventSummary = {
       eventId: event.id,
       eventName: event.eventName,
@@ -792,6 +846,7 @@ async function listAdminOrganizers(req, res) {
       status: String(event.adminStatus || "ACTIVE").toLowerCase(),
       createdAt: event.createdAt,
       ticketsTotal: event._count.tickets,
+      soldTickets: soldTicketsCount,
       ticketsUsed: usedCount,
       ticketsInvalidated: invalidatedCount,
       ticketRequestsTotal: event._count.ticketRequests,
@@ -803,6 +858,7 @@ async function listAdminOrganizers(req, res) {
       organizerEmail: "",
       eventsTotal: 0,
       ticketsTotal: 0,
+      soldTickets: 0,
       ticketsUsed: 0,
       ticketsInvalidated: 0,
       ticketRequestsTotal: 0,
@@ -812,6 +868,7 @@ async function listAdminOrganizers(req, res) {
 
     existing.eventsTotal += 1;
     existing.ticketsTotal += eventSummary.ticketsTotal;
+    existing.soldTickets += eventSummary.soldTickets;
     existing.ticketsUsed += eventSummary.ticketsUsed;
     existing.ticketsInvalidated += eventSummary.ticketsInvalidated;
     existing.ticketRequestsTotal += eventSummary.ticketRequestsTotal;
@@ -838,6 +895,12 @@ async function listAdminOrganizers(req, res) {
 async function listAdminInvoices(req, res) {
   const limit = normalizeLimit(req.query.limit, 200, 1, 500);
   const statusFilter = String(req.query.statusFilter || "ALL").trim().toUpperCase();
+  const search = String(req.query.search || "").trim();
+  const organizerEmailFilter = String(req.query.organizerEmail || "").trim();
+  const organizerAccessCodeFilter = String(req.query.organizerAccessCode || "").trim();
+  const eventDateFrom = parseDateBoundary(req.query.eventDateFrom, "start");
+  const eventDateTo = parseDateBoundary(req.query.eventDateTo, "end");
+  const autoApproveFilter = String(req.query.autoApprove || "ALL").trim().toUpperCase();
 
   let where = {};
   if (statusFilter === "OVERDUE") {
@@ -847,6 +910,46 @@ async function listAdminInvoices(req, res) {
   } else if (statusFilter === "BLOCKED") {
     where = { ...where, status: "BLOCKED_MISSING_INSTRUCTION" };
   }
+
+  const eventWhere = {
+    ...(search
+      ? {
+          OR: [
+            { eventName: { contains: search, mode: "insensitive" } },
+            { organizerName: { contains: search, mode: "insensitive" } },
+            { organizerEmail: { contains: search, mode: "insensitive" } },
+            { accessCode: { contains: search, mode: "insensitive" } },
+            { organizerAccessCode: { contains: search, mode: "insensitive" } },
+          ],
+        }
+      : {}),
+    ...(organizerEmailFilter ? { organizerEmail: { contains: organizerEmailFilter, mode: "insensitive" } } : {}),
+    ...(organizerAccessCodeFilter
+      ? {
+          OR: [
+            { accessCode: { contains: organizerAccessCodeFilter, mode: "insensitive" } },
+            { organizerAccessCode: { contains: organizerAccessCodeFilter, mode: "insensitive" } },
+          ],
+        }
+      : {}),
+    ...((eventDateFrom || eventDateTo)
+      ? {
+          eventDate: {
+            ...(eventDateFrom ? { gte: eventDateFrom } : {}),
+            ...(eventDateTo ? { lte: eventDateTo } : {}),
+          },
+        }
+      : {}),
+    ...(autoApproveFilter === "ON"
+      ? { invoiceEvidenceAutoApprove: true }
+      : autoApproveFilter === "OFF"
+        ? { invoiceEvidenceAutoApprove: false }
+        : {}),
+  };
+  where = {
+    ...where,
+    ...((Object.keys(eventWhere).length > 0) ? { event: eventWhere } : {}),
+  };
 
   const rows = await prisma.organizerInvoice.findMany({
     where,
@@ -858,41 +961,122 @@ async function listAdminInvoices(req, res) {
       organizerEmailSnapshot: true,
       invoiceType: true,
       currencySnapshot: true,
+      approvedTicketCountSnapshot: true,
+      unitPriceSnapshot: true,
+      totalAmountSnapshot: true,
+      paymentInstructionSnapshot: true,
       totalAmount: true,
       amountPaid: true,
       status: true,
       dueAt: true,
       paidAt: true,
       generatedAt: true,
+      sentByEmailAt: true,
+      sentByChatAt: true,
+      emailError: true,
+      chatError: true,
+      evidenceUploadAllowance: true,
       event: {
         select: {
           eventName: true,
+          organizerName: true,
+          organizerEmail: true,
+          organizerAccessCode: true,
           accessCode: true,
           eventDate: true,
+          eventEndDate: true,
+          invoiceEvidenceAutoApprove: true,
+        },
+      },
+      paymentEvidence: {
+        orderBy: { submittedAt: "desc" },
+        take: 5,
+        select: {
+          id: true,
+          submittedAt: true,
+          evidenceImageDataUrl: true,
+          status: true,
+        },
+      },
+      _count: {
+        select: {
+          paymentEvidence: {
+            where: { status: "PENDING" },
+          },
         },
       },
     },
   });
 
   const items = rows.map((row) => ({
+    latestEvidence: (row.paymentEvidence || [])[0] || null,
+    firstPendingEvidence: (row.paymentEvidence || []).find((item) => item.status === "PENDING") || null,
+    rowData: row,
+  })).map((mapped) => {
+    const row = mapped.rowData;
+    const latestEvidence = mapped.latestEvidence;
+    const firstPendingEvidence = mapped.firstPendingEvidence;
+    return {
     invoiceId: row.id,
+    invoiceNumber: row.id,
+    invoiceDateTime: row.generatedAt,
     eventId: row.eventId,
     eventName: row.event?.eventName || "Unknown event",
     eventDate: row.event?.eventDate || null,
+    eventEndDate: row.event?.eventEndDate || null,
     eventAccessCode: row.event?.accessCode || null,
-    organizerEmail: row.organizerEmailSnapshot || null,
+    organizerAccessCode: row.event?.organizerAccessCode || row.event?.accessCode || null,
+    organizerName: row.event?.organizerName || null,
+    organizerEmail: row.event?.organizerEmail || row.organizerEmailSnapshot || null,
     invoiceType: row.invoiceType,
+    soldTickets: row.approvedTicketCountSnapshot,
     currency: row.currencySnapshot,
+    unitPrice: row.unitPriceSnapshot,
+    totalAmountSnapshot: row.totalAmountSnapshot,
     totalAmount: row.totalAmount,
     amountPaid: row.amountPaid,
     amountRemaining: Number(row.totalAmount) - Number(row.amountPaid || 0),
+    paymentInstruction: row.paymentInstructionSnapshot || null,
     status: row.status,
     dueAt: row.dueAt,
     paidAt: row.paidAt,
     generatedAt: row.generatedAt,
-  }));
+    sentByEmailAt: row.sentByEmailAt,
+    sentByChatAt: row.sentByChatAt,
+    emailError: row.emailError || null,
+    chatError: row.chatError || null,
+    evidenceUploadAllowance: Number(row.evidenceUploadAllowance || 0),
+    canUploadEvidence: Number(row.evidenceUploadAllowance || 0) > 0,
+    invoiceEvidenceAutoApprove: Boolean(row.event?.invoiceEvidenceAutoApprove),
+    pendingPaymentEvidenceCount: row._count?.paymentEvidence || 0,
+    firstPendingPaymentEvidenceId: firstPendingEvidence?.id || null,
+    firstPendingPaymentEvidenceSubmittedAt: firstPendingEvidence?.submittedAt || null,
+    firstPendingPaymentEvidenceImageDataUrl: firstPendingEvidence?.evidenceImageDataUrl || null,
+    latestEvidenceId: latestEvidence?.id || null,
+    latestEvidenceSubmittedAt: latestEvidence?.submittedAt || null,
+    latestEvidenceImageDataUrl: latestEvidence?.evidenceImageDataUrl || null,
+  };
+  });
 
-  res.json({ items });
+  const summary = await prisma.userEvent.aggregate({
+    _count: { _all: true },
+    where: {
+      ...(autoApproveFilter === "ON"
+        ? { invoiceEvidenceAutoApprove: true }
+        : autoApproveFilter === "OFF"
+          ? { invoiceEvidenceAutoApprove: false }
+          : {}),
+    },
+  });
+  const autoApproveEnabledCount = await prisma.userEvent.count({ where: { invoiceEvidenceAutoApprove: true } });
+
+  res.json({
+    items,
+    meta: {
+      autoApproveEnabledCount,
+      autoApproveDisabledCount: Math.max(0, (summary?._count?._all || 0) - autoApproveEnabledCount),
+    },
+  });
 }
 
 async function getAdminSettings(_req, res) {
@@ -922,7 +1106,7 @@ async function getAdminSettings(_req, res) {
       allowedResults: ["VALID", "USED", "INVALID"],
     },
     emailSender: {
-      from: process.env.MAIL_FROM || "no-reply@localhost",
+      from: process.env.MAIL_FROM || "not-configured",
       smtpHostConfigured: Boolean(process.env.SMTP_HOST),
     },
     adminProtection: {
@@ -948,6 +1132,58 @@ async function getAdminPaymentInstructions(_req, res) {
       updatedAt: row?.updatedAt || null,
     };
   });
+
+  res.json({ items });
+}
+
+async function lookupAdminOtpRecords(req, res) {
+  const email = String(req.query?.email || "").trim().toLowerCase();
+  const eventSlug = String(req.query?.eventSlug || "").trim();
+  const limit = normalizeLimit(req.query?.limit, 25, 1, 100);
+
+  if (!email) {
+    res.status(400).json({ error: "email query parameter is required." });
+    return;
+  }
+
+  const where = {
+    email,
+    ...(eventSlug ? { eventSlug } : {}),
+  };
+
+  const rows = await prisma.emailVerification.findMany({
+    where,
+    orderBy: { createdAt: "desc" },
+    take: limit,
+    select: {
+      id: true,
+      email: true,
+      eventSlug: true,
+      code: true,
+      attempts: true,
+      verified: true,
+      token: true,
+      tokenUsed: true,
+      expiresAt: true,
+      createdAt: true,
+    },
+  });
+
+  const now = Date.now();
+  const items = rows.map((row) => ({
+    id: row.id,
+    email: row.email,
+    eventSlug: row.eventSlug,
+    code: row.code,
+    attempts: row.attempts,
+    verified: row.verified,
+    tokenUsed: row.tokenUsed,
+    hasToken: Boolean(row.token),
+    tokenPreview: row.token ? `${String(row.token).slice(0, 8)}...` : null,
+    expiresAt: row.expiresAt,
+    createdAt: row.createdAt,
+    isExpired: row.expiresAt ? new Date(row.expiresAt).getTime() <= now : true,
+  }));
 
   res.json({ items });
 }
@@ -1512,6 +1748,166 @@ async function addAdminInvoicePayment(req, res) {
   }
 }
 
+async function retryAdminInvoiceDelivery(req, res) {
+  const invoiceId = String(req.params.invoiceId || "").trim();
+  if (!invoiceId) {
+    res.status(400).json({ error: "invoiceId is required." });
+    return;
+  }
+  try {
+    const updated = await retryInvoiceDelivery(invoiceId);
+    await writeAdminAuditLog({
+      action: "admin.retried-invoice-delivery",
+      targetType: "invoice",
+      targetId: updated.id,
+      eventId: updated.eventId,
+      metadata: {
+        status: updated.status,
+        sentByEmailAt: updated.sentByEmailAt,
+        sentByChatAt: updated.sentByChatAt,
+        emailError: updated.emailError,
+        chatError: updated.chatError,
+      },
+    });
+    res.json({ invoice: updated });
+  } catch (error) {
+    const code = String(error?.code || "");
+    if (code === "BAD_INPUT" || code === "INVALID_TRANSITION") {
+      res.status(400).json({ error: error.message });
+      return;
+    }
+    if (code === "NOT_FOUND") {
+      res.status(404).json({ error: error.message });
+      return;
+    }
+    if (code === "MISSING_INSTRUCTION") {
+      res.status(409).json({ error: error.message });
+      return;
+    }
+    throw error;
+  }
+}
+
+async function approveAdminInvoicePaymentEvidence(req, res) {
+  const evidenceId = String(req.params.evidenceId || "").trim();
+  if (!evidenceId) {
+    res.status(400).json({ error: "evidenceId is required." });
+    return;
+  }
+  try {
+    const result = await approveInvoicePaymentEvidence(evidenceId, { reviewedBy: "ADMIN" });
+    await writeAdminAuditLog({
+      action: "admin.approved-invoice-payment-evidence",
+      targetType: "invoice-payment-evidence",
+      targetId: result.evidence.id,
+      eventId: result.evidence.eventId,
+      metadata: {
+        invoiceId: result.evidence.invoiceId,
+        evidenceStatus: result.evidence.status,
+        invoiceStatus: result.invoice?.status || null,
+      },
+    });
+    res.json(result);
+  } catch (error) {
+    const code = String(error?.code || "");
+    if (code === "BAD_INPUT" || code === "INVALID_TRANSITION") {
+      res.status(400).json({ error: error.message });
+      return;
+    }
+    if (code === "NOT_FOUND") {
+      res.status(404).json({ error: error.message });
+      return;
+    }
+    throw error;
+  }
+}
+
+async function patchAdminInvoiceEvidenceAutoApprove(req, res) {
+  const eventId = String(req.params.eventId || "").trim();
+  if (!eventId) {
+    res.status(400).json({ error: "eventId is required." });
+    return;
+  }
+  const enabled = Boolean(req.body?.enabled);
+  const event = await prisma.userEvent.findUnique({
+    where: { id: eventId },
+    select: { id: true, accessCode: true, organizerAccessCode: true },
+  });
+  if (!event) {
+    res.status(404).json({ error: "Event not found." });
+    return;
+  }
+  const organizerAccessCode = String(event.organizerAccessCode || event.accessCode || "").trim();
+  if (!organizerAccessCode) {
+    res.status(400).json({ error: "Organizer access code is missing for this event." });
+    return;
+  }
+
+  const updated = await setOrganizerInvoiceEvidenceAutoApprove(organizerAccessCode, enabled);
+  await writeAdminAuditLog({
+    action: "admin.updated-invoice-evidence-auto-approve",
+    targetType: "organizer-billing-setting",
+    targetId: organizerAccessCode,
+    eventId,
+    metadata: {
+      enabled: updated.enabled,
+      updatedEvents: updated.updatedEvents,
+    },
+  });
+  res.json(updated);
+}
+
+async function patchAdminGlobalInvoiceEvidenceAutoApprove(req, res) {
+  const enabled = Boolean(req.body?.enabled);
+  const result = await prisma.userEvent.updateMany({
+    data: {
+      invoiceEvidenceAutoApprove: enabled,
+    },
+  });
+  await writeAdminAuditLog({
+    action: "admin.updated-global-invoice-evidence-auto-approve",
+    targetType: "organizer-billing-setting-global",
+    targetId: "all-organizers",
+    metadata: {
+      enabled,
+      updatedEvents: result.count || 0,
+    },
+  });
+  res.json({ enabled, updatedEvents: result.count || 0 });
+}
+
+async function patchAdminAllowInvoiceEvidenceAttachment(req, res) {
+  const invoiceId = String(req.params.invoiceId || "").trim();
+  if (!invoiceId) {
+    res.status(400).json({ error: "invoiceId is required." });
+    return;
+  }
+  try {
+    const updated = await allowInvoiceEvidenceAttachment(invoiceId);
+    await writeAdminAuditLog({
+      action: "admin.allowed-invoice-evidence-attachment",
+      targetType: "invoice",
+      targetId: updated.invoiceId,
+      eventId: updated.eventId,
+      metadata: {
+        evidenceUploadAllowance: updated.evidenceUploadAllowance,
+      },
+    });
+    res.json(updated);
+  } catch (error) {
+    const code = String(error?.code || "");
+    if (code === "BAD_INPUT") {
+      res.status(400).json({ error: error.message });
+      return;
+    }
+    if (code === "NOT_FOUND") {
+      res.status(404).json({ error: error.message });
+      return;
+    }
+    throw error;
+  }
+}
+
 module.exports = {
   getAdminOverview,
   listAdminEvents,
@@ -1522,6 +1918,7 @@ module.exports = {
   listAdminInvoices,
   getAdminSettings,
   getAdminPaymentInstructions,
+  lookupAdminOtpRecords,
   patchAdminPaymentInstructions,
   listAdminAuditLog,
   listAdminClientDashTokens,
@@ -1537,4 +1934,9 @@ module.exports = {
   markScanSuspicious,
   markAdminInvoicePaid,
   addAdminInvoicePayment,
+  retryAdminInvoiceDelivery,
+  approveAdminInvoicePaymentEvidence,
+  patchAdminInvoiceEvidenceAutoApprove,
+  patchAdminGlobalInvoiceEvidenceAutoApprove,
+  patchAdminAllowInvoiceEvidenceAttachment,
 };

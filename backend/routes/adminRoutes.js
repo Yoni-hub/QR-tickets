@@ -9,6 +9,7 @@ const {
   listAdminInvoices,
   getAdminSettings,
   getAdminPaymentInstructions,
+  lookupAdminOtpRecords,
   patchAdminPaymentInstructions,
   listAdminAuditLog,
   listAdminClientDashTokens,
@@ -24,6 +25,11 @@ const {
   markScanSuspicious,
   markAdminInvoicePaid,
   addAdminInvoicePayment,
+  retryAdminInvoiceDelivery,
+  approveAdminInvoicePaymentEvidence,
+  patchAdminInvoiceEvidenceAutoApprove,
+  patchAdminGlobalInvoiceEvidenceAutoApprove,
+  patchAdminAllowInvoiceEvidenceAttachment,
 } = require("../controllers/adminController");
 const { requireAdminAccess } = require("../middleware/adminAuth");
 const {
@@ -76,9 +82,15 @@ router.get("/invoices", listAdminInvoices);
 
 router.get("/settings", getAdminSettings);
 router.get("/settings/payment-instructions", getAdminPaymentInstructions);
+router.get("/settings/otp-lookup", lookupAdminOtpRecords);
 router.patch("/settings/payment-instructions", patchAdminPaymentInstructions);
 router.patch("/invoices/:invoiceId/mark-paid", markAdminInvoicePaid);
 router.patch("/invoices/:invoiceId/add-payment", addAdminInvoicePayment);
+router.patch("/invoices/:invoiceId/retry-delivery", retryAdminInvoiceDelivery);
+router.patch("/invoices/:invoiceId/allow-evidence-attachment", patchAdminAllowInvoiceEvidenceAttachment);
+router.patch("/invoices/payment-evidence/:evidenceId/approve", approveAdminInvoicePaymentEvidence);
+router.patch("/events/:eventId/invoice-evidence-auto-approve", patchAdminInvoiceEvidenceAutoApprove);
+router.patch("/events/invoice-evidence-auto-approve-all", patchAdminGlobalInvoiceEvidenceAutoApprove);
 router.get("/audit-log", listAdminAuditLog);
 router.get("/client-dash-tokens", listAdminClientDashTokens);
 

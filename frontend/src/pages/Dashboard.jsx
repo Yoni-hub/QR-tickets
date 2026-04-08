@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useReducer } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useReducer } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import api from "../lib/api";
 import AppButton from "../components/ui/AppButton";
@@ -41,6 +41,11 @@ const TAB_ICONS = {
       <path strokeLinecap="round" strokeLinejoin="round" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
     </svg>
   ),
+  payment: (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 8.25h18M5.25 6h13.5A2.25 2.25 0 0121 8.25v7.5A2.25 2.25 0 0118.75 18H5.25A2.25 2.25 0 013 15.75v-7.5A2.25 2.25 0 015.25 6zM15.75 14.25h.008v.008h-.008v-.008z" />
+    </svg>
+  ),
   chat: (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
@@ -58,6 +63,7 @@ const DASHBOARD_MENUS_ALL = [
   { id: "events", label: "Events" },
   { id: "tickets", label: "Tickets" },
   { id: "requests", label: "Requests" },
+  { id: "payment", label: "Payment" },
   { id: "chat", label: "Chat" },
   { id: "settings", label: "Settings" },
 ];
@@ -94,6 +100,40 @@ function formatDate(value) {
   return new Date(value).toLocaleString();
 }
 
+function formatMoney(value, currency = "") {
+  const amount = Number(value || 0);
+  return `${String(currency || "").trim()} ${amount.toFixed(2)}`.trim();
+}
+
+function resolveInvoiceRemainingHours(dueAt) {
+  const dueMs = Date.parse(String(dueAt || ""));
+  if (!Number.isFinite(dueMs)) return null;
+  return (dueMs - Date.now()) / (1000 * 60 * 60);
+}
+
+function resolveInvoiceCountdownLabel(invoice) {
+  const remainingHours = resolveInvoiceRemainingHours(invoice?.dueAt);
+  if (remainingHours == null) return "Due time unavailable";
+  if (invoice?.status === "PAID") return "Paid";
+  if (remainingHours <= 0) return `Overdue by ${Math.ceil(Math.abs(remainingHours))}h`;
+  return `${Math.ceil(remainingHours)}h left`;
+}
+
+function resolveInvoiceCountdownClass(invoice) {
+  if (invoice?.status === "PAID") return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  const remainingHours = resolveInvoiceRemainingHours(invoice?.dueAt);
+  if (remainingHours == null) return "border-slate-200 bg-slate-100 text-slate-700";
+  if (remainingHours <= 0) return "border-red-200 bg-red-50 text-red-700";
+  return "border-amber-200 bg-amber-50 text-amber-800";
+}
+
+function resolveSoldTicketsLabel(invoice) {
+  const text = String(invoice?.ticketTypeBreakdown || "").trim();
+  if (text) return text;
+  const count = Number(invoice?.approvedTicketCount || 0);
+  return `${count}x tickets`;
+}
+
 function toLocalDateTimeInputValue(value) {
   if (!value) return "";
   const date = new Date(value);
@@ -109,6 +149,19 @@ function localDateTimeToISO(value) {
   const date = new Date(value); // browser treats "YYYY-MM-DDTHH:mm" as local time
   if (Number.isNaN(date.getTime())) return value;
   return date.toISOString();
+}
+
+function resolveApiErrorMessage(requestError, fallback) {
+  const payload = requestError?.response?.data;
+  if (payload?.error === "Invalid request input." && Array.isArray(payload?.details) && payload.details.length) {
+    const first = payload.details[0] || {};
+    if (first.field && first.message) return `${first.field}: ${first.message}`;
+    if (first.message) return first.message;
+  }
+  if (payload?.error) return payload.error;
+  if (requestError?.response?.status) return `Request failed (${requestError.response.status}).`;
+  if (requestError?.message) return requestError.message;
+  return fallback;
 }
 
 function resolveDefaultTicketType(value) {
@@ -144,8 +197,6 @@ function resolveRecommendationBadgeClass(action) {
   return "border-slate-200 bg-slate-50 text-slate-700";
 }
 
-const REQUEST_RISK_FILTERS = ["ALL", "HIGH", "MEDIUM", "LOW"];
-const REQUEST_RISK_ORDER = { HIGH: 0, MEDIUM: 1, LOW: 2, NONE: 3 };
 const REQUEST_STATUS_SCOPES = [
   { value: "ALL", label: "ALL" },
   { value: "PENDING_ONLY", label: "PENDING ONLY" },
@@ -162,12 +213,8 @@ function toTimestamp(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function sortRequestsByRiskAndRecency(items) {
+function sortRequestsByRecency(items) {
   return [...items].sort((left, right) => {
-    const leftRisk = normalizeRiskLevel(left?.riskLevel);
-    const rightRisk = normalizeRiskLevel(right?.riskLevel);
-    const riskDelta = REQUEST_RISK_ORDER[leftRisk] - REQUEST_RISK_ORDER[rightRisk];
-    if (riskDelta !== 0) return riskDelta;
     return toTimestamp(right?.createdAt) - toTimestamp(left?.createdAt);
   });
 }
@@ -312,7 +359,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const location = useLocation();
   const [params, setParams] = useSearchParams();
-  const VALID_MENU_IDS = ["events", "tickets", "requests", "chat", "settings"];
+  const VALID_MENU_IDS = ["events", "tickets", "requests", "payment", "chat", "settings"];
   const activeMenu = VALID_MENU_IDS.includes(String(params.get("menu") || "").toLowerCase())
     ? String(params.get("menu")).toLowerCase()
     : "events";
@@ -339,7 +386,6 @@ export default function Dashboard() {
   const [savingTicketDraft, setSavingTicketDraft] = useState(false);
   const [tickets, setTickets] = useState([]);
   const [ticketRequests, setTicketRequests] = useState([]);
-  const [requestRiskFilter, setRequestRiskFilter] = useState("ALL");
   const [requestStatusScope, setRequestStatusScope] = useState("ALL");
   const [autoApprove, setAutoApprove] = useState(false);
   const [togglingAutoApprove, setTogglingAutoApprove] = useState(false);
@@ -411,6 +457,7 @@ export default function Dashboard() {
   const [showCodePanel, setShowCodePanel] = useState(false);
   const [promotersOpen, setPromotersOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [invoiceEvidenceDrafts, setInvoiceEvidenceDrafts] = useState({});
   const ticketEditorDraftRef = useRef(null);
   const organizerNameRef = useRef(null);
   const dashboardLoadingRef = useRef(false);
@@ -465,6 +512,14 @@ export default function Dashboard() {
   const eventPrimaryLoadingLabel = isAccessCodeGenerationMode ? "Generating..." : "Saving...";
   const visibleMenus = summary ? DASHBOARD_MENUS_ALL : DASHBOARD_MENUS_PRELOAD;
   const billingWarnings = Array.isArray(summary?.billingWarnings) ? summary.billingWarnings : [];
+  const organizerInvoices = useMemo(() => {
+    const items = Array.isArray(summary?.organizerInvoices) ? summary.organizerInvoices : [];
+    return [...items].sort((left, right) => toTimestamp(left?.generatedAt) - toTimestamp(right?.generatedAt));
+  }, [summary?.organizerInvoices]);
+  const allInvoicesPaidInFull = useMemo(
+    () => organizerInvoices.length > 0 && organizerInvoices.every((invoice) => Number(invoice?.amountRemaining || 0) <= 0),
+    [organizerInvoices],
+  );
   const pendingRequestCount = useMemo(
     () => ticketRequests.filter((r) => r.status === "PENDING_VERIFICATION").length,
     [ticketRequests],
@@ -472,11 +527,10 @@ export default function Dashboard() {
   const filteredTicketRequests = useMemo(() => {
     const filtered = ticketRequests.filter((item) => {
       if (requestStatusScope === "PENDING_ONLY" && item?.status !== "PENDING_VERIFICATION") return false;
-      if (requestRiskFilter === "ALL") return true;
-      return normalizeRiskLevel(item?.riskLevel) === requestRiskFilter;
+      return true;
     });
-    return sortRequestsByRiskAndRecency(filtered);
-  }, [ticketRequests, requestRiskFilter, requestStatusScope]);
+    return sortRequestsByRecency(filtered);
+  }, [ticketRequests, requestStatusScope]);
   const ticketTypeOptions = useMemo(
     () =>
       Array.from(
@@ -548,10 +602,12 @@ export default function Dashboard() {
   useEffect(() => {
     if (shouldOpenHomeMode || summary) return;
     const urlCode = params.get("code");
+    const urlEventId = String(params.get("eventId") || "").trim();
+    const urlInvoiceId = String(params.get("invoiceId") || "").trim();
     const codeToLoad = urlCode || localStorage.getItem(LOCAL_SAVED_CODE_KEY) || "";
     if (codeToLoad) {
       setCode(codeToLoad);
-      void loadDashboard(codeToLoad);
+      void loadDashboard(codeToLoad, urlEventId, urlInvoiceId);
     }
   }, [shouldOpenHomeMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -662,7 +718,7 @@ export default function Dashboard() {
     setTickets(ticketsRes.data.tickets || []);
   };
 
-  const loadDashboard = useCallback(async (targetCode, requestedEventId = "") => {
+  const loadDashboard = useCallback(async (targetCode, requestedEventId = "", requestedInvoiceId = "") => {
     const trimmedCode = String(targetCode || "").trim();
     if (!trimmedCode || dashboardLoadingRef.current) return;
     dashboardLoadingRef.current = true;
@@ -672,16 +728,22 @@ export default function Dashboard() {
     setParams((prev) => {
       const next = new URLSearchParams(prev);
       next.set("code", trimmedCode);
-      next.set("menu", "events");
+      if (!next.get("menu")) next.set("menu", "events");
+      if (requestedEventId) next.set("eventId", requestedEventId);
+      if (requestedInvoiceId) next.set("invoiceId", requestedInvoiceId);
       return next;
     });
 
     const storageKey = getSelectedEventStorageKey(trimmedCode);
     const storedEventId = requestedEventId || localStorage.getItem(storageKey) || "";
+    const storedInvoiceId = String(requestedInvoiceId || params.get("invoiceId") || "").trim();
 
     try {
+      const requestParams = {};
+      if (storedEventId) requestParams.eventId = storedEventId;
+      if (storedInvoiceId) requestParams.invoiceId = storedInvoiceId;
       const summaryRes = await withMinDelay(api.get(`/events/by-code/${encodeURIComponent(trimmedCode)}`, {
-        params: storedEventId ? { eventId: storedEventId } : {},
+        params: requestParams,
       }));
       applySummaryEvent(summaryRes.data);
       if (summaryRes.data?.event?.id) {
@@ -689,7 +751,6 @@ export default function Dashboard() {
       }
       setTicketTypeFilter("ALL");
       setTicketStatusFilter(TICKET_STATUS_FILTERS.TOTAL);
-      setActiveMenu("events");
       setShowPublicPreview(false);
       setTicketPage(1);
       await loadTicketsForEvent(summaryRes.data.event.id);
@@ -714,7 +775,7 @@ export default function Dashboard() {
       setLoading(false);
       dashboardLoadingRef.current = false;
     }
-  }, [setParams, applySummaryEvent]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [setParams, params, applySummaryEvent]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = async () => {
     const trimmedCode = code.trim();
@@ -1291,6 +1352,10 @@ export default function Dashboard() {
         setEventFb("error", "Load an event first.");
         return;
       }
+      if (!accessCode) {
+        setEventFb("error", "Access code is missing. Reload the dashboard with your code and try again.");
+        return;
+      }
       const response = await api.patch(`/events/${summary.event.id}`, {
         accessCode,
         organizerName: eventDraft.organizerName,
@@ -1299,9 +1364,9 @@ export default function Dashboard() {
         eventEndDate: localDateTimeToISO(eventDraft.eventEndDate),
         eventAddress: eventDraft.eventAddress,
         paymentInstructions: eventDraft.paymentInstructions,
-        salesCutoffAt: localDateTimeToISO(eventDraft.salesCutoffAt) || null,
-        salesWindowStart: eventDraft.salesWindowStart || null,
-        salesWindowEnd: eventDraft.salesWindowEnd || null,
+        salesCutoffAt: localDateTimeToISO(eventDraft.salesCutoffAt) || "",
+        salesWindowStart: eventDraft.salesWindowStart || "",
+        salesWindowEnd: eventDraft.salesWindowEnd || "",
         maxTicketsPerEmail: eventDraft.maxTicketsPerEmail ? Number(eventDraft.maxTicketsPerEmail) : null,
       });
       applySummaryEvent({
@@ -1323,10 +1388,102 @@ export default function Dashboard() {
       setEventFb("success", "Event details updated.");
     } catch (requestError) {
       if (handleTicketLockError(requestError)) return;
-      setEventFb("error", requestError.response?.data?.error || "Could not update event.");
+      setEventFb("error", resolveApiErrorMessage(requestError, "Could not update event."));
     } finally {
       setSavingEvent(false);
     }
+  };
+
+  const updateInvoiceEvidenceDraft = useCallback((invoiceId, patch) => {
+    const normalizedInvoiceId = String(invoiceId || "").trim();
+    if (!normalizedInvoiceId) return;
+    setInvoiceEvidenceDrafts((prev) => ({
+      ...prev,
+      [normalizedInvoiceId]: {
+        ...(prev[normalizedInvoiceId] || {}),
+        ...patch,
+      },
+    }));
+  }, []);
+
+  const handleInvoiceEvidenceFileChange = async (invoiceId, event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      updateInvoiceEvidenceDraft(invoiceId, {
+        evidenceImageDataUrl: dataUrl,
+        fileName: file.name || "evidence",
+        fbKind: "",
+        fbMessage: "",
+      });
+    } catch (error) {
+      updateInvoiceEvidenceDraft(invoiceId, {
+        evidenceImageDataUrl: "",
+        fileName: "",
+        fbKind: "error",
+        fbMessage: error?.message || "Could not read payment evidence file.",
+      });
+    } finally {
+      event.target.value = "";
+    }
+  };
+
+  const submitInvoiceEvidenceForRow = async (invoiceId) => {
+    const normalizedInvoiceId = String(invoiceId || "").trim();
+    if (!accessCode || !summary?.event?.id || !normalizedInvoiceId) return;
+    const invoice = organizerInvoices.find((item) => String(item?.id || "").trim() === normalizedInvoiceId);
+    if (invoice && !invoice.canUploadEvidence) {
+      updateInvoiceEvidenceDraft(normalizedInvoiceId, {
+        fbKind: "error",
+        fbMessage: "Attachment is currently locked. Ask admin to allow one more attachment.",
+      });
+      return;
+    }
+    const draft = invoiceEvidenceDrafts[normalizedInvoiceId] || {};
+    if (!draft.evidenceImageDataUrl) {
+      updateInvoiceEvidenceDraft(normalizedInvoiceId, {
+        fbKind: "error",
+        fbMessage: "Attach an evidence image before sending.",
+      });
+      return;
+    }
+
+    updateInvoiceEvidenceDraft(normalizedInvoiceId, { sending: true, fbKind: "", fbMessage: "" });
+    try {
+      await api.post(
+        `/events/by-code/${encodeURIComponent(accessCode)}/invoices/${encodeURIComponent(normalizedInvoiceId)}/payment-evidence`,
+        {
+          eventId: summary.event.id,
+          evidenceImageDataUrl: draft.evidenceImageDataUrl,
+        },
+      );
+      updateInvoiceEvidenceDraft(normalizedInvoiceId, {
+        evidenceImageDataUrl: "",
+        fileName: "",
+        sending: false,
+        fbKind: "success",
+        fbMessage: "Evidence sent to admin.",
+      });
+      await loadDashboard(accessCode, summary.event.id, normalizedInvoiceId);
+    } catch (requestError) {
+      updateInvoiceEvidenceDraft(normalizedInvoiceId, {
+        sending: false,
+        fbKind: "error",
+        fbMessage: resolveApiErrorMessage(requestError, "Could not send evidence."),
+      });
+    }
+  };
+
+  const resolveInvoiceEvidenceStatus = (invoice) => {
+    const amountRemaining = Number(invoice?.amountRemaining || 0);
+    if (allInvoicesPaidInFull) {
+      return { label: "PAYED IN FULL", className: "border-emerald-200 bg-emerald-50 text-emerald-700" };
+    }
+    if (amountRemaining > 0) {
+      return { label: "BALANCE REMAINING", className: "border-amber-200 bg-amber-50 text-amber-800" };
+    }
+    return { label: "APPROVED", className: "border-emerald-200 bg-emerald-50 text-emerald-700" };
   };
 
   const switchToCreateEventMode = () => {
@@ -1390,7 +1547,15 @@ export default function Dashboard() {
   };
 
   const saveTicketEditorDraft = async (draft) => {
-    if (!summary?.event?.id || !accessCode || savingTicketDraft) return;
+    if (savingTicketDraft) return;
+    if (!summary?.event?.id) {
+      setTicketFb("error", "Load an event first.");
+      return;
+    }
+    if (!accessCode) {
+      setTicketFb("error", "Access code is missing. Reload the dashboard with your code and try again.");
+      return;
+    }
     setSavingTicketDraft(true);
     try {
       const payload = {
@@ -1422,7 +1587,7 @@ export default function Dashboard() {
       });
       setTicketFb("success", "Ticket editor changes saved.");
     } catch (requestError) {
-      const errMsg = requestError.response?.data?.error || "Could not save ticket changes.";
+      const errMsg = resolveApiErrorMessage(requestError, "Could not save ticket changes.");
       if (errMsg.toLowerCase().includes("cannot be less than")) {
         setCapacityErrorModal({ open: true, message: errMsg });
       } else {
@@ -2306,19 +2471,6 @@ export default function Dashboard() {
                 <p className="mt-1 text-xs text-emerald-700">New requests are approved instantly and buyers are notified by email.</p>
               ) : null}
               <FeedbackBanner className="mt-2" kind={requestFb.kind} message={requestFb.message} />
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <span className="text-xs font-semibold text-slate-600">Filter by risk:</span>
-                {REQUEST_RISK_FILTERS.map((filterValue) => (
-                  <button
-                    key={filterValue}
-                    type="button"
-                    onClick={() => setRequestRiskFilter(filterValue)}
-                    className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${requestRiskFilter === filterValue ? "border-slate-700 bg-slate-700 text-white" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-100"}`}
-                  >
-                    {filterValue}
-                  </button>
-                ))}
-              </div>
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <span className="text-xs font-semibold text-slate-600">Status:</span>
                 {REQUEST_STATUS_SCOPES.map((scope) => (
@@ -2333,7 +2485,7 @@ export default function Dashboard() {
                 ))}
                 <span className="text-xs text-slate-500">{filteredTicketRequests.length} shown / {ticketRequests.length} total</span>
               </div>
-              <p className="mt-1 text-xs text-slate-500">Sorted by risk (HIGH to LOW), then newest first.</p>
+              <p className="mt-1 text-xs text-slate-500">Sorted by newest first.</p>
               <div className="mt-3 space-y-3 lg:hidden">
                 {filteredTicketRequests.map((item) => {
                   const selections = Array.isArray(item.ticketSelections) ? item.ticketSelections : [];
@@ -2543,6 +2695,127 @@ export default function Dashboard() {
             </section>
           ) : null}
 
+          {activeMenu === "payment" ? (
+            <section id="organizer-payment-invoices" className="mt-4 rounded border p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold">Payment Invoices</p>
+                  <p className="text-xs text-slate-500">Invoice rows are shown in timeline order for this event.</p>
+                </div>
+              </div>
+              {organizerInvoices.length ? (
+                <div className="mt-3 space-y-3">
+                  {organizerInvoices.map((invoice, index) => {
+                    const invoiceId = String(invoice.id || "").trim();
+                    const draft = invoiceEvidenceDrafts[invoiceId] || {};
+                    const amountRemaining = Number(invoice?.amountRemaining || 0);
+                    const dueClass = resolveInvoiceCountdownClass(invoice);
+                    const dueLabel = resolveInvoiceCountdownLabel(invoice);
+                    const invoiceState = resolveInvoiceEvidenceStatus(invoice);
+                    const focusedInvoiceId = String(params.get("invoiceId") || "").trim();
+                    const isFocused = focusedInvoiceId && focusedInvoiceId === invoiceId;
+                    const invoiceNumber = `${index + 1}`.padStart(3, "0");
+                    const canUploadEvidence = Boolean(invoice?.canUploadEvidence);
+                    const latestEvidenceImage = String(invoice?.lastEvidenceImageDataUrl || "").trim();
+                    const draftEvidenceImage = String(draft?.evidenceImageDataUrl || "").trim();
+                    const previewImage = draftEvidenceImage || latestEvidenceImage;
+                    return (
+                      <article key={invoiceId} className={`rounded border bg-white p-3 text-sm ${isFocused ? "border-amber-300 bg-amber-50/40" : ""}`}>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="font-mono text-xs">Invoice #{invoiceNumber}</p>
+                          <span className={`inline-block rounded border px-2 py-0.5 text-[11px] font-semibold ${dueClass}`}>{dueLabel}</span>
+                        </div>
+
+                        <div className="mt-2 space-y-2 text-xs">
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                            <p><span className="font-semibold">Invoice date:</span> {formatDate(invoice.generatedAt)}</p>
+                            <p><span className="font-semibold">Event name:</span> {summary?.event?.eventName || "-"}</p>
+                            <p><span className="font-semibold">Due date &amp; time:</span> {formatDate(invoice.dueAt)}</p>
+                          </div>
+                          <p><span className="font-semibold">Payment instruction:</span> {invoice.paymentInstruction || "-"}</p>
+                        </div>
+
+                        <div className="mt-3">
+                          <table className="w-full table-fixed border text-xs">
+                            <thead className="bg-slate-50">
+                              <tr>
+                                <th className="p-2 text-left">Sold Tickets</th>
+                                <th className="p-2 text-left">Unit<br />Price</th>
+                                <th className="p-2 text-left">Total<br />Price</th>
+                                <th className="p-2 text-left">Remaining</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr>
+                                <td className="p-2">{resolveSoldTicketsLabel(invoice)}</td>
+                                <td className="p-2">{formatMoney(invoice.unitPrice, invoice.currency)}</td>
+                                <td className="p-2">{formatMoney(invoice.totalAmount, invoice.currency)}</td>
+                                <td className="p-2">{formatMoney(amountRemaining, invoice.currency)}</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+
+                        <div className="mt-3 rounded border p-2">
+                          <p className="text-xs font-semibold">Evidence</p>
+                          <p className="mt-1 text-[11px] text-slate-600">
+                            Only one image is allowed per attachment request. Make sure it is final before you hit Send. After one upload, attachment is locked until admin allows another.
+                          </p>
+                          <div className="mt-2 space-y-2">
+                            <input
+                              type="file"
+                              accept="image/png,image/jpeg,image/webp"
+                              onChange={(event) => { void handleInvoiceEvidenceFileChange(invoiceId, event); }}
+                              className="w-full rounded border p-2 text-xs"
+                              disabled={!canUploadEvidence}
+                            />
+                            {draft.fileName ? <p className="text-xs text-slate-600">{draft.fileName}</p> : null}
+                            {previewImage ? (
+                              <button type="button" className="inline-block" onClick={() => openEvidenceImage(previewImage)}>
+                                <img src={previewImage} alt="Evidence preview" className="h-16 w-16 rounded border object-cover" />
+                              </button>
+                            ) : (
+                              <p className="text-xs text-slate-500">No evidence uploaded yet.</p>
+                            )}
+                            <div className="flex flex-wrap items-center gap-2">
+                              <AppButton
+                                type="button"
+                                className="px-2 py-1 text-xs"
+                                onClick={() => submitInvoiceEvidenceForRow(invoiceId)}
+                                loading={Boolean(draft.sending)}
+                                loadingText="Sending..."
+                                disabled={!canUploadEvidence}
+                              >
+                                Send
+                              </AppButton>
+                              <span className={`inline-block rounded border px-2 py-0.5 text-[11px] font-semibold ${invoiceState.className}`}>
+                                {invoiceState.label}
+                              </span>
+                              {!canUploadEvidence ? (
+                                <span className="inline-block rounded border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+                                  Attachment locked
+                                </span>
+                              ) : null}
+                            </div>
+                            {draft.fbMessage ? <p className={`text-xs ${draft.fbKind === "error" ? "text-red-600" : "text-emerald-700"}`}>{draft.fbMessage}</p> : null}
+                          </div>
+                        </div>
+
+                        {invoice.invoiceType === "PRE_EVENT_24H" && amountRemaining > 0 ? (
+                          <p className="mt-3 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-900">
+                            Remaining payment notice: {formatMoney(amountRemaining, invoice.currency)} is still due from this pre-event invoice.
+                          </p>
+                        ) : null}
+                      </article>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="mt-3 text-sm text-slate-500">No invoices generated for this event yet.</p>
+              )}
+            </section>
+          ) : null}
+
           {activeMenu === "settings" ? (
             <>
             <section className="mt-4 rounded border p-4">
@@ -2627,7 +2900,7 @@ export default function Dashboard() {
                       <input
                         className="w-full rounded border p-2 text-sm"
                         type="email"
-                        placeholder="you@example.com"
+                        placeholder="Email address"
                         value={notifEmailInput}
                         onChange={(e) => { setNotifEmailInput(e.target.value); setNotifOtpSent(false); }}
                       />
@@ -2690,6 +2963,7 @@ export default function Dashboard() {
               </>
               ) : null}
             </section>
+
             </>
           ) : null}
 
@@ -3075,7 +3349,7 @@ export default function Dashboard() {
                       className="w-full rounded border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
                       value={gateEmailInput}
                       onChange={(e) => setGateEmailInput(e.target.value)}
-                      placeholder="your@email.com"
+                      placeholder="Email address"
                       disabled={gateOtpSent}
                     />
                   </div>

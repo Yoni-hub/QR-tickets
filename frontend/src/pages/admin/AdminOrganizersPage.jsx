@@ -1,11 +1,10 @@
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { adminApi } from "../../lib/adminApi";
 import SearchInput from "../../components/admin/SearchInput";
 import LoadingState from "../../components/admin/LoadingState";
 import ErrorState from "../../components/admin/ErrorState";
 import EmptyState from "../../components/admin/EmptyState";
-import StatusBadge from "../../components/admin/StatusBadge";
 import PaginationControls from "../../components/admin/PaginationControls";
 
 function formatDate(value) {
@@ -14,13 +13,13 @@ function formatDate(value) {
 }
 
 export default function AdminOrganizersPage() {
-  const PAGE_SIZE = 5;
+  const PAGE_SIZE = 20;
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [items, setItems] = useState([]);
   const [page, setPage] = useState(1);
-  const [expandedOrganizerCode, setExpandedOrganizerCode] = useState("");
+  const [selectedEventByOrganizer, setSelectedEventByOrganizer] = useState({});
 
   const load = async () => {
     setLoading(true);
@@ -29,9 +28,14 @@ export default function AdminOrganizersPage() {
       const response = await adminApi.get("/organizers", {
         params: { search: search.trim() || undefined },
       });
-      setItems(Array.isArray(response.data?.items) ? response.data.items : []);
+      const nextItems = Array.isArray(response.data?.items) ? response.data.items : [];
+      const nextSelections = {};
+      for (const organizer of nextItems) {
+        nextSelections[organizer.organizerAccessCode] = organizer?.events?.[0]?.eventId || "";
+      }
+      setItems(nextItems);
+      setSelectedEventByOrganizer(nextSelections);
       setPage(1);
-      setExpandedOrganizerCode("");
     } catch (requestError) {
       setError(requestError.response?.data?.error || "Could not load organizers.");
     } finally {
@@ -43,7 +47,23 @@ export default function AdminOrganizersPage() {
     load();
   }, []);
 
-  const visibleItems = items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const organizerRows = useMemo(() => {
+    return items.map((organizer) => {
+      const events = Array.isArray(organizer.events) ? organizer.events : [];
+      const selectedEventId = selectedEventByOrganizer[organizer.organizerAccessCode] || events[0]?.eventId || "";
+      const selectedEvent = events.find((event) => event.eventId === selectedEventId) || events[0] || null;
+      return {
+        organizerAccessCode: organizer.organizerAccessCode || "-",
+        organizerName: organizer.organizerName || "-",
+        organizerEmail: organizer.organizerEmail || "-",
+        events,
+        selectedEventId,
+        selectedEvent,
+      };
+    });
+  }, [items, selectedEventByOrganizer]);
+
+  const pagedRows = organizerRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <section className="space-y-3">
@@ -51,219 +71,147 @@ export default function AdminOrganizersPage() {
         <SearchInput
           value={search}
           onChange={setSearch}
-          placeholder="Search organizerAccessCode, eventName, or accessCode"
+          placeholder="Search organizer access code, organizer name, event name"
         />
-        <button className="mt-2 rounded border px-3 py-1 text-sm" onClick={load}>Search</button>
+        <button className="mt-2 rounded border px-3 py-1 text-sm" onClick={load}>
+          Search
+        </button>
       </div>
 
       {loading ? <LoadingState label="Loading organizers..." /> : null}
       {!loading && error ? <ErrorState message={error} /> : null}
-      {!loading && !error && !items.length ? <EmptyState label="No organizers found." /> : null}
+      {!loading && !error && !organizerRows.length ? <EmptyState label="No organizer rows found." /> : null}
 
-      {!loading && !error && items.length ? (
-        <div className="space-y-2">
-          <div className="rounded border bg-white md:hidden">
-            <ul className="divide-y">
-              {visibleItems.map((organizer) => {
-                const isExpanded = expandedOrganizerCode === organizer.organizerAccessCode;
-                return (
-                  <li key={organizer.organizerAccessCode} className="space-y-3 p-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="text-xs uppercase tracking-wide text-slate-500">Organizer Access Code</p>
-                        <p className="font-mono text-sm font-semibold">{organizer.organizerAccessCode}</p>
-                        {organizer.organizerName ? <p className="mt-0.5 text-sm font-medium">{organizer.organizerName}</p> : null}
-                        {organizer.organizerEmail ? <p className="text-xs text-slate-600">{organizer.organizerEmail}</p> : null}
-                        <p className="mt-1 text-xs text-slate-500">Latest event: {formatDate(organizer.latestEventCreatedAt)}</p>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div className="rounded border bg-slate-50 p-2">
-                        <p className="text-slate-500">Events</p>
-                        <p className="text-sm font-semibold">{organizer.eventsTotal}</p>
-                      </div>
-                      <div className="rounded border bg-slate-50 p-2">
-                        <p className="text-slate-500">Tickets</p>
-                        <p className="text-sm font-semibold">{organizer.ticketsTotal}</p>
-                      </div>
-                      <div className="rounded border bg-slate-50 p-2">
-                        <p className="text-slate-500">Used</p>
-                        <p className="text-sm font-semibold">{organizer.ticketsUsed}</p>
-                      </div>
-                      <div className="rounded border bg-slate-50 p-2">
-                        <p className="text-slate-500">Invalidated</p>
-                        <p className="text-sm font-semibold">{organizer.ticketsInvalidated}</p>
-                      </div>
-                      <div className="rounded border bg-slate-50 p-2">
-                        <p className="text-slate-500">Requests</p>
-                        <p className="text-sm font-semibold">{organizer.ticketRequestsTotal}</p>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        className="rounded border px-2 py-1 text-xs"
-                        onClick={() => navigator.clipboard.writeText(organizer.organizerAccessCode)}
-                      >
-                        Copy Code
-                      </button>
-                      <Link className="rounded border px-2 py-1 text-xs" to={`/admin/events?search=${encodeURIComponent(organizer.organizerAccessCode)}`}>Events</Link>
-                      <Link className="rounded border px-2 py-1 text-xs" to={`/admin/tickets?search=${encodeURIComponent(organizer.organizerAccessCode)}`}>Tickets</Link>
-                      <button
-                        className="rounded border px-2 py-1 text-xs"
-                        onClick={() => setExpandedOrganizerCode(isExpanded ? "" : organizer.organizerAccessCode)}
-                      >
-                        {isExpanded ? "Hide Events" : "View Events"}
-                      </button>
-                    </div>
-
-                    {isExpanded ? (
-                      Array.isArray(organizer.events) && organizer.events.length ? (
-                        <div className="space-y-2 rounded border bg-slate-50 p-2">
-                          {organizer.events.map((event) => (
-                            <article key={event.eventId} className="rounded border bg-white p-2 text-xs">
-                              <p className="font-semibold">{event.eventName}</p>
-                              <p className="text-slate-500">{event.location || "-"}</p>
-                              <div className="mt-2 space-y-1">
-                                <p><span className="font-medium">Access:</span> <span className="font-mono">{event.accessCode}</span></p>
-                                <p><span className="font-medium">Date:</span> {formatDate(event.eventDate)}</p>
-                                <div><StatusBadge value={event.status} /></div>
-                                <p><span className="font-medium">Tickets:</span> {event.ticketsTotal} | <span className="font-medium">Used:</span> {event.ticketsUsed}</p>
-                                <p><span className="font-medium">Invalidated:</span> {event.ticketsInvalidated} | <span className="font-medium">Requests:</span> {event.ticketRequestsTotal}</p>
-                              </div>
-                              <div className="mt-2 flex flex-wrap gap-2">
-                                <Link className="rounded border px-2 py-1" to={`/admin/events/${event.eventId}`}>Event</Link>
-                                <Link className="rounded border px-2 py-1" to={`/admin/tickets?eventId=${encodeURIComponent(event.eventId)}`}>Tickets</Link>
-                              </div>
-                            </article>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-xs text-slate-500">No events mapped to this organizer access code.</p>
-                      )
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
+      {!loading && !error && organizerRows.length ? (
+        <>
+          <div className="space-y-2 md:hidden">
+            {pagedRows.map((row, index) => (
+              <article key={`${row.organizerAccessCode}-${index}`} className="rounded border bg-white p-3 text-sm">
+                <p className="text-xs text-slate-500">Organizer access code</p>
+                <p className="font-mono font-semibold">{row.organizerAccessCode}</p>
+                <p className="mt-1 text-xs text-slate-500">Name</p>
+                <p>{row.organizerName}</p>
+                <p className="mt-1 text-xs text-slate-500">Email</p>
+                <p className="break-all">{row.organizerEmail}</p>
+                <p className="mt-1 text-xs text-slate-500">Event name</p>
+                <select
+                  className="w-full rounded border p-2 text-sm"
+                  value={row.selectedEventId}
+                  onChange={(event) =>
+                    setSelectedEventByOrganizer((prev) => ({
+                      ...prev,
+                      [row.organizerAccessCode]: event.target.value,
+                    }))
+                  }
+                >
+                  {row.events.map((eventOption) => (
+                    <option key={eventOption.eventId} value={eventOption.eventId}>
+                      {eventOption.eventName || "-"}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-slate-500">Start date &amp; time</p>
+                <p>{formatDate(row.selectedEvent?.eventDate)}</p>
+                <p className="mt-1 text-xs text-slate-500">End date &amp; time</p>
+                <p>{formatDate(row.selectedEvent?.eventEndDate)}</p>
+                <p className="mt-1 text-xs text-slate-500">Sold tickets</p>
+                <p>{Number(row.selectedEvent?.soldTickets || 0)}</p>
+                {row.selectedEvent?.eventId ? (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Link
+                      className="rounded border px-2 py-1 text-xs"
+                      to={`/admin/events?organizerAccessCode=${encodeURIComponent(row.organizerAccessCode)}&eventId=${encodeURIComponent(row.selectedEvent.eventId)}`}
+                    >
+                      View Event
+                    </Link>
+                    <Link
+                      className="rounded border px-2 py-1 text-xs"
+                      to={`/admin/tickets?organizerAccessCode=${encodeURIComponent(row.organizerAccessCode)}&eventId=${encodeURIComponent(row.selectedEvent.eventId)}`}
+                    >
+                      Tickets
+                    </Link>
+                  </div>
+                ) : null}
+              </article>
+            ))}
           </div>
 
           <div className="hidden overflow-x-auto rounded border bg-white md:block">
             <table className="min-w-full text-left text-sm">
               <thead className="bg-slate-100 text-xs uppercase tracking-wide text-slate-600">
                 <tr>
-                  <th className="px-3 py-2">Organizer Access Code</th>
+                  <th className="px-3 py-2">Organizer access code</th>
                   <th className="px-3 py-2">Name</th>
                   <th className="px-3 py-2">Email</th>
-                  <th className="px-3 py-2">Events</th>
-                  <th className="px-3 py-2">Tickets</th>
-                  <th className="px-3 py-2">Used</th>
-                  <th className="px-3 py-2">Invalidated</th>
-                  <th className="px-3 py-2">Requests</th>
-                  <th className="px-3 py-2">Latest Event</th>
+                  <th className="px-3 py-2">Event name</th>
+                  <th className="px-3 py-2">Start date &amp; time</th>
+                  <th className="px-3 py-2">End date &amp; time</th>
+                  <th className="px-3 py-2">Sold tickets</th>
                   <th className="px-3 py-2">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {visibleItems.map((organizer) => {
-                  const isExpanded = expandedOrganizerCode === organizer.organizerAccessCode;
-                  return (
-                    <Fragment key={organizer.organizerAccessCode}>
-                      <tr className="border-t align-top">
-                        <td className="px-3 py-2 font-mono">{organizer.organizerAccessCode}</td>
-                        <td className="px-3 py-2">{organizer.organizerName || <span className="text-slate-400">—</span>}</td>
-                        <td className="px-3 py-2">{organizer.organizerEmail || <span className="text-slate-400">—</span>}</td>
-                        <td className="px-3 py-2">{organizer.eventsTotal}</td>
-                        <td className="px-3 py-2">{organizer.ticketsTotal}</td>
-                        <td className="px-3 py-2">{organizer.ticketsUsed}</td>
-                        <td className="px-3 py-2">{organizer.ticketsInvalidated}</td>
-                        <td className="px-3 py-2">{organizer.ticketRequestsTotal}</td>
-                        <td className="px-3 py-2">{formatDate(organizer.latestEventCreatedAt)}</td>
-                        <td className="px-3 py-2">
-                          <div className="flex flex-wrap gap-1">
-                            <button
-                              className="rounded border px-2 py-1 text-xs hover:bg-slate-50"
-                              onClick={() => navigator.clipboard.writeText(organizer.organizerAccessCode)}
-                            >
-                              Copy Code
-                            </button>
-                            <Link className="rounded border px-2 py-1 text-xs hover:bg-slate-50" to={`/admin/events?search=${encodeURIComponent(organizer.organizerAccessCode)}`}>Events</Link>
-                            <Link className="rounded border px-2 py-1 text-xs hover:bg-slate-50" to={`/admin/tickets?search=${encodeURIComponent(organizer.organizerAccessCode)}`}>Tickets</Link>
-                            <button
-                              className="rounded border px-2 py-1 text-xs hover:bg-slate-50"
-                              onClick={() => setExpandedOrganizerCode(isExpanded ? "" : organizer.organizerAccessCode)}
-                            >
-                              {isExpanded ? "Hide" : "Events Detail"}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                      {isExpanded ? (
-                        <tr className="border-t bg-slate-50">
-                          <td className="px-3 py-3" colSpan={10}>
-                            {Array.isArray(organizer.events) && organizer.events.length ? (
-                              <div className="overflow-x-auto rounded border bg-white">
-                                <table className="min-w-full text-left text-xs">
-                                  <thead className="bg-slate-100 uppercase tracking-wide text-slate-600">
-                                    <tr>
-                                      <th className="px-2 py-2">Event</th>
-                                      <th className="px-2 py-2">Access Code</th>
-                                      <th className="px-2 py-2">Date</th>
-                                      <th className="px-2 py-2">Status</th>
-                                      <th className="px-2 py-2">Tickets</th>
-                                      <th className="px-2 py-2">Used</th>
-                                      <th className="px-2 py-2">Invalidated</th>
-                                      <th className="px-2 py-2">Requests</th>
-                                      <th className="px-2 py-2">Links</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {organizer.events.map((event) => (
-                                      <tr key={event.eventId} className="border-t">
-                                        <td className="px-2 py-2">
-                                          <p className="font-semibold">{event.eventName}</p>
-                                          <p className="text-slate-500">{event.location || "-"}</p>
-                                        </td>
-                                        <td className="px-2 py-2 font-mono">{event.accessCode}</td>
-                                        <td className="px-2 py-2">{formatDate(event.eventDate)}</td>
-                                        <td className="px-2 py-2"><StatusBadge value={event.status} /></td>
-                                        <td className="px-2 py-2">{event.ticketsTotal}</td>
-                                        <td className="px-2 py-2">{event.ticketsUsed}</td>
-                                        <td className="px-2 py-2">{event.ticketsInvalidated}</td>
-                                        <td className="px-2 py-2">{event.ticketRequestsTotal}</td>
-                                        <td className="px-2 py-2">
-                                          <div className="flex flex-wrap gap-2">
-                                            <Link className="rounded border px-2 py-1" to={`/admin/events/${event.eventId}`}>Event</Link>
-                                            <Link className="rounded border px-2 py-1" to={`/admin/tickets?eventId=${encodeURIComponent(event.eventId)}`}>Tickets</Link>
-                                          </div>
-                                        </td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
-                            ) : (
-                              <p className="text-xs text-slate-500">No events mapped to this organizer access code.</p>
-                            )}
-                          </td>
-                        </tr>
-                      ) : null}
-                    </Fragment>
-                  );
-                })}
+                {pagedRows.map((row, index) => (
+                  <tr key={`${row.organizerAccessCode}-${index}`} className="border-t align-top">
+                    <td className="px-3 py-2 font-mono text-xs">{row.organizerAccessCode}</td>
+                    <td className="px-3 py-2">{row.organizerName}</td>
+                    <td className="px-3 py-2 break-all">{row.organizerEmail}</td>
+                    <td className="px-3 py-2 min-w-[220px]">
+                      <select
+                        className="w-full rounded border p-2 text-sm"
+                        value={row.selectedEventId}
+                        onChange={(event) =>
+                          setSelectedEventByOrganizer((prev) => ({
+                            ...prev,
+                            [row.organizerAccessCode]: event.target.value,
+                          }))
+                        }
+                      >
+                        {row.events.map((eventOption) => (
+                          <option key={eventOption.eventId} value={eventOption.eventId}>
+                            {eventOption.eventName || "-"}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap">{formatDate(row.selectedEvent?.eventDate)}</td>
+                    <td className="px-3 py-2 whitespace-nowrap">{formatDate(row.selectedEvent?.eventEndDate)}</td>
+                    <td className="px-3 py-2">{Number(row.selectedEvent?.soldTickets || 0)}</td>
+                    <td className="px-3 py-2">
+                      <div className="flex flex-wrap gap-1">
+                        {row.selectedEvent?.eventId ? (
+                          <Link
+                            className="rounded border px-2 py-1 text-xs"
+                            to={`/admin/events?organizerAccessCode=${encodeURIComponent(row.organizerAccessCode)}&eventId=${encodeURIComponent(row.selectedEvent.eventId)}`}
+                          >
+                            View Event
+                          </Link>
+                        ) : null}
+                        {row.selectedEvent?.eventId ? (
+                          <Link
+                            className="rounded border px-2 py-1 text-xs"
+                            to={`/admin/tickets?organizerAccessCode=${encodeURIComponent(row.organizerAccessCode)}&eventId=${encodeURIComponent(row.selectedEvent.eventId)}`}
+                          >
+                            Tickets
+                          </Link>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
+
           <PaginationControls
             page={page}
-            totalPages={Math.max(1, Math.ceil(items.length / PAGE_SIZE))}
-            totalItems={items.length}
+            totalPages={Math.max(1, Math.ceil(organizerRows.length / PAGE_SIZE))}
+            totalItems={organizerRows.length}
             pageSize={PAGE_SIZE}
             onPrev={() => setPage((prev) => Math.max(1, prev - 1))}
-            onNext={() => setPage((prev) => Math.min(Math.max(1, Math.ceil(items.length / PAGE_SIZE)), prev + 1))}
+            onNext={() => setPage((prev) => Math.min(Math.max(1, Math.ceil(organizerRows.length / PAGE_SIZE)), prev + 1))}
           />
-        </div>
+        </>
       ) : null}
     </section>
   );
