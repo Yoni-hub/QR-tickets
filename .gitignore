@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 !**/.env.example
+!**/.env.local.example
 *.log
 frontend/dist/
 backend/node_modules/
@@ -12,3 +13,5 @@ backend/storage/
 backend/env/prod.env
 backend/env/staging.env
 ops/qr-tickets/.env
+infra/docker-compose.local.yml
+infra/.env.local
