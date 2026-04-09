@@ -92,27 +92,15 @@ function resolveEventEndAt(event) {
 function buildInvoiceChatMessage({
   invoiceType,
   eventName,
-  eventDate,
-  currency,
-  approvedTicketCount,
-  unitPrice,
-  totalAmount,
   dueAt,
-  paymentInstruction,
   invoiceUrl,
 }) {
-  const eventLine = eventDate ? `Event starts: ${new Date(eventDate).toLocaleString()}` : null;
-  const message = invoiceType === FINAL_INVOICE_TYPE ? FINAL_INVOICE_MESSAGE : PRE_EVENT_WARNING_MESSAGE;
+  const dueLine = dueAt ? `Due by: ${new Date(dueAt).toLocaleString()}` : null;
+  const typeLine = invoiceType === FINAL_INVOICE_TYPE ? "Final invoice" : "Invoice";
   return [
-    `Invoice generated for ${eventName}.`,
-    `Approved tickets: ${approvedTicketCount}`,
-    `Rate: ${currency} ${roundMoney(unitPrice).toFixed(2)} per ticket`,
-    `Total amount: ${currency} ${roundMoney(totalAmount).toFixed(2)}`,
-    eventLine,
-    `Payment due by: ${new Date(dueAt).toLocaleString()}`,
-    message,
-    `Payment instructions: ${paymentInstruction}`,
-    invoiceUrl ? `Open invoice in dashboard: ${invoiceUrl}` : null,
+    `${typeLine} for "${eventName}" is ready.`,
+    dueLine,
+    invoiceUrl ? `Open your dashboard to review and submit payment: ${invoiceUrl}` : "Open your dashboard to review and submit payment.",
   ].filter(Boolean).join("\n");
 }
 
@@ -269,6 +257,7 @@ async function sendInvoiceChannels({
   let chatSent = false;
   let emailError = null;
   let chatError = null;
+  const invoiceUrl = buildOrganizerInvoiceDashboardUrl(event, invoiceId);
 
   if (!organizerEmail) {
     emailError = "Organizer email is missing; invoice email could not be sent.";
@@ -285,6 +274,7 @@ async function sendInvoiceChannels({
         totalAmount,
         paymentInstruction,
         noticeMessage: invoiceType === FINAL_INVOICE_TYPE ? FINAL_INVOICE_MESSAGE : PRE_EVENT_WARNING_MESSAGE,
+        invoiceUrl,
       });
       emailSent = true;
     } catch (error) {
@@ -293,17 +283,10 @@ async function sendInvoiceChannels({
   }
 
   try {
-    const invoiceUrl = buildOrganizerInvoiceDashboardUrl(event, invoiceId);
     const chatMessage = buildInvoiceChatMessage({
       invoiceType,
       eventName: event.eventName,
-      eventDate: event.eventDate,
-      currency,
-      approvedTicketCount,
-      unitPrice,
-      totalAmount,
       dueAt,
-      paymentInstruction,
       invoiceUrl,
     });
     await sendInvoiceChat({ event, message: chatMessage });

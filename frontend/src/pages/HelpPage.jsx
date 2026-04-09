@@ -394,7 +394,10 @@ export default function HelpPage() {
                 For general questions about how QR Tickets works, our FAQ section covers the most common topics including getting started, how events work, and what ticket buyers can expect.
               </p>
               <p className="mt-3 text-sm text-slate-600">
-                Direct support chat is only available for registered organizers and ticket buyers with an active token.
+                <Link to="/contact-support" className="font-semibold underline">
+                  Contact Support
+                </Link>{" "}
+                for direct chat with our team.
               </p>
               <button
                 type="button"

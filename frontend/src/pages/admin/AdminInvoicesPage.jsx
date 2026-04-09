@@ -511,10 +511,10 @@ export default function AdminInvoicesPage() {
                           <button
                             type="button"
                             onClick={() => sendInvoice(invoice.invoiceId)}
-                            disabled={actionLoading === `send:${invoice.invoiceId}`}
+                            disabled={!["FAILED", "PARTIAL_SEND_FAILED", "BLOCKED_MISSING_INSTRUCTION", "PENDING"].includes(invoice.status) || actionLoading === `send:${invoice.invoiceId}`}
                             className="rounded border px-2 py-1 text-xs disabled:opacity-60"
                           >
-                            {actionLoading === `send:${invoice.invoiceId}` ? "Sending..." : "Send"}
+                            {actionLoading === `send:${invoice.invoiceId}` ? "Sending..." : "Retry delivery"}
                           </button>
                           <button
                             type="button"
@@ -647,10 +647,10 @@ export default function AdminInvoicesPage() {
                     <button
                       type="button"
                       onClick={() => sendInvoice(invoice.invoiceId)}
-                      disabled={actionLoading === `send:${invoice.invoiceId}`}
+                      disabled={!["FAILED", "PARTIAL_SEND_FAILED", "BLOCKED_MISSING_INSTRUCTION", "PENDING"].includes(invoice.status) || actionLoading === `send:${invoice.invoiceId}`}
                       className="rounded border px-2 py-1 text-xs disabled:opacity-60"
                     >
-                      {actionLoading === `send:${invoice.invoiceId}` ? "Sending..." : "Send"}
+                      {actionLoading === `send:${invoice.invoiceId}` ? "Sending..." : "Retry delivery"}
                     </button>
                     <button
                       type="button"

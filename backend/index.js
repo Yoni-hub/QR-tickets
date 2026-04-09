@@ -121,7 +121,7 @@ app.get("/e/:slug", async (req, res) => {
       ? `Tickets for ${event.eventName}${event.eventAddress ? ` at ${event.eventAddress}` : ""}. Get yours now on Connsura.`
       : "Get your event tickets now on Connsura.";
     const url = `${base}/e/${slug}`;
-    const image = `${base}/new_OG.png`;
+    const image = `${base}/og_latest_logo.png`;
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.send(`<!DOCTYPE html>
 <html>

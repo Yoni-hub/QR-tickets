@@ -84,6 +84,49 @@ function resolveAttachmentHref(attachment, actorType) {
   return `${baseUrl}${separator}adminKey=${encodeURIComponent(adminKey)}`;
 }
 
+function renderMessageWithLinkButtons(message, mine) {
+  const text = String(message || "");
+  if (!text.trim()) return null;
+
+  const urlRegex = /(https?:\/\/\S+)/g;
+  const lines = text.split("\n");
+  const linkClass = `mt-2 inline-flex items-center justify-center rounded border px-3 py-2 text-xs font-semibold ${
+    mine
+      ? "border-slate-700 text-slate-200 hover:bg-slate-800"
+      : "border-slate-200 text-blue-700 hover:bg-slate-50"
+  }`;
+
+  return (
+    <div className="space-y-1">
+      {lines.map((line, idx) => {
+        const parts = String(line || "").split(urlRegex).filter((p) => p !== "");
+        const urls = parts.filter((p) => p.startsWith("http://") || p.startsWith("https://"));
+        if (!urls.length) {
+          return (
+            <p key={idx} className="whitespace-pre-wrap break-words">
+              {line}
+            </p>
+          );
+        }
+
+        const plainText = parts.filter((p) => !(p.startsWith("http://") || p.startsWith("https://"))).join("").trim();
+        const labelBase = plainText.toLowerCase().includes("dashboard") ? "Open dashboard" : "Open link";
+
+        return (
+          <div key={idx} className="whitespace-pre-wrap break-words">
+            {plainText ? <p>{plainText}</p> : null}
+            {urls.map((href) => (
+              <a key={href} className={linkClass} href={href} target="_blank" rel="noreferrer">
+                {labelBase}
+              </a>
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function ChatInboxLayout({
   title = "Chat",
   actorType = "",
@@ -456,7 +499,7 @@ export default function ChatInboxLayout({
                           style={{ maxWidth: "min(75%, 500px)" }}
                         >
                           {item.message ? (
-                            <p className="whitespace-pre-wrap break-words">{item.message}</p>
+                            renderMessageWithLinkButtons(item.message, mine)
                           ) : null}
                           {item.attachment?.kind === "IMAGE" ? (
                             item.attachment.legacyDataUrl ? (

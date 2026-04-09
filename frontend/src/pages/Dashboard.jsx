@@ -387,6 +387,7 @@ export default function Dashboard() {
   const [tickets, setTickets] = useState([]);
   const [ticketRequests, setTicketRequests] = useState([]);
   const [requestStatusScope, setRequestStatusScope] = useState("ALL");
+  const [requestSearch, setRequestSearch] = useState("");
   const [autoApprove, setAutoApprove] = useState(false);
   const [togglingAutoApprove, setTogglingAutoApprove] = useState(false);
   const [promoters, setPromoters] = useState([]);
@@ -516,6 +517,10 @@ export default function Dashboard() {
     const items = Array.isArray(summary?.organizerInvoices) ? summary.organizerInvoices : [];
     return [...items].sort((left, right) => toTimestamp(left?.generatedAt) - toTimestamp(right?.generatedAt));
   }, [summary?.organizerInvoices]);
+  const organizerHasAnyTicketSales = useMemo(
+    () => organizerInvoices.some((invoice) => Number(invoice?.approvedTicketCount || 0) > 0),
+    [organizerInvoices],
+  );
   const allInvoicesPaidInFull = useMemo(
     () => organizerInvoices.length > 0 && organizerInvoices.every((invoice) => Number(invoice?.amountRemaining || 0) <= 0),
     [organizerInvoices],
@@ -527,10 +532,16 @@ export default function Dashboard() {
   const filteredTicketRequests = useMemo(() => {
     const filtered = ticketRequests.filter((item) => {
       if (requestStatusScope === "PENDING_ONLY" && item?.status !== "PENDING_VERIFICATION") return false;
+      if (requestSearch.trim()) {
+        const q = requestSearch.trim().toLowerCase();
+        const nameValue = String(item?.name || "").toLowerCase();
+        const emailValue = String(item?.email || "").toLowerCase();
+        if (!nameValue.includes(q) && !emailValue.includes(q)) return false;
+      }
       return true;
     });
     return sortRequestsByRecency(filtered);
-  }, [ticketRequests, requestStatusScope]);
+  }, [ticketRequests, requestStatusScope, requestSearch]);
   const ticketTypeOptions = useMemo(
     () =>
       Array.from(
@@ -582,7 +593,18 @@ export default function Dashboard() {
     setActiveMenu("events");
     setShowPublicPreview(false);
     setEventEditMode(EVENT_EDIT_MODES.CREATE);
-    setEventDraft({ organizerName: "", eventName: "", eventDate: "", eventEndDate: "", eventAddress: "", paymentInstructions: "" });
+    setEventDraft({
+      organizerName: "",
+      eventName: "",
+      eventDate: "",
+      eventEndDate: "",
+      eventAddress: "",
+      paymentInstructions: "",
+      salesCutoffAt: "",
+      salesWindowStart: "",
+      salesWindowEnd: "",
+      maxTicketsPerEmail: "",
+    });
   }, [shouldOpenHomeMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -1477,6 +1499,9 @@ export default function Dashboard() {
 
   const resolveInvoiceEvidenceStatus = (invoice) => {
     const amountRemaining = Number(invoice?.amountRemaining || 0);
+    if (!organizerHasAnyTicketSales) {
+      return { label: "NO SALES YET", className: "border-slate-200 bg-slate-100 text-slate-700" };
+    }
     if (allInvoicesPaidInFull) {
       return { label: "PAYED IN FULL", className: "border-emerald-200 bg-emerald-50 text-emerald-700" };
     }
@@ -1670,6 +1695,46 @@ export default function Dashboard() {
   const handleBackToHome = () => {
     navigate("/");
   };
+
+  const handleLogout = useCallback(() => {
+    const normalized = String(accessCode || "").trim();
+    try {
+      window.localStorage.removeItem(LOCAL_SAVED_CODE_KEY);
+      if (normalized) {
+        window.localStorage.removeItem(getSelectedEventStorageKey(normalized));
+      }
+    } catch {
+      // ignore storage failures
+    }
+
+    // Clear URL state (menu/code/event selectors) so the next load is clean.
+    setParams(new URLSearchParams(), { replace: true });
+
+    // Reset in-memory dashboard state.
+    setShowCodePanel(false);
+    setCode("");
+    setLoadFb("", "");
+    setSummary(null);
+    setEvents([]);
+    setSelectedEventId("");
+    setTickets([]);
+    setTicketRequests([]);
+    setPromoters([]);
+    setLeaderboard([]);
+    setNotifLoaded(false);
+    setShowPublicPreview(false);
+    setTicketPage(1);
+    setTicketTypeFilter("ALL");
+    setBuyerSearch("");
+    setTicketStatusFilter(TICKET_STATUS_FILTERS.TOTAL);
+    setRequestStatusScope("ALL");
+    setAutoApprove(false);
+    setChatContext(null);
+    setChatMessages([]);
+    setChatInput("");
+    setChatUnreadTotal(0);
+    setEvidencePreview("");
+  }, [accessCode, setParams, setLoadFb]);
 
   return (
     <>
@@ -2003,6 +2068,17 @@ export default function Dashboard() {
                   className="flex-shrink-0 rounded border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                 >
                   {loading ? "…" : "Load"}
+                </button>
+              </div>
+
+              <div className="mt-4 flex flex-col gap-2 border-t border-slate-200 pt-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs text-slate-500">Log out clears your access code on this device.</p>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="rounded border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50"
+                >
+                  Log out
                 </button>
               </div>
             </div>
@@ -2471,18 +2547,28 @@ export default function Dashboard() {
                 <p className="mt-1 text-xs text-emerald-700">New requests are approved instantly and buyers are notified by email.</p>
               ) : null}
               <FeedbackBanner className="mt-2" kind={requestFb.kind} message={requestFb.message} />
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <span className="text-xs font-semibold text-slate-600">Status:</span>
-                {REQUEST_STATUS_SCOPES.map((scope) => (
-                  <button
-                    key={scope.value}
-                    type="button"
-                    onClick={() => setRequestStatusScope(scope.value)}
-                    className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${requestStatusScope === scope.value ? "border-slate-700 bg-slate-700 text-white" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-100"}`}
-                  >
-                    {scope.label}
-                  </button>
-                ))}
+              <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <label className="text-xs font-semibold text-slate-600">
+                    Status:
+                    <select
+                      className="mt-1 w-full rounded border border-slate-200 bg-white px-2 py-1 text-sm font-medium text-slate-700 sm:ml-2 sm:mt-0 sm:w-auto"
+                      value={requestStatusScope}
+                      onChange={(e) => setRequestStatusScope(e.target.value)}
+                    >
+                      {REQUEST_STATUS_SCOPES.map((scope) => (
+                        <option key={scope.value} value={scope.value}>{scope.label}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <input
+                    className="w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300 sm:w-64"
+                    value={requestSearch}
+                    onChange={(e) => setRequestSearch(e.target.value)}
+                    placeholder="Search name or email"
+                  />
+                </div>
                 <span className="text-xs text-slate-500">{filteredTicketRequests.length} shown / {ticketRequests.length} total</span>
               </div>
               <p className="mt-1 text-xs text-slate-500">Sorted by newest first.</p>
@@ -2721,45 +2807,105 @@ export default function Dashboard() {
                     const previewImage = draftEvidenceImage || latestEvidenceImage;
                     return (
                       <article key={invoiceId} className={`rounded border bg-white p-3 text-sm ${isFocused ? "border-amber-300 bg-amber-50/40" : ""}`}>
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <p className="font-mono text-xs">Invoice #{invoiceNumber}</p>
-                          <span className={`inline-block rounded border px-2 py-0.5 text-[11px] font-semibold ${dueClass}`}>{dueLabel}</span>
-                        </div>
-
-                        <div className="mt-2 space-y-2 text-xs">
-                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                            <p><span className="font-semibold">Invoice date:</span> {formatDate(invoice.generatedAt)}</p>
-                            <p><span className="font-semibold">Event name:</span> {summary?.event?.eventName || "-"}</p>
-                            <p><span className="font-semibold">Due date &amp; time:</span> {formatDate(invoice.dueAt)}</p>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-2xl font-black tracking-tight text-slate-900">INVOICE</p>
                           </div>
-                          <p><span className="font-semibold">Payment instruction:</span> {invoice.paymentInstruction || "-"}</p>
+                          <span className={`mt-1 inline-block flex-shrink-0 rounded border px-2 py-0.5 text-[11px] font-semibold ${dueClass}`}>{dueLabel}</span>
                         </div>
 
-                        <div className="mt-3">
-                          <table className="w-full table-fixed border text-xs">
-                            <thead className="bg-slate-50">
-                              <tr>
-                                <th className="p-2 text-left">Sold Tickets</th>
-                                <th className="p-2 text-left">Unit<br />Price</th>
-                                <th className="p-2 text-left">Total<br />Price</th>
-                                <th className="p-2 text-left">Remaining</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              <tr>
-                                <td className="p-2">{resolveSoldTicketsLabel(invoice)}</td>
-                                <td className="p-2">{formatMoney(invoice.unitPrice, invoice.currency)}</td>
-                                <td className="p-2">{formatMoney(invoice.totalAmount, invoice.currency)}</td>
-                                <td className="p-2">{formatMoney(amountRemaining, invoice.currency)}</td>
-                              </tr>
-                            </tbody>
-                          </table>
+                        <div className="mt-3 flex items-center gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-base font-bold text-slate-900">Connsura QR Tickets</p>
+                            <a href="mailto:billing@connsura.com" className="text-sm font-medium text-slate-700 underline hover:text-slate-900">
+                              billing@connsura.com
+                            </a>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 border-t pt-4">
+                          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                            <div>
+                              <p className="text-sm font-semibold text-slate-900">Bill To</p>
+                              <div className="mt-2 divide-y rounded border text-sm">
+                                <div className="px-3 py-2">
+                                  <p className="font-semibold text-slate-900">{summary?.event?.organizerName || "-"}</p>
+                                </div>
+                                <div className="px-3 py-2">
+                                  {summary?.event?.organizerEmail ? (
+                                    <a href={`mailto:${summary.event.organizerEmail}`} className="font-medium text-slate-900 underline">
+                                      {summary.event.organizerEmail}
+                                    </a>
+                                  ) : (
+                                    <p className="text-slate-500">-</p>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div>
+                              <p className="text-sm font-semibold text-slate-900">Invoice Details</p>
+                              <div className="mt-2 divide-y rounded border text-sm">
+                                <div className="flex items-center justify-between gap-4 px-3 py-2">
+                                  <p className="text-slate-600">Invoice #</p>
+                                  <p className="font-mono font-semibold text-slate-900">{invoiceNumber}</p>
+                                </div>
+                                <div className="flex items-center justify-between gap-4 px-3 py-2">
+                                  <p className="text-slate-600">Date</p>
+                                  <p className="font-medium text-slate-900">{formatDate(invoice.generatedAt)}</p>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-6">
+                          <p className="text-base font-semibold text-slate-900">Event Details</p>
+                          <div className="mt-2">
+                            <div className="mt-2 overflow-x-auto">
+                              <table className="w-full min-w-[680px] border text-sm">
+                                <thead className="bg-slate-50">
+                                  <tr>
+                                    <th className="p-2 text-left font-semibold text-slate-700">Event name</th>
+                                    <th className="p-2 text-left font-semibold text-slate-700">Sold Tickets</th>
+                                    <th className="p-2 text-left font-semibold text-slate-700">Unit<br />Price</th>
+                                    <th className="p-2 text-left font-semibold text-slate-700">Total<br />Price</th>
+                                    <th className="p-2 text-left font-semibold text-slate-700">Paid</th>
+                                    <th className="p-2 text-left font-semibold text-slate-700">Due date &amp; time</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  <tr className="border-t">
+                                    <td className="p-2 font-medium text-slate-900">{summary?.event?.eventName || "-"}</td>
+                                    <td className="p-2 text-slate-700">{resolveSoldTicketsLabel(invoice)}</td>
+                                    <td className="p-2 text-slate-700">{formatMoney(invoice.unitPrice, invoice.currency)}</td>
+                                    <td className="p-2 text-slate-700">{formatMoney(invoice.totalAmount, invoice.currency)}</td>
+                                    <td className="p-2 font-semibold text-slate-900">{formatMoney(invoice.amountPaid, invoice.currency)}</td>
+                                    <td className="p-2 text-slate-700">{formatDate(invoice.dueAt)}</td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-6">
+                          <p className="text-base font-semibold text-slate-900">Payment instruction</p>
+                          <div className="mt-2 divide-y rounded border text-sm">
+                            <div className="flex items-center justify-between gap-4 px-3 py-2">
+                              <p className="font-medium text-slate-700">Total Due</p>
+                              <p className="font-semibold text-slate-900">{formatMoney(amountRemaining, invoice.currency)}</p>
+                            </div>
+                            <div className="px-3 py-2">
+                              <p className="mt-1 whitespace-pre-wrap text-slate-900">{invoice.paymentInstruction || "-"}</p>
+                            </div>
+                          </div>
                         </div>
 
                         <div className="mt-3 rounded border p-2">
                           <p className="text-xs font-semibold">Evidence</p>
                           <p className="mt-1 text-[11px] text-slate-600">
-                            Only one image is allowed per attachment request. Make sure it is final before you hit Send. After one upload, attachment is locked until admin allows another.
+                            Make sure your evidence image is final before you hit Send. After one upload, attachment is locked until admin allows another.
                           </p>
                           <div className="mt-2 space-y-2">
                             <input

@@ -84,8 +84,12 @@ export default function App() {
             <div className="flex h-20 items-center justify-between">
 
               {/* Logo — left on both desktop and mobile */}
-              <Link to="/" onClick={closeMenu} className="flex-shrink-0 -ml-14 sm:-ml-18">
-                <img src="/ticket-logo1.png" alt="QR Tickets" className="h-40 w-auto" />
+              <Link to="/" onClick={closeMenu} className="inline-flex flex-shrink-0 items-center gap-2">
+                <img src="/latest_logo.png" alt="QR Tickets" className="h-10 w-auto sm:h-12" />
+                <span className="leading-tight">
+                  <span className="block text-base font-bold tracking-tight text-slate-900 sm:text-lg">Connsura</span>
+                  <span className="block text-[11px] font-semibold text-blue-600 sm:text-xs">QR Tickets</span>
+                </span>
               </Link>
 
               {/* Hamburger — mobile only, right */}

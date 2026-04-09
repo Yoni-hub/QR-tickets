@@ -399,50 +399,27 @@ async function sendContactSupportEmail({ fromEmail, message }) {
 async function sendOrganizerInvoiceEmail({
   to,
   eventName,
-  eventDate,
   dueAt,
-  currency,
-  approvedTicketCount,
-  unitPrice,
-  totalAmount,
-  paymentInstruction,
-  noticeMessage,
+  invoiceUrl,
 }) {
   const transporter = getTransporter();
   const from = process.env.MAIL_FROM || "no-reply@localhost";
-  const subject = `Invoice for ${String(eventName || "your event")} (due before event start)`;
-  const eventDateText = eventDate ? new Date(eventDate).toLocaleString() : "-";
-  const dueAtText = dueAt ? new Date(dueAt).toLocaleString() : "-";
-  const unitText = Number(unitPrice || 0).toFixed(2);
-  const totalText = Number(totalAmount || 0).toFixed(2);
+  const subject = `Invoice ready for ${String(eventName || "your event")}`;
+  const dueAtText = dueAt ? new Date(dueAt).toLocaleString() : null;
   const text = [
     "Hello,",
     "",
-    `Invoice for event: ${String(eventName || "")}`,
-    `Event start: ${eventDateText}`,
-    `Payment due by: ${dueAtText}`,
+    `Your invoice for "${String(eventName || "your event")}" is ready.`,
+    dueAtText ? `Due by: ${dueAtText}` : "",
     "",
-    `Approved tickets (snapshot): ${approvedTicketCount}`,
-    `Rate: ${currency} ${unitText} per approved ticket`,
-    `Total amount due: ${currency} ${totalText}`,
-    "",
-    noticeMessage ? String(noticeMessage) : "",
-    noticeMessage ? "" : "",
-    "Payment instructions:",
-    String(paymentInstruction || ""),
+    invoiceUrl ? `Open your dashboard to review and submit payment: ${String(invoiceUrl)}` : "Open your dashboard to review and submit payment.",
   ].filter(Boolean).join("\n");
   const html = `
     <div style="font-family:Arial,sans-serif;line-height:1.45;color:#0f172a;">
       <p>Hello,</p>
-      <p><strong>Invoice generated for ${escapeHtml(eventName)}</strong></p>
-      <p><strong>Event start:</strong> ${escapeHtml(eventDateText)}<br />
-      <strong>Payment due by:</strong> ${escapeHtml(dueAtText)}</p>
-      <p><strong>Approved tickets (snapshot):</strong> ${escapeHtml(String(approvedTicketCount))}<br />
-      <strong>Rate:</strong> ${escapeHtml(currency)} ${escapeHtml(unitText)} per approved ticket<br />
-      <strong>Total amount due:</strong> ${escapeHtml(currency)} ${escapeHtml(totalText)}</p>
-      ${noticeMessage ? `<p style="background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;padding:10px;">${escapeHtml(String(noticeMessage))}</p>` : ""}
-      <p><strong>Payment instructions:</strong></p>
-      <p style="white-space:pre-wrap;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px;">${escapeHtml(paymentInstruction)}</p>
+      <p>Your invoice for <strong>${escapeHtml(String(eventName || "your event"))}</strong> is ready.</p>
+      ${dueAtText ? `<p><strong>Due by:</strong> ${escapeHtml(dueAtText)}</p>` : ""}
+      ${invoiceUrl ? `<p><a href="${escapeHtml(String(invoiceUrl))}">Open your dashboard to review and submit payment</a></p>` : "<p>Open your dashboard to review and submit payment.</p>"}
     </div>
   `;
   return transporter.sendMail({ from, to, subject, text, html });
