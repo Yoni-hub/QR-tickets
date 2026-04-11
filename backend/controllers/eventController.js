@@ -609,7 +609,26 @@ async function updateEventInline(req, res) {
 
   const existing = await prisma.userEvent.findUnique({
     where: { id: eventId },
-    select: { id: true, accessCode: true, organizerAccessCode: true, eventName: true },
+    select: {
+      id: true,
+      accessCode: true,
+      organizerAccessCode: true,
+      organizerName: true,
+      organizerEmail: true,
+      eventName: true,
+      eventDate: true,
+      eventEndDate: true,
+      eventAddress: true,
+      paymentInstructions: true,
+      ticketType: true,
+      ticketPrice: true,
+      designJson: true,
+      salesCutoffAt: true,
+      salesWindowStart: true,
+      salesWindowEnd: true,
+      maxTicketsPerEmail: true,
+      createdAt: true,
+    },
   });
   if (!existing) {
     res.status(404).json({ error: "Event not found." });
@@ -620,6 +639,16 @@ async function updateEventInline(req, res) {
     res.status(403).json({ error: "Invalid access code for this event." });
     return;
   }
+
+  const now = new Date();
+  const eventEndAt = existing.eventEndDate || existing.eventDate;
+  if (eventEndAt && now >= new Date(eventEndAt)) {
+    res.status(400).json({ error: "This event has ended. Event details can no longer be changed." });
+    return;
+  }
+
+  const soldTicketsCount = await prisma.ticket.count({ where: buildSoldTicketWhere(eventId) });
+  const hasSoldTickets = soldTicketsCount > 0;
 
 
   const eventName = sanitizeText(req.body?.eventName, LIMITS.EVENT_NAME);
@@ -639,6 +668,9 @@ async function updateEventInline(req, res) {
     Object.prototype.hasOwnProperty.call(req.body || {}, "designJson") &&
     req.body?.designJson &&
     typeof req.body.designJson === "object";
+  const incomingDesignJson = hasDesignJson ? req.body.designJson : null;
+  const existingCurrency = String(existing?.designJson?.currency || "$").trim() || "$";
+  const incomingCurrency = String(req.body?.currency || incomingDesignJson?.currency || existingCurrency).trim() || existingCurrency;
   const salesCutoffRaw = String(req.body?.salesCutoffAt || "").trim();
   const parsedSalesCutoff = salesCutoffRaw ? new Date(salesCutoffRaw) : null;
   const hasSalesCutoff = Object.prototype.hasOwnProperty.call(req.body || {}, "salesCutoffAt");
@@ -660,7 +692,8 @@ async function updateEventInline(req, res) {
     res.status(400).json({ error: "Invalid eventEndDate." });
     return;
   }
-  if (parsedEventDate && parsedEventDate <= new Date()) {
+  // Allow sending existing eventDate back even if the event has started (frontend sends full payload).
+  if (parsedEventDate && parsedEventDate <= now && parsedEventDate.getTime() !== new Date(existing.eventDate).getTime()) {
     res.status(400).json({ error: "Event start date must be in the future." });
     return;
   }
@@ -671,6 +704,125 @@ async function updateEventInline(req, res) {
   if (hasTicketPrice && ticketPriceRaw !== "" && Number.isNaN(parsedTicketPrice)) {
     res.status(400).json({ error: "Invalid ticketPrice." });
     return;
+  }
+
+  const eventStarted = now >= new Date(existing.eventDate);
+
+  const datesEqual = (left, right) => {
+    const l = left ? new Date(left).getTime() : null;
+    const r = right ? new Date(right).getTime() : null;
+    if (l == null && r == null) return true;
+    if (l == null || r == null) return false;
+    return l === r;
+  };
+
+  // Rule 2: After event start, organizer cannot change anything except add ticket quantities.
+  if (eventStarted) {
+    const changes = [];
+
+    if (eventName && eventName !== String(existing.eventName || "")) changes.push("eventName");
+    if (organizerName !== null && organizerName !== undefined && organizerName !== String(existing.organizerName || "")) changes.push("organizerName");
+    if (eventAddress && eventAddress !== String(existing.eventAddress || "")) changes.push("eventAddress");
+    if (paymentInstructions !== null && paymentInstructions !== undefined && paymentInstructions !== String(existing.paymentInstructions || "")) changes.push("paymentInstructions");
+    if (parsedEventDate && !datesEqual(parsedEventDate, existing.eventDate)) changes.push("eventDate");
+    if (hasEventEndDate && !datesEqual(parsedEventEndDate, existing.eventEndDate)) changes.push("eventEndDate");
+    if (ticketType && ticketType !== String(existing.ticketType || "")) changes.push("ticketType");
+    if (hasTicketPrice && (parsedTicketPrice ?? null) !== (existing.ticketPrice == null ? null : Number(existing.ticketPrice))) changes.push("ticketPrice");
+    if (hasSalesCutoff && !datesEqual(parsedSalesCutoff, existing.salesCutoffAt)) changes.push("salesCutoffAt");
+    if (salesWindowStart !== undefined && salesWindowStart !== (existing.salesWindowStart || null)) changes.push("salesWindowStart");
+    if (salesWindowEnd !== undefined && salesWindowEnd !== (existing.salesWindowEnd || null)) changes.push("salesWindowEnd");
+    if (maxTicketsPerEmail !== undefined && maxTicketsPerEmail !== (existing.maxTicketsPerEmail || null)) changes.push("maxTicketsPerEmail");
+    if (hasDesignJson && incomingCurrency !== existingCurrency) changes.push("currency");
+
+    const canonicalizeDesignForLock = (designJson) => {
+      if (!designJson || typeof designJson !== "object") return "";
+      const rawGroups = Array.isArray(designJson.ticketGroups) ? designJson.ticketGroups : [];
+      const cleanedGroups = rawGroups
+        .map((g) => {
+          if (!g || typeof g !== "object") return null;
+          const clone = { ...g };
+          delete clone.quantity;
+          delete clone.priceText;
+          delete clone.ticketTypeLabel;
+          return clone;
+        })
+        .filter(Boolean)
+        .sort((a, b) => String(a.ticketType || "").localeCompare(String(b.ticketType || "")));
+      const base = { ...designJson, ticketGroups: cleanedGroups };
+      return JSON.stringify(base);
+    };
+
+    const allowQuantityIncreaseOnly = () => {
+      if (!hasDesignJson) return false;
+      const existingGroups = resolveTicketGroupsFromDesign(existing.designJson);
+      const incomingGroups = resolveTicketGroupsFromDesign(incomingDesignJson);
+
+      if (existingGroups.length !== incomingGroups.length) return false;
+      const incomingMap = new Map(incomingGroups.map((g) => [g.ticketType, g]));
+      for (const g of existingGroups) {
+        const ng = incomingMap.get(g.ticketType);
+        if (!ng) return false;
+        const oldQty = Number(g.quantity || 0);
+        const newQty = Number(ng.quantity || 0);
+        if (newQty < oldQty) return false;
+        const oldPrice = g.ticketPrice == null ? null : Number(g.ticketPrice);
+        const newPrice = ng.ticketPrice == null ? null : Number(ng.ticketPrice);
+        if (oldPrice !== newPrice) return false;
+      }
+      if (canonicalizeDesignForLock(existing.designJson) !== canonicalizeDesignForLock(incomingDesignJson)) return false;
+      return true;
+    };
+
+    if (changes.length) {
+      res.status(400).json({ error: "Event has started. You cannot change event details after the start time." });
+      return;
+    }
+    if (hasDesignJson && !allowQuantityIncreaseOnly()) {
+      res.status(400).json({ error: "Event has started. Only increasing ticket quantities is allowed." });
+      return;
+    }
+  }
+
+  // Rule 1: If any tickets are sold, lock currency and start/end times; prevent price decreases.
+  if (!eventStarted && hasSoldTickets) {
+    if (hasDesignJson && incomingCurrency !== existingCurrency) {
+      res.status(400).json({ error: "Currency cannot be changed after tickets are sold." });
+      return;
+    }
+    if (parsedEventDate && !datesEqual(parsedEventDate, existing.eventDate)) {
+      res.status(400).json({ error: "Event start date/time cannot be changed after tickets are sold." });
+      return;
+    }
+    if (hasEventEndDate && !datesEqual(parsedEventEndDate, existing.eventEndDate)) {
+      res.status(400).json({ error: "Event end date/time cannot be changed after tickets are sold." });
+      return;
+    }
+    if (hasTicketPrice) {
+      const oldPrice = existing.ticketPrice == null ? null : Number(existing.ticketPrice);
+      const newPrice = parsedTicketPrice == null ? null : Number(parsedTicketPrice);
+      if (oldPrice != null && newPrice != null && newPrice < oldPrice) {
+        res.status(400).json({ error: "Ticket price cannot be decreased after tickets are sold." });
+        return;
+      }
+    }
+    if (hasDesignJson && Array.isArray(incomingDesignJson?.ticketGroups)) {
+      const existingGroups = resolveTicketGroupsFromDesign(existing.designJson);
+      const existingMap = new Map(existingGroups.map((g) => [g.ticketType, g]));
+      for (const group of incomingDesignJson.ticketGroups) {
+        const type = String(group?.ticketType || "").trim();
+        if (!type) continue;
+        const old = existingMap.get(type);
+        if (!old) continue;
+        const oldPrice = old.ticketPrice == null ? null : Number(old.ticketPrice);
+        const priceRaw = String(group?.ticketPrice ?? "").trim();
+        const parsed = priceRaw === "" ? null : Number(priceRaw);
+        const newPrice = Number.isFinite(parsed) ? parsed : null;
+        if (oldPrice != null && newPrice != null && newPrice < oldPrice) {
+          res.status(400).json({ error: "Ticket price cannot be decreased after tickets are sold." });
+          return;
+        }
+      }
+    }
   }
 
   // Guard: capacity cannot be set below already-sold count per ticket type
