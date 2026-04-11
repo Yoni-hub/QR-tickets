@@ -389,6 +389,7 @@ export default function Dashboard() {
   const [requestStatusScope, setRequestStatusScope] = useState("ALL");
   const [requestSearch, setRequestSearch] = useState("");
   const [autoApprove, setAutoApprove] = useState(false);
+  const [invoiceScope, setInvoiceScope] = useState("CURRENT"); // CURRENT | PAST
   const [togglingAutoApprove, setTogglingAutoApprove] = useState(false);
   const [promoters, setPromoters] = useState([]);
   const [leaderboard, setLeaderboard] = useState([]);
@@ -517,6 +518,14 @@ export default function Dashboard() {
     const items = Array.isArray(summary?.organizerInvoices) ? summary.organizerInvoices : [];
     return [...items].sort((left, right) => toTimestamp(left?.generatedAt) - toTimestamp(right?.generatedAt));
   }, [summary?.organizerInvoices]);
+  const latestOrganizerInvoice = useMemo(
+    () => (organizerInvoices.length ? organizerInvoices[organizerInvoices.length - 1] : null),
+    [organizerInvoices],
+  );
+  const pastOrganizerInvoices = useMemo(
+    () => (organizerInvoices.length > 1 ? organizerInvoices.slice(0, -1).reverse() : []),
+    [organizerInvoices],
+  );
   const organizerHasAnyTicketSales = useMemo(
     () => organizerInvoices.some((invoice) => Number(invoice?.approvedTicketCount || 0) > 0),
     [organizerInvoices],
@@ -612,6 +621,17 @@ export default function Dashboard() {
     setCopiedTicketPublicId("");
     setCopiedPromoterId("");
   }, [accessCode]);
+
+  useEffect(() => {
+    if (activeMenu !== "payment") return;
+    const focusedInvoiceId = String(params.get("invoiceId") || "").trim();
+    if (focusedInvoiceId && latestOrganizerInvoice?.id && focusedInvoiceId !== latestOrganizerInvoice.id) {
+      // Deep-linked to a past invoice.
+      setInvoiceScope("PAST");
+      return;
+    }
+    setInvoiceScope("CURRENT");
+  }, [activeMenu, params, latestOrganizerInvoice?.id]);
 
   useEffect(() => {
     return () => {
@@ -2789,9 +2809,37 @@ export default function Dashboard() {
                   <p className="text-xs text-slate-500">Invoice rows are shown in timeline order for this event.</p>
                 </div>
               </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setInvoiceScope("CURRENT")}
+                  className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                    invoiceScope === "CURRENT"
+                      ? "border-slate-700 bg-slate-700 text-white"
+                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  Current invoice
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInvoiceScope("PAST")}
+                  disabled={!pastOrganizerInvoices.length}
+                  className={`rounded-full border px-3 py-1 text-xs font-semibold disabled:opacity-50 ${
+                    invoiceScope === "PAST"
+                      ? "border-slate-700 bg-slate-700 text-white"
+                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  Past invoices
+                </button>
+              </div>
               {organizerInvoices.length ? (
                 <div className="mt-3 space-y-3">
-                  {organizerInvoices.map((invoice, index) => {
+                  {(invoiceScope === "CURRENT"
+                    ? (latestOrganizerInvoice ? [latestOrganizerInvoice] : [])
+                    : pastOrganizerInvoices
+                  ).map((invoice, index) => {
                     const invoiceId = String(invoice.id || "").trim();
                     const draft = invoiceEvidenceDrafts[invoiceId] || {};
                     const amountRemaining = Number(invoice?.amountRemaining || 0);
@@ -2800,16 +2848,31 @@ export default function Dashboard() {
                     const invoiceState = resolveInvoiceEvidenceStatus(invoice);
                     const focusedInvoiceId = String(params.get("invoiceId") || "").trim();
                     const isFocused = focusedInvoiceId && focusedInvoiceId === invoiceId;
-                    const invoiceNumber = `${index + 1}`.padStart(3, "0");
+                    const invoiceNumberIndex = organizerInvoices.findIndex((i) => String(i?.id || "").trim() === invoiceId);
+                    const invoiceNumber = `${Math.max(0, invoiceNumberIndex) + 1}`.padStart(3, "0");
                     const canUploadEvidence = Boolean(invoice?.canUploadEvidence);
                     const latestEvidenceImage = String(invoice?.lastEvidenceImageDataUrl || "").trim();
                     const draftEvidenceImage = String(draft?.evidenceImageDataUrl || "").trim();
                     const previewImage = draftEvidenceImage || latestEvidenceImage;
+                    const eventCreatedAt = summary?.event?.createdAt ? new Date(summary.event.createdAt) : null;
+                    const eventStartAt = summary?.event?.eventDate ? new Date(summary.event.eventDate) : null;
+                    const eventEndAt = summary?.event?.eventEndDate ? new Date(summary.event.eventEndDate) : eventStartAt;
+                    const isFinalInvoice = String(invoice.invoiceType || "") === "POST_EVENT_FINAL";
+                    const preSnapshotEndAt = eventStartAt ? new Date(eventStartAt.getTime() - 24 * 60 * 60 * 1000) : null;
+                    const previousInvoice = invoiceNumberIndex > 0 ? organizerInvoices[invoiceNumberIndex - 1] : null;
+                    const snapshotStartAt = isFinalInvoice
+                      ? (previousInvoice?.generatedAt ? new Date(previousInvoice.generatedAt) : eventCreatedAt)
+                      : eventCreatedAt;
+                    const snapshotEndAt = isFinalInvoice ? eventEndAt : preSnapshotEndAt;
                     return (
                       <article key={invoiceId} className={`rounded border bg-white p-3 text-sm ${isFocused ? "border-amber-300 bg-amber-50/40" : ""}`}>
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <p className="text-2xl font-black tracking-tight text-slate-900">INVOICE</p>
+                            <p className="mt-1 text-xs font-semibold uppercase tracking-widest text-slate-500">
+                              {isFinalInvoice ? "Post-event" : "Pre-event"}
+                              {snapshotStartAt && snapshotEndAt ? ` · ${snapshotStartAt.toLocaleString()} to ${snapshotEndAt.toLocaleString()}` : ""}
+                            </p>
                           </div>
                           <span className={`mt-1 inline-block flex-shrink-0 rounded border px-2 py-0.5 text-[11px] font-semibold ${dueClass}`}>{dueLabel}</span>
                         </div>
