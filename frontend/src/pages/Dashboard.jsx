@@ -2887,7 +2887,33 @@ export default function Dashboard() {
                         </div>
 
                         <div className="mt-4 border-t pt-4">
-                          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                          {/* Mobile cards */}
+                          <div className="space-y-3 md:hidden">
+                            <div className="rounded border bg-white p-3">
+                              <p className="text-sm font-semibold text-slate-900">Bill To</p>
+                              <div className="mt-2 space-y-1 text-sm">
+                                <p className="font-semibold text-slate-900">{summary?.event?.organizerName || "-"}</p>
+                                {summary?.event?.organizerEmail ? (
+                                  <a href={`mailto:${summary.event.organizerEmail}`} className="font-medium text-slate-900 underline">
+                                    {summary.event.organizerEmail}
+                                  </a>
+                                ) : (
+                                  <p className="text-slate-500">-</p>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="rounded border bg-white p-3">
+                              <p className="text-sm font-semibold text-slate-900">Invoice Details</p>
+                              <div className="mt-2 space-y-1 text-sm">
+                                <p><span className="text-slate-600">Invoice #:</span> <span className="font-mono font-semibold text-slate-900">{invoiceNumber}</span></p>
+                                <p><span className="text-slate-600">Date:</span> <span className="font-medium text-slate-900">{formatDate(invoice.generatedAt)}</span></p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Desktop tables */}
+                          <div className="hidden md:grid md:grid-cols-2 md:gap-6">
                             <div>
                               <p className="text-sm font-semibold text-slate-900">Bill To</p>
                               <div className="mt-2 divide-y rounded border text-sm">
@@ -2925,7 +2951,40 @@ export default function Dashboard() {
                         <div className="mt-6">
                           <p className="text-base font-semibold text-slate-900">Event Details</p>
                           <div className="mt-2">
-                            <div className="mt-2 overflow-x-auto">
+                            {/* Mobile card */}
+                            <div className="rounded border bg-white p-3 text-sm md:hidden">
+                              <div className="space-y-2">
+                                <div className="flex items-start justify-between gap-3">
+                                  <p className="text-slate-600">Event name</p>
+                                  <p className="text-right font-medium text-slate-900">{summary?.event?.eventName || "-"}</p>
+                                </div>
+                                <div className="flex items-start justify-between gap-3">
+                                  <p className="text-slate-600">Sold Tickets</p>
+                                  <p className="text-right text-slate-900">{resolveSoldTicketsLabel(invoice)}</p>
+                                </div>
+                                <div className="grid grid-cols-3 gap-2 rounded border bg-slate-50 p-2 text-xs">
+                                  <div>
+                                    <p className="font-semibold text-slate-600">Unit price</p>
+                                    <p className="mt-1 font-medium text-slate-900">{formatMoney(invoice.unitPrice, invoice.currency)}</p>
+                                  </div>
+                                  <div>
+                                    <p className="font-semibold text-slate-600">Total price</p>
+                                    <p className="mt-1 font-medium text-slate-900">{formatMoney(invoice.totalAmount, invoice.currency)}</p>
+                                  </div>
+                                  <div>
+                                    <p className="font-semibold text-slate-600">Paid</p>
+                                    <p className="mt-1 font-semibold text-slate-900">{formatMoney(invoice.amountPaid, invoice.currency)}</p>
+                                  </div>
+                                </div>
+                                <div className="flex items-start justify-between gap-3">
+                                  <p className="text-slate-600">Due date &amp; time</p>
+                                  <p className="text-right text-slate-900">{formatDate(invoice.dueAt)}</p>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Desktop table */}
+                            <div className="mt-2 hidden overflow-x-auto md:block">
                               <table className="w-full min-w-[680px] border text-sm">
                                 <thead className="bg-slate-50">
                                   <tr>
@@ -2954,7 +3013,19 @@ export default function Dashboard() {
 
                         <div className="mt-6">
                           <p className="text-base font-semibold text-slate-900">Payment instruction</p>
-                          <div className="mt-2 divide-y rounded border text-sm">
+                          {/* Mobile card */}
+                          <div className="mt-2 rounded border bg-white p-3 text-sm md:hidden">
+                            <div className="flex items-center justify-between gap-4">
+                              <p className="font-medium text-slate-700">Total Due</p>
+                              <p className="font-semibold text-slate-900">{formatMoney(amountRemaining, invoice.currency)}</p>
+                            </div>
+                            <div className="mt-2 border-t pt-2">
+                              <p className="whitespace-pre-wrap text-slate-900">{invoice.paymentInstruction || "-"}</p>
+                            </div>
+                          </div>
+
+                          {/* Desktop table */}
+                          <div className="mt-2 hidden divide-y rounded border text-sm md:block">
                             <div className="flex items-center justify-between gap-4 px-3 py-2">
                               <p className="font-medium text-slate-700">Total Due</p>
                               <p className="font-semibold text-slate-900">{formatMoney(amountRemaining, invoice.currency)}</p>
