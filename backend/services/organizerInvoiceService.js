@@ -93,13 +93,29 @@ function buildInvoiceChatMessage({
   invoiceType,
   eventName,
   dueAt,
+  snapshotStartAt,
+  snapshotEndAt,
   invoiceUrl,
 }) {
-  const dueLine = dueAt ? `Due by: ${new Date(dueAt).toLocaleString()}` : null;
-  const typeLine = invoiceType === FINAL_INVOICE_TYPE ? "Final invoice" : "Invoice";
+  const dueText = dueAt ? new Date(dueAt).toLocaleString() : null;
+  const startText = snapshotStartAt ? new Date(snapshotStartAt).toLocaleString() : null;
+  const endText = snapshotEndAt ? new Date(snapshotEndAt).toLocaleString() : null;
+
+  const isFinal = invoiceType === FINAL_INVOICE_TYPE;
+  const kindLine = isFinal
+    ? "This is your post-event invoice for tickets sold from"
+    : "This is your pre-event invoice for tickets sold from";
+
+  const rangeLine = startText && endText ? `${startText} to ${endText}` : null;
+  const dueLine = dueText ? `Due by: ${dueText}` : null;
+
   return [
-    `${typeLine} for "${eventName}" is ready.`,
+    `Invoice for "${eventName}" is ready.`,
+    "",
+    kindLine,
+    rangeLine,
     dueLine,
+    "",
     invoiceUrl ? `Open your dashboard to review and submit payment: ${invoiceUrl}` : "Open your dashboard to review and submit payment.",
   ].filter(Boolean).join("\n");
 }
@@ -117,6 +133,34 @@ function buildOrganizerInvoiceDashboardUrl(event, invoiceId) {
     invoiceId: normalizedInvoiceId,
   });
   return `${base}/dashboard?${params.toString()}#organizer-payment-invoices`;
+}
+
+function computePreEventSnapshotEndAt(eventDate) {
+  const ms = Date.parse(String(eventDate || ""));
+  if (!Number.isFinite(ms)) return null;
+  return new Date(ms - INVOICE_WINDOW_HOURS_BEFORE_EVENT * 60 * 60 * 1000);
+}
+
+async function resolveInvoiceSnapshotRange({ invoiceType, event, previousInvoiceId }) {
+  const startFallback = event?.createdAt instanceof Date ? event.createdAt : null;
+  if (invoiceType === PRE_EVENT_INVOICE_TYPE) {
+    return {
+      snapshotStartAt: startFallback,
+      snapshotEndAt: computePreEventSnapshotEndAt(event?.eventDate),
+    };
+  }
+
+  // Final settlement invoice: from last invoice snapshot (previous invoice generatedAt) to event end.
+  let snapshotStartAt = startFallback;
+  if (previousInvoiceId) {
+    const previous = await prisma.organizerInvoice.findUnique({
+      where: { id: String(previousInvoiceId || "").trim() },
+      select: { generatedAt: true },
+    });
+    if (previous?.generatedAt) snapshotStartAt = previous.generatedAt;
+  }
+  const eventEndAt = resolveEventEndAt(event);
+  return { snapshotStartAt, snapshotEndAt: eventEndAt };
 }
 
 async function countApprovedTicketsSnapshot(eventId, options = {}) {
@@ -250,6 +294,7 @@ async function sendInvoiceChannels({
   totalAmount,
   dueAt,
   paymentInstruction,
+  previousInvoiceId,
   sendInvoiceEmail,
   sendInvoiceChat,
 }) {
@@ -258,6 +303,7 @@ async function sendInvoiceChannels({
   let emailError = null;
   let chatError = null;
   const invoiceUrl = buildOrganizerInvoiceDashboardUrl(event, invoiceId);
+  const snapshotRange = await resolveInvoiceSnapshotRange({ invoiceType, event, previousInvoiceId });
 
   if (!organizerEmail) {
     emailError = "Organizer email is missing; invoice email could not be sent.";
@@ -266,14 +312,10 @@ async function sendInvoiceChannels({
       await sendInvoiceEmail({
         to: organizerEmail,
         eventName: event.eventName,
-        eventDate: event.eventDate,
         dueAt,
-        currency,
-        approvedTicketCount,
-        unitPrice,
-        totalAmount,
-        paymentInstruction,
-        noticeMessage: invoiceType === FINAL_INVOICE_TYPE ? FINAL_INVOICE_MESSAGE : PRE_EVENT_WARNING_MESSAGE,
+        invoiceType,
+        snapshotStartAt: snapshotRange.snapshotStartAt,
+        snapshotEndAt: snapshotRange.snapshotEndAt,
         invoiceUrl,
       });
       emailSent = true;
@@ -287,6 +329,8 @@ async function sendInvoiceChannels({
       invoiceType,
       eventName: event.eventName,
       dueAt,
+      snapshotStartAt: snapshotRange.snapshotStartAt,
+      snapshotEndAt: snapshotRange.snapshotEndAt,
       invoiceUrl,
     });
     await sendInvoiceChat({ event, message: chatMessage });
@@ -399,6 +443,7 @@ async function processInvoiceForEvent({
     totalAmount,
     dueAt,
     paymentInstruction,
+    previousInvoiceId,
     sendInvoiceEmail,
     sendInvoiceChat,
   });
@@ -513,6 +558,7 @@ async function runOrganizerInvoiceGenerationCycle(options = {}) {
       eventName: true,
       eventDate: true,
       eventEndDate: true,
+      createdAt: true,
       organizerEmail: true,
       accessCode: true,
       organizerAccessCode: true,
@@ -550,6 +596,7 @@ async function runOrganizerInvoiceGenerationCycle(options = {}) {
       eventName: true,
       eventDate: true,
       eventEndDate: true,
+      createdAt: true,
       organizerEmail: true,
       accessCode: true,
       organizerAccessCode: true,
@@ -828,6 +875,7 @@ async function retryInvoiceDelivery(invoiceId, options = {}) {
       id: true,
       eventId: true,
       invoiceType: true,
+      previousInvoiceId: true,
       status: true,
       organizerEmailSnapshot: true,
       currencySnapshot: true,
@@ -845,6 +893,8 @@ async function retryInvoiceDelivery(invoiceId, options = {}) {
           id: true,
           eventName: true,
           eventDate: true,
+          eventEndDate: true,
+          createdAt: true,
           organizerEmail: true,
           accessCode: true,
           organizerAccessCode: true,
@@ -894,6 +944,7 @@ async function retryInvoiceDelivery(invoiceId, options = {}) {
     totalAmount: Number(invoice.totalAmountSnapshot ?? invoice.totalAmount ?? 0),
     dueAt: invoice.dueAt,
     paymentInstruction,
+    previousInvoiceId: invoice.previousInvoiceId || null,
     sendInvoiceEmail,
     sendInvoiceChat,
   });

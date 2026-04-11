@@ -400,16 +400,29 @@ async function sendOrganizerInvoiceEmail({
   to,
   eventName,
   dueAt,
+  invoiceType,
+  snapshotStartAt,
+  snapshotEndAt,
   invoiceUrl,
 }) {
   const transporter = getTransporter();
   const from = process.env.MAIL_FROM || "no-reply@localhost";
   const subject = `Invoice ready for ${String(eventName || "your event")}`;
   const dueAtText = dueAt ? new Date(dueAt).toLocaleString() : null;
+  const startText = snapshotStartAt ? new Date(snapshotStartAt).toLocaleString() : null;
+  const endText = snapshotEndAt ? new Date(snapshotEndAt).toLocaleString() : null;
+  const isFinal = String(invoiceType || "").trim().toUpperCase() === "POST_EVENT_FINAL";
+  const detailText = isFinal
+    ? "This is your post-event invoice for tickets sold from"
+    : "This is your pre-event invoice for tickets sold from";
+  const rangeText = startText && endText ? `${startText} to ${endText}` : null;
   const text = [
     "Hello,",
     "",
     `Your invoice for "${String(eventName || "your event")}" is ready.`,
+    "",
+    detailText,
+    rangeText || "",
     dueAtText ? `Due by: ${dueAtText}` : "",
     "",
     invoiceUrl ? `Open your dashboard to review and submit payment: ${String(invoiceUrl)}` : "Open your dashboard to review and submit payment.",
@@ -418,6 +431,7 @@ async function sendOrganizerInvoiceEmail({
     <div style="font-family:Arial,sans-serif;line-height:1.45;color:#0f172a;">
       <p>Hello,</p>
       <p>Your invoice for <strong>${escapeHtml(String(eventName || "your event"))}</strong> is ready.</p>
+      <p>${escapeHtml(detailText)}<br />${rangeText ? escapeHtml(rangeText) : ""}</p>
       ${dueAtText ? `<p><strong>Due by:</strong> ${escapeHtml(dueAtText)}</p>` : ""}
       ${invoiceUrl ? `<p><a href="${escapeHtml(String(invoiceUrl))}">Open your dashboard to review and submit payment</a></p>` : "<p>Open your dashboard to review and submit payment.</p>"}
     </div>
