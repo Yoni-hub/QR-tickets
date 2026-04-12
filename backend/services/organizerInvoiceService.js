@@ -13,7 +13,49 @@ const FINAL_INVOICE_TYPE = "POST_EVENT_FINAL";
 const SUPPORTED_CURRENCIES = ["ETB", "USD", "EUR"];
 const BLOCK_NEW_EVENT_MESSAGE = "You currently have an unpaid overdue balance. New event creation is temporarily blocked until the outstanding invoice is paid in full.";
 const PRE_EVENT_WARNING_MESSAGE = "Payment is due no later than 5 hours before your event start time. If payment is not received by then, you may experience scanning problems during your event.";
-const PAYMENT_CONFIRMATION_MESSAGE = "Payment received. If additional tickets are sold before your event ends, a final invoice will be issued for any remaining balance.";
+function formatCurrencyAmount(currency, amount) {
+  return `${String(currency || "").trim()} ${roundMoney(amount).toFixed(2)}`.trim();
+}
+
+function buildPaymentReceiptMessage({
+  invoiceType,
+  eventName,
+  currency,
+  creditedAmount,
+  amountRemaining,
+  snapshotStartAt,
+  snapshotEndAt,
+  invoiceUrl,
+}) {
+  const isFinal = String(invoiceType || "").trim().toUpperCase() === String(FINAL_INVOICE_TYPE || "POST_EVENT_FINAL");
+  const kindLabel = isFinal ? "Post-event invoice" : "Pre-event invoice";
+  const startText = snapshotStartAt ? new Date(snapshotStartAt).toLocaleString() : null;
+  const endText = snapshotEndAt ? new Date(snapshotEndAt).toLocaleString() : null;
+  const rangeLine = startText && endText ? `Period: ${startText} to ${endText}` : null;
+
+  const remaining = roundMoney(amountRemaining);
+  const credited = roundMoney(creditedAmount);
+
+  const lines = [
+    `Payment received for "${String(eventName || "your event")}".`,
+    `Invoice: ${kindLabel}`,
+    rangeLine,
+    credited > 0 ? `Amount credited: ${formatCurrencyAmount(currency, credited)}` : null,
+  ];
+
+  if (!isFinal && remaining > 0) {
+    lines.push(`Remaining balance: ${formatCurrencyAmount(currency, remaining)}`);
+    lines.push("This remaining balance will be added to your post-event invoice. We will send a final invoice after the event ends.");
+  } else if (remaining > 0) {
+    lines.push(`Remaining balance: ${formatCurrencyAmount(currency, remaining)}`);
+  } else {
+    lines.push("This invoice is paid in full.");
+  }
+
+  lines.push(invoiceUrl ? `View invoice in dashboard: ${invoiceUrl}` : "View invoice in your dashboard.");
+
+  return lines.filter(Boolean).join("\n");
+}
 const FINAL_INVOICE_MESSAGE = "This is your final event invoice, including any additional sales recorded through the end of the event. Please complete payment within the next 3 hours.";
 
 const MARK_PAID_ALLOWED_STATUSES = new Set(["SENT", "OVERDUE", "PARTIAL_SEND_FAILED", "FAILED", "BLOCKED_MISSING_INSTRUCTION"]);
@@ -641,17 +683,35 @@ async function markOverdueInvoices(options = {}) {
   return result.count || 0;
 }
 
-async function sendPaymentConfirmationNotice(invoice, event) {
+async function sendPaymentReceiptNotice({ invoice, event, creditedAmount, amountRemaining }) {
   const organizerEmail = String(invoice.organizerEmailSnapshot || event?.organizerEmail || "").trim().toLowerCase();
+  const invoiceUrl = buildOrganizerInvoiceDashboardUrl(event, invoice.id);
+  const snapshotRange = await resolveInvoiceSnapshotRange({
+    invoiceType: invoice.invoiceType,
+    event,
+    previousInvoiceId: invoice.previousInvoiceId || null,
+  });
+
+  const message = buildPaymentReceiptMessage({
+    invoiceType: invoice.invoiceType,
+    eventName: event?.eventName,
+    currency: invoice.currencySnapshot,
+    creditedAmount,
+    amountRemaining,
+    snapshotStartAt: snapshotRange.snapshotStartAt,
+    snapshotEndAt: snapshotRange.snapshotEndAt,
+    invoiceUrl,
+  });
+
   if (organizerEmail) {
     try {
       await sendOrganizerBillingUpdateEmail({
         to: organizerEmail,
         eventName: event?.eventName,
-        message: PAYMENT_CONFIRMATION_MESSAGE,
+        message,
       });
     } catch (error) {
-      logger.warn("Failed to send organizer payment confirmation email", {
+      logger.warn("Failed to send organizer payment receipt email", {
         invoiceId: invoice.id,
         eventId: event?.id,
         error: error?.message || "unknown",
@@ -660,9 +720,9 @@ async function sendPaymentConfirmationNotice(invoice, event) {
   }
 
   try {
-    await sendMessageToOrganizerChat(event, PAYMENT_CONFIRMATION_MESSAGE);
+    await sendMessageToOrganizerChat(event, message);
   } catch (error) {
-    logger.warn("Failed to send organizer payment confirmation chat message", {
+    logger.warn("Failed to send organizer payment receipt chat message", {
       invoiceId: invoice.id,
       eventId: event?.id,
       error: error?.message || "unknown",
@@ -690,6 +750,7 @@ async function markInvoicePaid(invoiceId, options = {}) {
     select: {
       id: true,
       eventId: true,
+      previousInvoiceId: true,
       status: true,
       dueAt: true,
       totalAmount: true,
@@ -714,6 +775,7 @@ async function markInvoicePaid(invoiceId, options = {}) {
   const totalAmount = roundMoney(invoice.totalAmount);
   const amountPaidInput = options.amountPaid == null ? totalAmount : roundMoney(options.amountPaid);
   const nextAmountPaid = Math.min(totalAmount, Math.max(0, amountPaidInput));
+  const creditedAmount = roundMoney(nextAmountPaid - roundMoney(invoice.amountPaid));
   const remaining = computeAmountRemaining(totalAmount, nextAmountPaid);
   const nextStatus = remaining <= 0 ? "PAID" : (invoice.dueAt < now ? "OVERDUE" : "SENT");
 
@@ -738,13 +800,18 @@ async function markInvoicePaid(invoiceId, options = {}) {
     },
   });
 
-  if (updated.status === "PAID") {
+  if (creditedAmount > 0) {
     const event = await prisma.userEvent.findUnique({
       where: { id: updated.eventId },
-      select: { id: true, eventName: true, organizerEmail: true, organizerAccessCode: true, accessCode: true },
+      select: { id: true, eventName: true, organizerEmail: true, organizerAccessCode: true, accessCode: true, createdAt: true, eventDate: true, eventEndDate: true },
     });
     if (event) {
-      await sendPaymentConfirmationNotice({ ...invoice, ...updated }, event);
+      await sendPaymentReceiptNotice({
+        invoice: { ...invoice, ...updated },
+        event,
+        creditedAmount,
+        amountRemaining: computeAmountRemaining(updated.totalAmount, updated.amountPaid),
+      });
     }
   }
 
@@ -782,6 +849,7 @@ async function addInvoicePayment(invoiceId, options = {}) {
     select: {
       id: true,
       eventId: true,
+      previousInvoiceId: true,
       status: true,
       dueAt: true,
       totalAmount: true,
@@ -839,13 +907,18 @@ async function addInvoicePayment(invoiceId, options = {}) {
     },
   });
 
-  if (updated.status === "PAID" && invoice.status !== "PAID") {
+  if (appliedAmount > 0) {
     const event = await prisma.userEvent.findUnique({
       where: { id: updated.eventId },
-      select: { id: true, eventName: true, organizerEmail: true, organizerAccessCode: true, accessCode: true },
+      select: { id: true, eventName: true, organizerEmail: true, organizerAccessCode: true, accessCode: true, createdAt: true, eventDate: true, eventEndDate: true },
     });
     if (event) {
-      await sendPaymentConfirmationNotice({ ...invoice, ...updated }, event);
+      await sendPaymentReceiptNotice({
+        invoice: { ...invoice, ...updated },
+        event,
+        creditedAmount: appliedAmount,
+        amountRemaining,
+      });
     }
   }
 
@@ -1346,7 +1419,6 @@ module.exports = {
   FINAL_INVOICE_TYPE,
   BLOCK_NEW_EVENT_MESSAGE,
   PRE_EVENT_WARNING_MESSAGE,
-  PAYMENT_CONFIRMATION_MESSAGE,
   FINAL_INVOICE_MESSAGE,
   normalizeCurrency,
   resolveEventCurrency,
