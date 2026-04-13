@@ -17,6 +17,8 @@ export default function TicketEditor({
   onSave = null,
   saveLoading = false,
   canDeleteTicketTypes = true,
+  locked = false,
+  onLockedAttempt = null,
 }) {
   const navigate = useNavigate();
 
@@ -76,6 +78,10 @@ export default function TicketEditor({
   };
 
   const updateTicketGroup = (groupIndex, field, value) => {
+    if (locked) {
+      if (typeof onLockedAttempt === "function") onLockedAttempt();
+      return;
+    }
     updateSettings((prev) => ({
       ...prev,
       ticketGroups: prev.ticketGroups.map((group, index) =>
@@ -85,6 +91,10 @@ export default function TicketEditor({
   };
 
   const addMoreTicketTypes = () => {
+    if (locked) {
+      if (typeof onLockedAttempt === "function") onLockedAttempt();
+      return;
+    }
     const newIndex = settings.ticketGroups.length;
     setExpandedGroupIndex(newIndex);
     updateSettings((prev) => ({
@@ -97,6 +107,10 @@ export default function TicketEditor({
   };
 
   const removeTicketType = (groupIndex) => {
+    if (locked) {
+      if (typeof onLockedAttempt === "function") onLockedAttempt();
+      return;
+    }
     if (!canDeleteTicketTypes || settings.ticketGroups.length <= 1) return;
     setExpandedGroupIndex((prev) => {
       if (prev === groupIndex) return Math.max(0, groupIndex - 1);
@@ -134,6 +148,10 @@ export default function TicketEditor({
 
   const generate = async () => {
     if (loading) return;
+    if (locked) {
+      if (typeof onLockedAttempt === "function") onLockedAttempt();
+      return;
+    }
     if (totalQuantity < 1) {
       setFeedback({ kind: "error", message: "Set quantity to 1 or more before generating tickets." });
       return;
@@ -235,7 +253,13 @@ export default function TicketEditor({
                           <select
                             className="w-24 rounded border p-2 text-sm disabled:bg-slate-100 disabled:text-slate-500"
                             value={currency}
-                            onChange={(e) => setCurrency(e.target.value)}
+                            onChange={(e) => {
+                              if (locked) {
+                                if (typeof onLockedAttempt === "function") onLockedAttempt();
+                                return;
+                              }
+                              setCurrency(e.target.value);
+                            }}
                           >
                             <option value="USD">USD</option>
                             <option value="EUR">EUR</option>
@@ -284,7 +308,19 @@ export default function TicketEditor({
           <div className="mt-4 flex items-center justify-between">
             <button type="button" className="text-sm text-blue-600 hover:underline" onClick={addMoreTicketTypes}>+ Add type</button>
             {typeof onSave === "function" ? (
-              <AppButton type="button" variant="primary" onClick={() => onSave(buildDraft(settings))} loading={saveLoading} loadingText="Saving...">
+              <AppButton
+                type="button"
+                variant="primary"
+                onClick={() => {
+                  if (locked) {
+                    if (typeof onLockedAttempt === "function") onLockedAttempt();
+                    return;
+                  }
+                  onSave(buildDraft(settings));
+                }}
+                loading={saveLoading}
+                loadingText="Saving..."
+              >
                 Save changes
               </AppButton>
             ) : null}
@@ -310,7 +346,18 @@ export default function TicketEditor({
                   {index === 0 ? (
                     <div className="w-24">
                       <label className="mb-1 block text-sm font-medium">Currency</label>
-                      <input className="w-full rounded border p-2 text-sm" type="text" value={currency} onChange={(e) => setCurrency(e.target.value)} />
+                      <input
+                        className="w-full rounded border p-2 text-sm"
+                        type="text"
+                        value={currency}
+                        onChange={(e) => {
+                          if (locked) {
+                            if (typeof onLockedAttempt === "function") onLockedAttempt();
+                            return;
+                          }
+                          setCurrency(e.target.value);
+                        }}
+                      />
                     </div>
                   ) : <div className="w-24" />}
                   <div className="flex-1">

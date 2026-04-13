@@ -228,7 +228,7 @@ function readFileAsDataUrl(file) {
   });
 }
 
-function DateTimeInput({ value, onChange, minDate, disabled = false, className = "" }) {
+function DateTimeInput({ value, onChange, minDate, disabled = false, blocked = false, onBlockedAttempt = null, className = "" }) {
   const [datePart, timePart] = String(value || "").split("T");
   const [hStr, mStr] = (timePart || "").split(":");
   const h24 = parseInt(hStr || "", 10);
@@ -237,20 +237,37 @@ function DateTimeInput({ value, onChange, minDate, disabled = false, className =
   const h12 = isNaN(h24) ? 12 : (h24 % 12 || 12);
   const minutes = isNaN(m) ? 0 : m;
 
-  const emit = (d, newH24, newM) =>
+  const emit = (d, newH24, newM) => {
+    if (blocked) {
+      if (typeof onBlockedAttempt === "function") onBlockedAttempt();
+      return;
+    }
     onChange(`${d || ""}T${String(newH24 ?? 0).padStart(2, "0")}:${String(newM ?? 0).padStart(2, "0")}`);
+  };
 
   const handleHourChange = (e) => {
+    if (blocked) {
+      if (typeof onBlockedAttempt === "function") onBlockedAttempt();
+      return;
+    }
     const n = parseInt(e.target.value, 10);
     const newH24 = isPm ? (n === 12 ? 12 : n + 12) : (n === 12 ? 0 : n);
     emit(datePart, newH24, minutes);
   };
 
   const handleMinChange = (e) => {
+    if (blocked) {
+      if (typeof onBlockedAttempt === "function") onBlockedAttempt();
+      return;
+    }
     emit(datePart, isNaN(h24) ? 0 : h24, parseInt(e.target.value, 10));
   };
 
   const toggleAmPm = () => {
+    if (blocked) {
+      if (typeof onBlockedAttempt === "function") onBlockedAttempt();
+      return;
+    }
     if (isNaN(h24)) return;
     emit(datePart, isPm ? h24 - 12 : h24 + 12, minutes);
   };
@@ -263,6 +280,16 @@ function DateTimeInput({ value, onChange, minDate, disabled = false, className =
         min={minDate}
         onChange={(e) => emit(e.target.value, isNaN(h24) ? 0 : h24, minutes)}
         disabled={disabled}
+        onMouseDown={(e) => {
+          if (!blocked) return;
+          e.preventDefault();
+          if (typeof onBlockedAttempt === "function") onBlockedAttempt();
+        }}
+        onFocus={(e) => {
+          if (!blocked) return;
+          e.target.blur();
+          if (typeof onBlockedAttempt === "function") onBlockedAttempt();
+        }}
         className="min-w-0 flex-1 border-0 bg-transparent p-1.5 text-xs focus:outline-none"
       />
       <div className="flex shrink-0 items-center gap-0.5 border-l px-1.5 py-1.5">
@@ -524,6 +551,12 @@ export default function Dashboard() {
     if (Number.isNaN(expiry.getTime())) return false;
     return new Date() > expiry;
   }, [eventEditMode, summary?.event?.eventDate, summary?.event?.eventEndDate]);
+  const openEventLockedModal = useCallback(() => {
+    setEventLockedModal((prev) => {
+      if (prev?.open) return prev;
+      return { open: true, message: "This event has ended. Event details can no longer be changed." };
+    });
+  }, []);
   const visibleMenus = summary ? DASHBOARD_MENUS_ALL : DASHBOARD_MENUS_PRELOAD;
   const billingWarnings = Array.isArray(summary?.billingWarnings) ? summary.billingWarnings : [];
   const organizerInvoices = useMemo(() => {
@@ -2149,7 +2182,7 @@ export default function Dashboard() {
                   activeMenu === menu.id
                     ? "border-b-2 border-indigo-600 text-indigo-600"
                     : "border-b-2 border-transparent text-slate-500"
-                } ${isEditingExpiredEvent && (menu.id === "events" || menu.id === "tickets") ? "opacity-60 blur-[0.5px]" : ""}`}
+                }`}
               >
                 {TAB_ICONS[menu.id]}
                 {menu.label}
@@ -2174,7 +2207,7 @@ export default function Dashboard() {
           {activeMenu === "events" ? (
             <>
               <section className="mt-4 rounded border p-4">
-                <div className={`grid grid-cols-1 gap-2 sm:grid-cols-[100px_1fr] sm:items-center ${isEditingExpiredEvent ? "opacity-60 blur-[0.5px]" : ""}`}>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-[100px_1fr] sm:items-center">
                   <p className="font-semibold">Event:</p>
                   <select
                     className="w-full rounded border p-2 text-sm"
@@ -2197,35 +2230,40 @@ export default function Dashboard() {
                     value={eventDraft.organizerName}
                     onChange={(e) => setEventDraft((prev) => ({ ...prev, organizerName: e.target.value }))}
                     placeholder="Organizer or brand name"
-                    disabled={isEditingExpiredEvent || loading || savingEvent}
+                    readOnly={isEditingExpiredEvent}
+                    onFocus={() => { if (isEditingExpiredEvent) openEventLockedModal(); }}
                   />
                   <p className="font-semibold">Event Name:</p>
                   <input
                     className="w-full rounded border p-2 text-sm"
                     value={eventDraft.eventName}
                     onChange={(e) => setEventDraft((prev) => ({ ...prev, eventName: e.target.value }))}
-                    disabled={isEditingExpiredEvent || loading || savingEvent}
+                    readOnly={isEditingExpiredEvent}
+                    onFocus={() => { if (isEditingExpiredEvent) openEventLockedModal(); }}
                   />
                   <p className="font-semibold">Start Date:</p>
                   <DateTimeInput
                     value={eventDraft.eventDate}
                     onChange={(v) => setEventDraft((prev) => ({ ...prev, eventDate: v }))}
                     minDate={new Date().toISOString().slice(0, 10)}
-                    disabled={isEditingExpiredEvent || loading || savingEvent}
+                    blocked={isEditingExpiredEvent}
+                    onBlockedAttempt={openEventLockedModal}
                   />
                   <p className="font-semibold">End Date:</p>
                   <DateTimeInput
                     value={eventDraft.eventEndDate}
                     onChange={(v) => setEventDraft((prev) => ({ ...prev, eventEndDate: v }))}
                     minDate={new Date().toISOString().slice(0, 10)}
-                    disabled={isEditingExpiredEvent || loading || savingEvent}
+                    blocked={isEditingExpiredEvent}
+                    onBlockedAttempt={openEventLockedModal}
                   />
                   <p className="font-semibold">Location:</p>
                   <input
                     className="w-full rounded border p-2 text-sm"
                     value={eventDraft.eventAddress}
                     onChange={(e) => setEventDraft((prev) => ({ ...prev, eventAddress: e.target.value }))}
-                    disabled={isEditingExpiredEvent || loading || savingEvent}
+                    readOnly={isEditingExpiredEvent}
+                    onFocus={() => { if (isEditingExpiredEvent) openEventLockedModal(); }}
                   />
                   <p className="font-semibold">Payment:</p>
                   <div>
@@ -2235,7 +2273,8 @@ export default function Dashboard() {
                       placeholder="How should clients pay? (e.g. CashApp $..., Zelle ..., bank transfer...)"
                       value={eventDraft.paymentInstructions}
                       onChange={(e) => setEventDraft((prev) => ({ ...prev, paymentInstructions: e.target.value }))}
-                      disabled={isEditingExpiredEvent || loading || savingEvent}
+                      readOnly={isEditingExpiredEvent}
+                      onFocus={() => { if (isEditingExpiredEvent) openEventLockedModal(); }}
                     />
                     <p className="mt-1 text-xs text-slate-500">Leave this blank for free events.</p>
                   </div>
@@ -2255,7 +2294,8 @@ export default function Dashboard() {
                           value={eventDraft.salesCutoffAt}
                           onChange={(v) => setEventDraft((prev) => ({ ...prev, salesCutoffAt: v }))}
                           minDate={new Date().toISOString().slice(0, 10)}
-                          disabled={isEditingExpiredEvent || loading || savingEvent}
+                          blocked={isEditingExpiredEvent}
+                          onBlockedAttempt={openEventLockedModal}
                         />
                         {eventDraft.salesCutoffAt ? (
                           <button type="button" className="mt-1 text-xs text-slate-400 underline" onClick={() => setEventDraft((prev) => ({ ...prev, salesCutoffAt: "" }))}>Clear</button>
@@ -2269,7 +2309,8 @@ export default function Dashboard() {
                             value={eventDraft.salesWindowStart}
                             onChange={(e) => setEventDraft((prev) => ({ ...prev, salesWindowStart: e.target.value }))}
                             className="rounded border p-1.5 text-sm focus:outline-none"
-                            disabled={isEditingExpiredEvent || loading || savingEvent}
+                            readOnly={isEditingExpiredEvent}
+                            onFocus={() => { if (isEditingExpiredEvent) openEventLockedModal(); }}
                           />
                           <span className="text-slate-500">to</span>
                           <input
@@ -2277,7 +2318,8 @@ export default function Dashboard() {
                             value={eventDraft.salesWindowEnd}
                             onChange={(e) => setEventDraft((prev) => ({ ...prev, salesWindowEnd: e.target.value }))}
                             className="rounded border p-1.5 text-sm focus:outline-none"
-                            disabled={isEditingExpiredEvent || loading || savingEvent}
+                            readOnly={isEditingExpiredEvent}
+                            onFocus={() => { if (isEditingExpiredEvent) openEventLockedModal(); }}
                           />
                           {(eventDraft.salesWindowStart || eventDraft.salesWindowEnd) ? (
                             <button type="button" className="text-xs text-slate-400 underline" onClick={() => setEventDraft((prev) => ({ ...prev, salesWindowStart: "", salesWindowEnd: "" }))}>Clear</button>
@@ -2293,7 +2335,8 @@ export default function Dashboard() {
                           value={eventDraft.maxTicketsPerEmail}
                           onChange={(e) => setEventDraft((prev) => ({ ...prev, maxTicketsPerEmail: e.target.value }))}
                           className="w-32 rounded border p-1.5 text-sm focus:outline-none"
-                          disabled={isEditingExpiredEvent || loading || savingEvent}
+                          readOnly={isEditingExpiredEvent}
+                          onFocus={() => { if (isEditingExpiredEvent) openEventLockedModal(); }}
                         />
                         <p className="mt-1 text-xs text-slate-500">Leave blank for no limit.</p>
                       </div>
@@ -2381,53 +2424,34 @@ export default function Dashboard() {
 
           {activeMenu === "tickets" ? (
             <section className="mt-4 rounded border p-4">
-              {isEditingExpiredEvent ? (
-                <div className="mb-4 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-                  <p className="font-semibold">Event locked.</p>
-                  <p className="mt-1">This event has ended. Ticket edits are disabled.</p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <AppButton
-                      type="button"
-                      variant="secondary"
-                      className="px-3 py-1 text-xs"
-                      onClick={() => {
-                        setActiveMenu("events");
-                        switchToCreateEventMode();
-                      }}
-                    >
-                      Add New Event
-                    </AppButton>
-                  </div>
-                </div>
-              ) : null}
-
-              <div className={isEditingExpiredEvent ? "opacity-60 blur-[0.5px] pointer-events-none select-none" : ""}>
-                <div className="mb-5">
-                  <TicketEditor
-                    key={summary.event.id}
-                    mode="append_to_event"
-                    accessCode={accessCode}
-                    eventId={summary.event.id}
-                    initialTicketType={summary.event.ticketType || ""}
-                    initialTicketPrice={summary.event.ticketPrice || ""}
-                    initialDesignJson={summary.event.designJson || null}
-                    canDeleteTicketTypes={tickets.length < 1}
-                    onGenerated={handleTicketsGenerated}
-                    onDraftChange={applyTicketEditorDraft}
-                    onSave={saveTicketEditorDraft}
-                    saveLoading={savingTicketDraft}
-                  />
-                </div>
-                <FeedbackBanner className="mb-3" kind={ticketFb.kind} message={ticketFb.message} />
-                <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  <button
-                    type="button"
-                    className={`rounded border p-2 text-center ${ticketStatusFilter === TICKET_STATUS_FILTERS.TOTAL ? "border-slate-900 bg-slate-100" : "bg-white"}`}
-                    onClick={() => setTicketStatusFilter(TICKET_STATUS_FILTERS.TOTAL)}
-                  >
-                    <p className="text-[10px] uppercase text-slate-500">Total</p>
-                    <p className="text-lg font-bold leading-none">{totalCapacity}</p>
-                  </button>
+              <div className="mb-5">
+                <TicketEditor
+                  key={summary.event.id}
+                  mode="append_to_event"
+                  accessCode={accessCode}
+                  eventId={summary.event.id}
+                  initialTicketType={summary.event.ticketType || ""}
+                  initialTicketPrice={summary.event.ticketPrice || ""}
+                  initialDesignJson={summary.event.designJson || null}
+                  canDeleteTicketTypes={tickets.length < 1}
+                  onGenerated={handleTicketsGenerated}
+                  onDraftChange={applyTicketEditorDraft}
+                  onSave={saveTicketEditorDraft}
+                  saveLoading={savingTicketDraft}
+                  locked={isEditingExpiredEvent}
+                  onLockedAttempt={openEventLockedModal}
+                />
+              </div>
+              <FeedbackBanner className="mb-3" kind={ticketFb.kind} message={ticketFb.message} />
+              <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <button
+                  type="button"
+                  className={`rounded border p-2 text-center ${ticketStatusFilter === TICKET_STATUS_FILTERS.TOTAL ? "border-slate-900 bg-slate-100" : "bg-white"}`}
+                  onClick={() => setTicketStatusFilter(TICKET_STATUS_FILTERS.TOTAL)}
+                >
+                  <p className="text-[10px] uppercase text-slate-500">Total</p>
+                  <p className="text-lg font-bold leading-none">{totalCapacity}</p>
+                </button>
                   <button
                     type="button"
                     className={`rounded border p-2 text-center ${ticketStatusFilter === TICKET_STATUS_FILTERS.SOLD ? "border-slate-900 bg-slate-100" : "bg-white"}`}
@@ -2603,7 +2627,6 @@ export default function Dashboard() {
                   >
                     Next
                   </button>
-                </div>
                 </div>
               </div>
             </section>

@@ -175,3 +175,6 @@
 
 ## 2026-04-13 (Checkpoint)
 - [2026-04-13 15:46:23 -04:00] Fix OTP verify flow + lock expired event edits (events/tickets UI)
+
+## 2026-04-13 (Checkpoint)
+- [2026-04-13 16:25:09 -04:00] Refine expired event lock UX: no blur; open modal on interaction; lock TicketEditor via modal
