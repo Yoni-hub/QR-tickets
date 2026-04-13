@@ -14,7 +14,7 @@ const optionalTrimmedString = (max) =>
     .string()
     .trim()
     .max(max, `Must be at most ${max} characters.`)
-    .optional();
+    .nullish();
 
 const emailString = z
   .string({ required_error: "email is required." })

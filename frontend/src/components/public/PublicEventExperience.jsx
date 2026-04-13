@@ -201,7 +201,7 @@ export default function PublicEventExperience({
         email: form.email.trim(),
         otpToken: verifiedToken,
         ticketSelections: selectedSelections.map((item) => ({ ticketType: item.ticketType, quantity: item.quantity })),
-        evidenceImageDataUrl: isFreeSelection ? null : evidenceImageDataUrl,
+        ...(isFreeSelection ? {} : { evidenceImageDataUrl }),
         promoterCode,
       });
       if (typeof onRequestSuccess === "function") {

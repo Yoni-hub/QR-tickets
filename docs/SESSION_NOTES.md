@@ -178,3 +178,6 @@
 
 ## 2026-04-13 (Checkpoint)
 - [2026-04-13 16:25:09 -04:00] Refine expired event lock UX: no blur; open modal on interaction; lock TicketEditor via modal
+
+## 2026-04-13 (Checkpoint)
+- [2026-04-13 16:41:31 -04:00] Fix public ticket-request OTP flow validation: omit null evidenceImageDataUrl; allow nullish optional strings in Zod
