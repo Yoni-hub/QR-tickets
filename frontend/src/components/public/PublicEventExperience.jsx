@@ -455,7 +455,14 @@ export default function PublicEventExperience({
         <h2 className="text-lg font-semibold">Request Tickets</h2>
         <div className="mt-3 grid grid-cols-1 gap-2">
           <input className="rounded border p-2" placeholder="Name (required)" value={form.name} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} />
-          <input className="rounded border p-2" type="email" placeholder="Email (required — we'll send your ticket here)" value={form.email} onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))} />
+          <input
+            className={`rounded border p-2 ${otpStep ? "bg-slate-50 text-slate-500" : ""}`}
+            type="email"
+            placeholder="Email (required — we'll send your ticket here)"
+            value={form.email}
+            onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))}
+            disabled={otpStep || submitting}
+          />
         </div>
 
         {isFreeSelection ? (
@@ -511,6 +518,14 @@ export default function PublicEventExperience({
             </div>
             <button type="button" className="text-xs text-blue-600 underline" onClick={requestOtp}>
               Resend code
+            </button>
+            <button
+              type="button"
+              className="text-xs text-slate-500 underline"
+              onClick={() => { setOtpStep(false); setOtpCode(""); setOtpToken(""); setFeedback({ kind: "", message: "" }); }}
+              disabled={submitting}
+            >
+              Change email
             </button>
           </div>
         ) : (

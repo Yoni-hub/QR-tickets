@@ -393,8 +393,6 @@ async function createPublicTicketRequest(req, res) {
     res.status(400).json({ error: "Invalid or expired verification token. Please verify your email again." });
     return;
   }
-  // Mark token as used immediately to prevent replay
-  await prisma.emailVerification.update({ where: { id: otpRecord.id }, data: { tokenUsed: true } });
   if (!ticketSelections.length) {
     res.status(400).json({ error: "Select at least one ticket type with quantity." });
     return;
@@ -547,6 +545,17 @@ async function createPublicTicketRequest(req, res) {
     },
     select: { id: true },
   }).then(Boolean);
+
+  // Consume token only once we are confident the request will be created.
+  // This avoids forcing users to re-verify when later validations (inventory, sales window, evidence upload) fail.
+  const consumeResult = await prisma.emailVerification.updateMany({
+    where: { id: otpRecord.id, verified: true, tokenUsed: false },
+    data: { tokenUsed: true },
+  });
+  if (consumeResult.count !== 1) {
+    res.status(400).json({ error: "Verification token was already used. Please verify your email again." });
+    return;
+  }
 
   const request = await prisma.ticketRequest.create({
     data: {

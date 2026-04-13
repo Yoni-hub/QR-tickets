@@ -172,3 +172,6 @@
 - **Help page** (`frontend/src/pages/HelpPage.jsx`): Replaced the name/email/access-code support form with a role-selection flow. Three roles: organizer → redirected to `/dashboard`, ticket buyer → redirected to `/client`, visitor → redirected to FAQ tab. Each result panel has a Back button. Removed all legacy API calls, localStorage token logic, and `FeedbackBanner`.
 - **Dashboard home** (`frontend/src/pages/Dashboard.jsx`): Added `handleGetStarted` (scrolls/focuses organizer name input), `handleAlreadyHaveCode` (shows access code entry, dispatches `qr-dashboard-code-entry` event), `handleBackToHome` (hides entry, dispatches `qr-dashboard-home-mode`). When "Already have code" is clicked, the generate/events section is hidden — only the access code input view is shown. Added tooltip on organizer name input in access-code-generation mode.
 - **App nav** (`frontend/src/App.jsx`): Added `isDashboardEntry` state + listeners for `qr-dashboard-code-entry`/`qr-dashboard-home-mode` custom events. Nav always shows "Home" (`/dashboard?home=1`); "Dashboard" nav item appears only when `hasLoadedDashboard || isDashboardEntry`.
+
+## 2026-04-13 (Checkpoint)
+- [2026-04-13 15:46:23 -04:00] Fix OTP verify flow + lock expired event edits (events/tickets UI)
