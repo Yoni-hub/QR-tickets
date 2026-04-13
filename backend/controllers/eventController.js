@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const prisma = require("../utils/prisma");
 const { generateAccessCode } = require("../utils/accessCode");
 const { LIMITS, sanitizeText, safeError } = require("../utils/sanitize");
-const { createEvent, buildQrPayload } = require("../services/eventService");
+const { createEvent, buildQrPayload, getPublicBaseUrl } = require("../services/eventService");
 const {
   isOrganizerBlockedFromNewEvents,
   getPreEventUnpaidWarning,
@@ -13,7 +13,7 @@ const {
 const { generateTicketPublicId } = require("../utils/ticketPublicId");
 const { checkDailyTicketCap } = require("../utils/dailyCaps");
 const { verifyTurnstile } = require("../utils/turnstile");
-const { sendOtpEmail, sendOrganizerRecoveryEmail } = require("../utils/mailer");
+const { sendOtpEmail, sendOrganizerRecoveryEmail, sendOrganizerBillingUpdateEmail } = require("../utils/mailer");
 const {
   DEFAULT_TICKET_TYPE,
   reservePendingTicketIds,
@@ -140,6 +140,8 @@ async function resolveEventGroupByAccessCode(accessCode) {
       maxTicketsPerEmail: true,
       emailVerified: true,
       organizerEmail: true,
+      notifyOnRequest: true,
+      notifyOnMessage: true,
       invoiceEvidenceAutoApprove: true,
       scannerLocked: true,
     },
@@ -1013,6 +1015,8 @@ async function createEventForAccessCode(req, res) {
   const groupOrganizerEmail = group.events
     .map((entry) => String(entry.organizerEmail || "").trim().toLowerCase())
     .find(Boolean) || null;
+  const groupNotifyOnRequest = group.events.some((e) => e.notifyOnRequest === true);
+  const groupNotifyOnMessage = group.events.some((e) => e.notifyOnMessage === true);
   const created = await prisma.userEvent.create({
     data: {
       organizerName: organizerName || null,
@@ -1028,6 +1032,8 @@ async function createEventForAccessCode(req, res) {
       slug,
       isDemo: false,
       emailVerified: groupEmailVerified,
+      notifyOnRequest: groupNotifyOnRequest,
+      notifyOnMessage: groupNotifyOnMessage,
     },
     select: {
       id: true,
@@ -1048,6 +1054,51 @@ async function createEventForAccessCode(req, res) {
     event: created,
     organizerAccessCode: group.organizerAccessCode,
   });
+}
+
+async function sendOrganizerNotificationTestEmail(req, res) {
+  const accessCode = (req.params.accessCode || "").trim();
+  if (!accessCode) {
+    res.status(400).json({ error: "accessCode is required." });
+    return;
+  }
+
+  const event = await prisma.userEvent.findFirst({
+    where: { OR: [{ accessCode }, { organizerAccessCode: accessCode }] },
+    select: { organizerEmail: true, emailVerified: true, eventName: true, organizerAccessCode: true, accessCode: true },
+  });
+  if (!event) {
+    res.status(404).json({ error: "Event not found." });
+    return;
+  }
+
+  const to = String(event.organizerEmail || "").trim().toLowerCase();
+  if (!to) {
+    res.status(400).json({ error: "Organizer email is missing. Verify your email in Settings first." });
+    return;
+  }
+  if (event.emailVerified !== true) {
+    res.status(400).json({ error: "Organizer email is not verified yet. Verify your email in Settings first." });
+    return;
+  }
+
+  const baseUrl = getPublicBaseUrl();
+  const canonicalCode = String(event.organizerAccessCode || event.accessCode || accessCode).trim();
+  const dashboardUrl = `${baseUrl}/dashboard?code=${encodeURIComponent(canonicalCode)}&menu=settings`;
+
+  try {
+    await sendOrganizerBillingUpdateEmail({
+      to,
+      eventName: event.eventName,
+      message: `Test email: Your notification email is working. Dashboard: ${dashboardUrl}`,
+    });
+  } catch (error) {
+    logger.error("sendOrganizerNotificationTestEmail failed", error);
+    res.status(500).json({ error: "Failed to send test email. Check SMTP configuration and try again." });
+    return;
+  }
+
+  res.json({ sent: true });
 }
 
 function normalizeTicketsPerPage(rawValue) {
@@ -1359,6 +1410,7 @@ module.exports = {
   updateOrganizerNotifications,
   sendNotificationEmailOtp,
   verifyNotificationEmailOtp,
+  sendOrganizerNotificationTestEmail,
   submitOrganizerInvoicePaymentEvidence,
   listOrganizerInvoicePaymentEvidence,
   mergeOrphanEvent,

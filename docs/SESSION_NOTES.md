@@ -181,3 +181,6 @@
 
 ## 2026-04-13 (Checkpoint)
 - [2026-04-13 16:41:31 -04:00] Fix public ticket-request OTP flow validation: omit null evidenceImageDataUrl; allow nullish optional strings in Zod
+
+## 2026-04-13 (Checkpoint)
+- [2026-04-13 17:12:54 -04:00] Add notification test email + propagate notify flags; use modal locks for started/sold events; fix modal close sticking

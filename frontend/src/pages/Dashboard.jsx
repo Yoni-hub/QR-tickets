@@ -455,6 +455,8 @@ export default function Dashboard() {
   const [sendingNotifOtp, setSendingNotifOtp] = useState(false);
   const [verifyingNotifOtp, setVerifyingNotifOtp] = useState(false);
   const [notifEmailFb, setNotifEmailFb] = useFeedback();
+  const [sendingNotifTest, setSendingNotifTest] = useState(false);
+  const [notifTestFb, setNotifTestFb] = useFeedback();
   const [promoterForm, setPromoterForm] = useState({ name: "" });
   const [chatUnreadTotal, setChatUnreadTotal] = useState(0);
   const [chatContext, setChatContext] = useState(null);
@@ -501,6 +503,7 @@ export default function Dashboard() {
     ticketPublicId: null,
     promoterId: null,
   });
+  const eventLockedModalCooldownRef = useRef(0);
 
   const accessCode = useMemo(() => code.trim(), [code]);
   const organizerChatAccessCode = useMemo(() => {
@@ -551,11 +554,31 @@ export default function Dashboard() {
     if (Number.isNaN(expiry.getTime())) return false;
     return new Date() > expiry;
   }, [eventEditMode, summary?.event?.eventDate, summary?.event?.eventEndDate]);
-  const openEventLockedModal = useCallback(() => {
+  const isEditingStartedEvent = useMemo(() => {
+    if (eventEditMode !== EVENT_EDIT_MODES.EDIT) return false;
+    const startValue = summary?.event?.eventDate;
+    if (!startValue) return false;
+    const start = new Date(startValue);
+    if (Number.isNaN(start.getTime())) return false;
+    return new Date() >= start;
+  }, [eventEditMode, summary?.event?.eventDate]);
+  const hasSoldTickets = useMemo(() => {
+    const total = Number(summary?.totalTickets || 0);
+    const remaining = Number(summary?.remainingTickets || 0);
+    if (!Number.isFinite(total) || !Number.isFinite(remaining)) return false;
+    return total - remaining > 0;
+  }, [summary?.totalTickets, summary?.remainingTickets]);
+  const openEventLockedModal = useCallback((message = "This event has ended. Event details can no longer be changed.") => {
+    const now = Date.now();
+    if (now - eventLockedModalCooldownRef.current < 350) return;
     setEventLockedModal((prev) => {
       if (prev?.open) return prev;
-      return { open: true, message: "This event has ended. Event details can no longer be changed." };
+      return { open: true, message };
     });
+  }, []);
+  const closeEventLockedModal = useCallback(() => {
+    eventLockedModalCooldownRef.current = Date.now();
+    setEventLockedModal({ open: false, message: "" });
   }, []);
   const visibleMenus = summary ? DASHBOARD_MENUS_ALL : DASHBOARD_MENUS_PRELOAD;
   const billingWarnings = Array.isArray(summary?.billingWarnings) ? summary.billingWarnings : [];
@@ -1217,6 +1240,20 @@ export default function Dashboard() {
     }
   };
 
+  const sendNotifTestEmail = async () => {
+    if (!accessCode || sendingNotifTest) return;
+    setSendingNotifTest(true);
+    setNotifTestFb("", "");
+    try {
+      await api.post(`/events/by-code/${encodeURIComponent(accessCode)}/notifications/send-test`, {});
+      setNotifTestFb("success", "Test email sent. Check your inbox (and spam).");
+    } catch (err) {
+      setNotifTestFb("error", err.response?.data?.error || "Could not send test email.");
+    } finally {
+      setSendingNotifTest(false);
+    }
+  };
+
   const isOrganizerVerified = notifDraft.emailVerified === true;
 
   const openVerifyGate = (pendingAction) => {
@@ -1477,7 +1514,7 @@ export default function Dashboard() {
       if (handleTicketLockError(requestError)) return;
       const errMsg = resolveApiErrorMessage(requestError, "Could not update event.");
       if (String(errMsg || "").toLowerCase().includes("event has ended")) {
-        setEventLockedModal({ open: true, message: errMsg });
+        openEventLockedModal(errMsg);
         setEventFb("error", "");
         return;
       }
@@ -2230,40 +2267,57 @@ export default function Dashboard() {
                     value={eventDraft.organizerName}
                     onChange={(e) => setEventDraft((prev) => ({ ...prev, organizerName: e.target.value }))}
                     placeholder="Organizer or brand name"
-                    readOnly={isEditingExpiredEvent}
-                    onFocus={() => { if (isEditingExpiredEvent) openEventLockedModal(); }}
+                    readOnly={isEditingExpiredEvent || isEditingStartedEvent}
+                    onFocus={() => {
+                      if (isEditingExpiredEvent) openEventLockedModal("This event has ended. Event details can no longer be changed.");
+                      else if (isEditingStartedEvent) openEventLockedModal("Event has started. You cannot change event details after the start time.");
+                    }}
                   />
                   <p className="font-semibold">Event Name:</p>
                   <input
                     className="w-full rounded border p-2 text-sm"
                     value={eventDraft.eventName}
                     onChange={(e) => setEventDraft((prev) => ({ ...prev, eventName: e.target.value }))}
-                    readOnly={isEditingExpiredEvent}
-                    onFocus={() => { if (isEditingExpiredEvent) openEventLockedModal(); }}
+                    readOnly={isEditingExpiredEvent || isEditingStartedEvent}
+                    onFocus={() => {
+                      if (isEditingExpiredEvent) openEventLockedModal("This event has ended. Event details can no longer be changed.");
+                      else if (isEditingStartedEvent) openEventLockedModal("Event has started. You cannot change event details after the start time.");
+                    }}
                   />
                   <p className="font-semibold">Start Date:</p>
                   <DateTimeInput
                     value={eventDraft.eventDate}
                     onChange={(v) => setEventDraft((prev) => ({ ...prev, eventDate: v }))}
                     minDate={new Date().toISOString().slice(0, 10)}
-                    blocked={isEditingExpiredEvent}
-                    onBlockedAttempt={openEventLockedModal}
+                    blocked={isEditingExpiredEvent || isEditingStartedEvent || hasSoldTickets}
+                    onBlockedAttempt={() => {
+                      if (isEditingExpiredEvent) openEventLockedModal("This event has ended. Event details can no longer be changed.");
+                      else if (isEditingStartedEvent) openEventLockedModal("Event has started. You cannot change event details after the start time.");
+                      else if (hasSoldTickets) openEventLockedModal("Event start date/time cannot be changed after tickets are sold.");
+                    }}
                   />
                   <p className="font-semibold">End Date:</p>
                   <DateTimeInput
                     value={eventDraft.eventEndDate}
                     onChange={(v) => setEventDraft((prev) => ({ ...prev, eventEndDate: v }))}
                     minDate={new Date().toISOString().slice(0, 10)}
-                    blocked={isEditingExpiredEvent}
-                    onBlockedAttempt={openEventLockedModal}
+                    blocked={isEditingExpiredEvent || isEditingStartedEvent || hasSoldTickets}
+                    onBlockedAttempt={() => {
+                      if (isEditingExpiredEvent) openEventLockedModal("This event has ended. Event details can no longer be changed.");
+                      else if (isEditingStartedEvent) openEventLockedModal("Event has started. You cannot change event details after the start time.");
+                      else if (hasSoldTickets) openEventLockedModal("Event end date/time cannot be changed after tickets are sold.");
+                    }}
                   />
                   <p className="font-semibold">Location:</p>
                   <input
                     className="w-full rounded border p-2 text-sm"
                     value={eventDraft.eventAddress}
                     onChange={(e) => setEventDraft((prev) => ({ ...prev, eventAddress: e.target.value }))}
-                    readOnly={isEditingExpiredEvent}
-                    onFocus={() => { if (isEditingExpiredEvent) openEventLockedModal(); }}
+                    readOnly={isEditingExpiredEvent || isEditingStartedEvent}
+                    onFocus={() => {
+                      if (isEditingExpiredEvent) openEventLockedModal("This event has ended. Event details can no longer be changed.");
+                      else if (isEditingStartedEvent) openEventLockedModal("Event has started. You cannot change event details after the start time.");
+                    }}
                   />
                   <p className="font-semibold">Payment:</p>
                   <div>
@@ -2273,8 +2327,11 @@ export default function Dashboard() {
                       placeholder="How should clients pay? (e.g. CashApp $..., Zelle ..., bank transfer...)"
                       value={eventDraft.paymentInstructions}
                       onChange={(e) => setEventDraft((prev) => ({ ...prev, paymentInstructions: e.target.value }))}
-                      readOnly={isEditingExpiredEvent}
-                      onFocus={() => { if (isEditingExpiredEvent) openEventLockedModal(); }}
+                      readOnly={isEditingExpiredEvent || isEditingStartedEvent}
+                      onFocus={() => {
+                        if (isEditingExpiredEvent) openEventLockedModal("This event has ended. Event details can no longer be changed.");
+                        else if (isEditingStartedEvent) openEventLockedModal("Event has started. You cannot change event details after the start time.");
+                      }}
                     />
                     <p className="mt-1 text-xs text-slate-500">Leave this blank for free events.</p>
                   </div>
@@ -2294,8 +2351,11 @@ export default function Dashboard() {
                           value={eventDraft.salesCutoffAt}
                           onChange={(v) => setEventDraft((prev) => ({ ...prev, salesCutoffAt: v }))}
                           minDate={new Date().toISOString().slice(0, 10)}
-                          blocked={isEditingExpiredEvent}
-                          onBlockedAttempt={openEventLockedModal}
+                          blocked={isEditingExpiredEvent || isEditingStartedEvent}
+                          onBlockedAttempt={() => {
+                            if (isEditingExpiredEvent) openEventLockedModal("This event has ended. Event details can no longer be changed.");
+                            else if (isEditingStartedEvent) openEventLockedModal("Event has started. You cannot change event details after the start time.");
+                          }}
                         />
                         {eventDraft.salesCutoffAt ? (
                           <button type="button" className="mt-1 text-xs text-slate-400 underline" onClick={() => setEventDraft((prev) => ({ ...prev, salesCutoffAt: "" }))}>Clear</button>
@@ -2309,8 +2369,11 @@ export default function Dashboard() {
                             value={eventDraft.salesWindowStart}
                             onChange={(e) => setEventDraft((prev) => ({ ...prev, salesWindowStart: e.target.value }))}
                             className="rounded border p-1.5 text-sm focus:outline-none"
-                            readOnly={isEditingExpiredEvent}
-                            onFocus={() => { if (isEditingExpiredEvent) openEventLockedModal(); }}
+                            readOnly={isEditingExpiredEvent || isEditingStartedEvent}
+                            onFocus={() => {
+                              if (isEditingExpiredEvent) openEventLockedModal("This event has ended. Event details can no longer be changed.");
+                              else if (isEditingStartedEvent) openEventLockedModal("Event has started. You cannot change event details after the start time.");
+                            }}
                           />
                           <span className="text-slate-500">to</span>
                           <input
@@ -2318,8 +2381,11 @@ export default function Dashboard() {
                             value={eventDraft.salesWindowEnd}
                             onChange={(e) => setEventDraft((prev) => ({ ...prev, salesWindowEnd: e.target.value }))}
                             className="rounded border p-1.5 text-sm focus:outline-none"
-                            readOnly={isEditingExpiredEvent}
-                            onFocus={() => { if (isEditingExpiredEvent) openEventLockedModal(); }}
+                            readOnly={isEditingExpiredEvent || isEditingStartedEvent}
+                            onFocus={() => {
+                              if (isEditingExpiredEvent) openEventLockedModal("This event has ended. Event details can no longer be changed.");
+                              else if (isEditingStartedEvent) openEventLockedModal("Event has started. You cannot change event details after the start time.");
+                            }}
                           />
                           {(eventDraft.salesWindowStart || eventDraft.salesWindowEnd) ? (
                             <button type="button" className="text-xs text-slate-400 underline" onClick={() => setEventDraft((prev) => ({ ...prev, salesWindowStart: "", salesWindowEnd: "" }))}>Clear</button>
@@ -2335,8 +2401,11 @@ export default function Dashboard() {
                           value={eventDraft.maxTicketsPerEmail}
                           onChange={(e) => setEventDraft((prev) => ({ ...prev, maxTicketsPerEmail: e.target.value }))}
                           className="w-32 rounded border p-1.5 text-sm focus:outline-none"
-                          readOnly={isEditingExpiredEvent}
-                          onFocus={() => { if (isEditingExpiredEvent) openEventLockedModal(); }}
+                          readOnly={isEditingExpiredEvent || isEditingStartedEvent}
+                          onFocus={() => {
+                            if (isEditingExpiredEvent) openEventLockedModal("This event has ended. Event details can no longer be changed.");
+                            else if (isEditingStartedEvent) openEventLockedModal("Event has started. You cannot change event details after the start time.");
+                          }}
                         />
                         <p className="mt-1 text-xs text-slate-500">Leave blank for no limit.</p>
                       </div>
@@ -2348,7 +2417,11 @@ export default function Dashboard() {
                     className=""
                     onClick={() => {
                       if (isEditingExpiredEvent) {
-                        setEventLockedModal({ open: true, message: "This event has ended. Event details can no longer be changed." });
+                        openEventLockedModal("This event has ended. Event details can no longer be changed.");
+                        return;
+                      }
+                      if (isEditingStartedEvent) {
+                        openEventLockedModal("Event has started. You cannot change event details after the start time.");
                         return;
                       }
                       saveEventInline();
@@ -3337,6 +3410,7 @@ export default function Dashboard() {
                     type="checkbox"
                     className="mt-0.5"
                     checked={notifDraft.notifyOnRequest}
+                    disabled={!isOrganizerVerified}
                     onChange={(e) => {
                       const val = e.target.checked;
                       setNotifDraft((prev) => ({ ...prev, notifyOnRequest: val }));
@@ -3350,6 +3424,7 @@ export default function Dashboard() {
                     type="checkbox"
                     className="mt-0.5"
                     checked={notifDraft.notifyOnMessage}
+                    disabled={!isOrganizerVerified}
                     onChange={(e) => {
                       const val = e.target.checked;
                       setNotifDraft((prev) => ({ ...prev, notifyOnMessage: val }));
@@ -3360,6 +3435,20 @@ export default function Dashboard() {
                 </label>
               </div>
               <FeedbackBanner className="mt-2" kind={notifFb.kind} message={notifFb.message} />
+
+              <div className="mt-4">
+                <AppButton
+                  type="button"
+                  variant="secondary"
+                  onClick={sendNotifTestEmail}
+                  loading={sendingNotifTest}
+                  loadingText="Sending..."
+                  disabled={!isOrganizerVerified}
+                >
+                  Send test email
+                </AppButton>
+                <FeedbackBanner className="mt-2" kind={notifTestFb.kind} message={notifTestFb.message} />
+              </div>
               </>
               ) : null}
             </section>
@@ -3708,7 +3797,12 @@ export default function Dashboard() {
               <p>{eventLockedModal.message || "This event has ended. Event details can no longer be changed."}</p>
             </div>
             <div className="mt-4 flex justify-end">
-              <AppButton type="button" variant="primary" onClick={() => setEventLockedModal({ open: false, message: "" })}>
+              <AppButton
+                type="button"
+                variant="primary"
+                onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                onClick={closeEventLockedModal}
+              >
                 OK
               </AppButton>
             </div>

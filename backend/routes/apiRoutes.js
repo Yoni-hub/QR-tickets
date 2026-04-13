@@ -11,6 +11,7 @@ const {
   updateOrganizerNotifications,
   sendNotificationEmailOtp,
   verifyNotificationEmailOtp,
+  sendOrganizerNotificationTestEmail,
   submitOrganizerInvoicePaymentEvidence,
   listOrganizerInvoicePaymentEvidence,
   mergeOrphanEvent,
@@ -102,6 +103,7 @@ const {
   updateNotificationsBodySchema,
   notificationSendOtpBodySchema,
   notificationVerifyOtpBodySchema,
+  notificationTestBodySchema,
   mergeEventBodySchema,
   ticketRequestIdParamSchema,
   ticketRequestActionBodySchema,
@@ -287,6 +289,11 @@ router.post(
   "/events/by-code/:accessCode/notifications/verify-email-otp",
   validateRequest({ params: accessCodeWithEventParamsSchema, body: notificationVerifyOtpBodySchema }),
   verifyNotificationEmailOtp,
+);
+router.post(
+  "/events/by-code/:accessCode/notifications/send-test",
+  validateRequest({ params: accessCodeWithEventParamsSchema, body: notificationTestBodySchema }),
+  sendOrganizerNotificationTestEmail,
 );
 router.post(
   "/events/by-code/:accessCode/merge-event",

@@ -346,6 +346,8 @@ const notificationVerifyOtpBodySchema = z
   })
   .passthrough();
 
+const notificationTestBodySchema = z.object({}).passthrough();
+
 const mergeEventBodySchema = z
   .object({
     orphanAccessCode: stringId("orphanAccessCode", 64),
@@ -492,6 +494,7 @@ module.exports = {
   updateNotificationsBodySchema,
   notificationSendOtpBodySchema,
   notificationVerifyOtpBodySchema,
+  notificationTestBodySchema,
   mergeEventBodySchema,
   ticketRequestActionBodySchema,
   ticketRequestMessageBodySchema,
