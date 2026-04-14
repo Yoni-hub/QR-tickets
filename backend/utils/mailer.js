@@ -434,7 +434,7 @@ async function sendAdminInvoiceEvidenceSubmittedEmail({
 }) {
   const transporter = getTransporter();
   const from = process.env.MAIL_FROM || "no-reply@localhost";
-  const to = String(process.env.ADMIN_NOTIFY_EMAIL || "support@connsura.com").trim() || "support@connsura.com";
+  const to = String(process.env.ADMIN_NOTIFY_EMAIL || process.env.BILLING_NOTIFY_EMAIL || "billing@connsura.com").trim() || "billing@connsura.com";
   const submittedText = submittedAt ? new Date(submittedAt).toLocaleString() : "";
   const subject = `Invoice evidence submitted: ${String(eventName || "event")}`;
   const text = [
