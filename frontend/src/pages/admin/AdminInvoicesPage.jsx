@@ -29,13 +29,6 @@ function formatMoney(currency, value) {
   return `${currency} ${amount}`;
 }
 
-function getPreferredInvoice(invoices) {
-  if (!Array.isArray(invoices) || !invoices.length) return null;
-  const finalInvoice = invoices.find((invoice) => invoice.invoiceType === "POST_EVENT_FINAL");
-  if (finalInvoice) return finalInvoice;
-  return invoices[0];
-}
-
 export default function AdminInvoicesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -55,7 +48,6 @@ export default function AdminInvoicesPage() {
   const [evidencePreview, setEvidencePreview] = useState("");
 
   const [selectedEventByOrganizer, setSelectedEventByOrganizer] = useState({});
-  const [selectedInvoiceTypeByOrganizerEvent, setSelectedInvoiceTypeByOrganizerEvent] = useState({});
 
   const load = async () => {
     setLoading(true);
@@ -84,16 +76,7 @@ export default function AdminInvoicesPage() {
         const firstInvoice = organizerInvoices[0];
         nextSelections[organizerCode] = firstInvoice?.eventId || "";
       }
-      const nextTypeSelections = {};
-      for (const invoice of nextItems) {
-        const organizerCode = String(invoice.organizerAccessCode || invoice.eventAccessCode || "UNKNOWN").trim();
-        const key = `${organizerCode}::${invoice.eventId}`;
-        if (!nextTypeSelections[key]) {
-          nextTypeSelections[key] = invoice.invoiceType;
-        }
-      }
       setSelectedEventByOrganizer(nextSelections);
-      setSelectedInvoiceTypeByOrganizerEvent(nextTypeSelections);
       setItems(nextItems);
       setMeta({
         autoApproveEnabledCount: Number(response.data?.meta?.autoApproveEnabledCount || 0),
@@ -246,14 +229,7 @@ export default function AdminInvoicesPage() {
       }));
       const selectedEventId = selectedEventByOrganizer[row.organizerAccessCode] || events[0]?.eventId || "";
       const selectedEvent = events.find((event) => event.eventId === selectedEventId) || events[0] || null;
-      const invoiceTypeOptions = Array.from(new Set((selectedEvent?.invoices || []).map((invoice) => invoice.invoiceType)));
-      const invoiceTypeKey = `${row.organizerAccessCode}::${selectedEventId}`;
-      const preferredInvoice = getPreferredInvoice(selectedEvent?.invoices || []);
-      const selectedInvoiceType = selectedInvoiceTypeByOrganizerEvent[invoiceTypeKey] || preferredInvoice?.invoiceType || invoiceTypeOptions[0] || "";
-      const selectedInvoice =
-        (selectedEvent?.invoices || []).find((invoice) => invoice.invoiceType === selectedInvoiceType)
-        || preferredInvoice
-        || null;
+      const selectedInvoice = (selectedEvent?.invoices || [])[0] || null;
       return {
         organizerAccessCode: row.organizerAccessCode,
         organizerName: row.organizerName,
@@ -261,12 +237,10 @@ export default function AdminInvoicesPage() {
         events,
         selectedEventId,
         selectedEvent,
-        invoiceTypeOptions,
-        selectedInvoiceType,
         selectedInvoice,
       };
     });
-  }, [items, selectedEventByOrganizer, selectedInvoiceTypeByOrganizerEvent]);
+  }, [items, selectedEventByOrganizer]);
 
   return (
     <section className="space-y-3">
@@ -388,7 +362,6 @@ export default function AdminInvoicesPage() {
                   <th className="px-3 py-2">Organizer name</th>
                   <th className="px-3 py-2">Organizer email</th>
                   <th className="px-3 py-2">Event name</th>
-                  <th className="px-3 py-2">Invoice type</th>
                   <th className="px-3 py-2">Invoice number</th>
                   <th className="px-3 py-2">Invoice date</th>
                   <th className="px-3 py-2">Sold tickets</th>
@@ -427,24 +400,6 @@ export default function AdminInvoicesPage() {
                         ))}
                       </select>
                     </td>
-                      <td className="px-3 py-2 min-w-[160px]">
-                        <select
-                          className="w-full rounded border p-2 text-sm"
-                          value={row.selectedInvoiceType}
-                          onChange={(event) =>
-                            setSelectedInvoiceTypeByOrganizerEvent((prev) => ({
-                              ...prev,
-                              [`${row.organizerAccessCode}::${row.selectedEventId}`]: event.target.value,
-                            }))
-                          }
-                        >
-                          {row.invoiceTypeOptions.map((typeOption) => (
-                            <option key={typeOption} value={typeOption}>
-                              {typeOption}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
                       <td className="px-3 py-2 font-mono text-xs">{invoice.invoiceNumber}</td>
                       <td className="px-3 py-2 whitespace-nowrap">{formatDate(invoice.invoiceDateTime)}</td>
                       <td className="px-3 py-2">{invoice.soldTickets ?? 0}</td>
@@ -478,10 +433,13 @@ export default function AdminInvoicesPage() {
                       </td>
                       <td className="px-3 py-2"><StatusBadge value={invoice.status} /></td>
                       <td className="px-3 py-2">
-                        {invoice.latestEvidenceImageDataUrl ? (
-                          <button type="button" onClick={() => setEvidencePreview(invoice.latestEvidenceImageDataUrl)}>
+                        {invoice.latestEvidenceImageDataUrl || invoice.firstPendingPaymentEvidenceImageDataUrl ? (
+                          <button
+                            type="button"
+                            onClick={() => setEvidencePreview(invoice.latestEvidenceImageDataUrl || invoice.firstPendingPaymentEvidenceImageDataUrl)}
+                          >
                             <img
-                              src={invoice.latestEvidenceImageDataUrl}
+                              src={invoice.latestEvidenceImageDataUrl || invoice.firstPendingPaymentEvidenceImageDataUrl}
                               alt="Payment evidence"
                               className="h-12 w-12 rounded border object-cover"
                             />
@@ -565,23 +523,6 @@ export default function AdminInvoicesPage() {
                     </option>
                   ))}
                   </select>
-                  <p className="mt-1 text-xs text-slate-500">Invoice type</p>
-                  <select
-                    className="w-full rounded border p-2 text-sm"
-                    value={row.selectedInvoiceType}
-                    onChange={(event) =>
-                      setSelectedInvoiceTypeByOrganizerEvent((prev) => ({
-                        ...prev,
-                        [`${row.organizerAccessCode}::${row.selectedEventId}`]: event.target.value,
-                      }))
-                    }
-                  >
-                    {row.invoiceTypeOptions.map((typeOption) => (
-                      <option key={typeOption} value={typeOption}>
-                        {typeOption}
-                      </option>
-                    ))}
-                  </select>
                   <p className="mt-1 text-xs text-slate-500">Invoice number</p>
                   <p className="font-mono text-xs">{invoice.invoiceNumber}</p>
                   <p className="mt-1 text-xs text-slate-500">Status</p>
@@ -616,10 +557,13 @@ export default function AdminInvoicesPage() {
                     </button>
                   </div>
                   <p className="mt-1 text-xs text-slate-500">Evidence</p>
-                  {invoice.latestEvidenceImageDataUrl ? (
-                    <button type="button" onClick={() => setEvidencePreview(invoice.latestEvidenceImageDataUrl)}>
+                  {invoice.latestEvidenceImageDataUrl || invoice.firstPendingPaymentEvidenceImageDataUrl ? (
+                    <button
+                      type="button"
+                      onClick={() => setEvidencePreview(invoice.latestEvidenceImageDataUrl || invoice.firstPendingPaymentEvidenceImageDataUrl)}
+                    >
                       <img
-                        src={invoice.latestEvidenceImageDataUrl}
+                        src={invoice.latestEvidenceImageDataUrl || invoice.firstPendingPaymentEvidenceImageDataUrl}
                         alt="Payment evidence"
                         className="h-16 w-16 rounded border object-cover"
                       />

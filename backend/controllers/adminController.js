@@ -5,6 +5,7 @@ const { resolveConfiguredAdminKey } = require("../middleware/adminAuth");
 const { writeAdminAuditLog } = require("../utils/adminAudit");
 const {
   SUPPORTED_CURRENCIES,
+  FINAL_INVOICE_TYPE,
   markInvoicePaid,
   addInvoicePayment,
   retryInvoiceDelivery,
@@ -903,6 +904,8 @@ async function listAdminInvoices(req, res) {
   const autoApproveFilter = String(req.query.autoApprove || "ALL").trim().toUpperCase();
 
   let where = {};
+  // Billing now uses a single post-event invoice only.
+  where = { ...where, invoiceType: FINAL_INVOICE_TYPE };
   if (statusFilter === "OVERDUE") {
     where = { ...where, status: "OVERDUE" };
   } else if (statusFilter === "UNPAID") {
