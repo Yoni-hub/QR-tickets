@@ -3011,27 +3011,18 @@ export default function Dashboard() {
                     const latestEvidenceImage = String(invoice?.lastEvidenceImageDataUrl || "").trim();
                     const draftEvidenceImage = String(draft?.evidenceImageDataUrl || "").trim();
                     const previewImage = draftEvidenceImage || latestEvidenceImage;
-                    const eventCreatedAt = summary?.event?.createdAt ? new Date(summary.event.createdAt) : null;
                     const eventStartAt = summary?.event?.eventDate ? new Date(summary.event.eventDate) : null;
                     const eventEndAt = summary?.event?.eventEndDate ? new Date(summary.event.eventEndDate) : eventStartAt;
-                    const isFinalInvoice = String(invoice.invoiceType || "") === "POST_EVENT_FINAL";
-                    const preSnapshotEndAt = eventStartAt ? new Date(eventStartAt.getTime() - 24 * 60 * 60 * 1000) : null;
-                    const previousInvoice = invoiceNumberIndex > 0 ? organizerInvoices[invoiceNumberIndex - 1] : null;
-                    const snapshotStartAt = isFinalInvoice
-                      ? (previousInvoice?.generatedAt ? new Date(previousInvoice.generatedAt) : eventCreatedAt)
-                      : eventCreatedAt;
-                    const snapshotEndAt = isFinalInvoice ? eventEndAt : preSnapshotEndAt;
+                    const snapshotStartAt = eventStartAt;
+                    const snapshotEndAt = eventEndAt;
                     const isPastInvoiceView = invoiceScope === "PAST";
-                    const currentInvoice = latestOrganizerInvoice && String(latestOrganizerInvoice.id || "").trim() !== invoiceId
-                      ? latestOrganizerInvoice
-                      : null;
                     return (
                       <article key={invoiceId} className={`rounded border bg-white p-3 text-sm ${isFocused ? "border-amber-300 bg-amber-50/40" : ""}`}>
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <p className="text-2xl font-black tracking-tight text-slate-900">INVOICE</p>
                             <p className="mt-1 text-xs font-semibold uppercase tracking-widest text-slate-500">
-                              {isFinalInvoice ? "Post-event" : "Pre-event"}
+                              Event
                               {snapshotStartAt && snapshotEndAt ? ` · ${snapshotStartAt.toLocaleString()} to ${snapshotEndAt.toLocaleString()}` : ""}
                             </p>
                           </div>
@@ -3197,35 +3188,7 @@ export default function Dashboard() {
                           </div>
                         </div>
 
-                        {isPastInvoiceView ? (
-                          invoice.invoiceType === "PRE_EVENT_24H" && currentInvoice ? (
-                            (() => {
-                              const currentRemaining = Number(currentInvoice?.amountRemaining || 0);
-                              if (amountRemaining <= 0 && currentRemaining > 0) {
-                                return (
-                                  <div className="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                                    You already made payment for this invoice. Check the current invoice for the remaining balance.
-                                  </div>
-                                );
-                              }
-                              if (amountRemaining > 0) {
-                                return (
-                                  <div className="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                                    Your remaining balance is added to the current invoice. Check the current invoice for the final amount you owe.
-                                  </div>
-                                );
-                              }
-                              if (amountRemaining <= 0 && currentRemaining <= 0) {
-                                return (
-                                  <div className="mt-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-                                    Thank you for your payment. You don't have any pending payment.
-                                  </div>
-                                );
-                              }
-                              return null;
-                            })()
-                          ) : null
-                        ) : (
+                        {isPastInvoiceView ? null : (
                           <>
                             <div className="mt-3 rounded border p-2">
                               <p className="text-xs font-semibold">Evidence</p>
@@ -3271,12 +3234,6 @@ export default function Dashboard() {
                                 {draft.fbMessage ? <p className={`text-xs ${draft.fbKind === "error" ? "text-red-600" : "text-emerald-700"}`}>{draft.fbMessage}</p> : null}
                               </div>
                             </div>
-
-                            {invoice.invoiceType === "PRE_EVENT_24H" && amountRemaining > 0 ? (
-                              <p className="mt-3 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-900">
-                                Remaining payment notice: {formatMoney(amountRemaining, invoice.currency)} is still due from this pre-event invoice.
-                              </p>
-                            ) : null}
                           </>
                         )}
                       </article>

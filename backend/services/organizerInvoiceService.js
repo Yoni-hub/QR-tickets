@@ -4,21 +4,19 @@ const { sendOrganizerInvoiceEmail, sendOrganizerBillingUpdateEmail } = require("
 const { CHAT_ACTOR, CHAT_CONVERSATION_TYPE, startConversationForActor, sendMessageForActor } = require("./chatService");
 const { getPublicBaseUrl } = require("./eventService");
 
-const INVOICE_WINDOW_HOURS_BEFORE_EVENT = 24;
-const INVOICE_DUE_HOURS_BEFORE_EVENT = 5;
 const FINAL_INVOICE_TRIGGER_MINUTES_AFTER_EVENT_END = 30;
 const FINAL_INVOICE_DUE_HOURS_AFTER_GENERATION = 3;
+// Legacy invoice type kept for backwards compatibility with older data.
 const PRE_EVENT_INVOICE_TYPE = "PRE_EVENT_24H";
 const FINAL_INVOICE_TYPE = "POST_EVENT_FINAL";
 const SUPPORTED_CURRENCIES = ["ETB", "USD", "EUR"];
 const BLOCK_NEW_EVENT_MESSAGE = "You currently have an unpaid overdue balance. New event creation is temporarily blocked until the outstanding invoice is paid in full.";
-const PRE_EVENT_WARNING_MESSAGE = "Payment is due no later than 5 hours before your event start time. If payment is not received by then, you may experience scanning problems during your event.";
+
 function formatCurrencyAmount(currency, amount) {
   return `${String(currency || "").trim()} ${roundMoney(amount).toFixed(2)}`.trim();
 }
 
 function buildPaymentReceiptMessage({
-  invoiceType,
   eventName,
   currency,
   creditedAmount,
@@ -27,26 +25,20 @@ function buildPaymentReceiptMessage({
   snapshotEndAt,
   invoiceUrl,
 }) {
-  const isFinal = String(invoiceType || "").trim().toUpperCase() === String(FINAL_INVOICE_TYPE || "POST_EVENT_FINAL");
-  const kindLabel = isFinal ? "Post-event invoice" : "Pre-event invoice";
   const startText = snapshotStartAt ? new Date(snapshotStartAt).toLocaleString() : null;
   const endText = snapshotEndAt ? new Date(snapshotEndAt).toLocaleString() : null;
-  const rangeLine = startText && endText ? `Period: ${startText} to ${endText}` : null;
+  const rangeLine = startText && endText ? `Event period: ${startText} to ${endText}` : null;
 
   const remaining = roundMoney(amountRemaining);
   const credited = roundMoney(creditedAmount);
 
   const lines = [
     `Payment received for "${String(eventName || "your event")}".`,
-    `Invoice: ${kindLabel}`,
     rangeLine,
     credited > 0 ? `Amount credited: ${formatCurrencyAmount(currency, credited)}` : null,
   ];
 
-  if (!isFinal && remaining > 0) {
-    lines.push(`Remaining balance: ${formatCurrencyAmount(currency, remaining)}`);
-    lines.push("This remaining balance will be added to your post-event invoice. We will send a final invoice after the event ends.");
-  } else if (remaining > 0) {
+  if (remaining > 0) {
     lines.push(`Remaining balance: ${formatCurrencyAmount(currency, remaining)}`);
   } else {
     lines.push("This invoice is paid in full.");
@@ -115,12 +107,6 @@ function toIsoDate(value) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function computePreInvoiceDueAt(eventDate) {
-  const startAt = toIsoDate(eventDate);
-  if (!startAt) return null;
-  return new Date(startAt.getTime() - INVOICE_DUE_HOURS_BEFORE_EVENT * 60 * 60 * 1000);
-}
-
 function computeFinalInvoiceDueAt(generatedAt) {
   const generated = toIsoDate(generatedAt);
   if (!generated) return null;
@@ -132,7 +118,6 @@ function resolveEventEndAt(event) {
 }
 
 function buildInvoiceChatMessage({
-  invoiceType,
   eventName,
   dueAt,
   snapshotStartAt,
@@ -143,18 +128,12 @@ function buildInvoiceChatMessage({
   const startText = snapshotStartAt ? new Date(snapshotStartAt).toLocaleString() : null;
   const endText = snapshotEndAt ? new Date(snapshotEndAt).toLocaleString() : null;
 
-  const isFinal = invoiceType === FINAL_INVOICE_TYPE;
-  const kindLine = isFinal
-    ? "This is your post-event invoice for tickets sold from"
-    : "This is your pre-event invoice for tickets sold from";
-
-  const rangeLine = startText && endText ? `${startText} to ${endText}` : null;
+  const rangeLine = startText && endText ? `Event period: ${startText} to ${endText}` : null;
   const dueLine = dueText ? `Due by: ${dueText}` : null;
 
   return [
     `Invoice for "${eventName}" is ready.`,
     "",
-    kindLine,
     rangeLine,
     dueLine,
     "",
@@ -177,32 +156,11 @@ function buildOrganizerInvoiceDashboardUrl(event, invoiceId) {
   return `${base}/dashboard?${params.toString()}#organizer-payment-invoices`;
 }
 
-function computePreEventSnapshotEndAt(eventDate) {
-  const ms = Date.parse(String(eventDate || ""));
-  if (!Number.isFinite(ms)) return null;
-  return new Date(ms - INVOICE_WINDOW_HOURS_BEFORE_EVENT * 60 * 60 * 1000);
-}
-
 async function resolveInvoiceSnapshotRange({ invoiceType, event, previousInvoiceId }) {
   const startFallback = event?.createdAt instanceof Date ? event.createdAt : null;
-  if (invoiceType === PRE_EVENT_INVOICE_TYPE) {
-    return {
-      snapshotStartAt: startFallback,
-      snapshotEndAt: computePreEventSnapshotEndAt(event?.eventDate),
-    };
-  }
-
-  // Final settlement invoice: from last invoice snapshot (previous invoice generatedAt) to event end.
-  let snapshotStartAt = startFallback;
-  if (previousInvoiceId) {
-    const previous = await prisma.organizerInvoice.findUnique({
-      where: { id: String(previousInvoiceId || "").trim() },
-      select: { generatedAt: true },
-    });
-    if (previous?.generatedAt) snapshotStartAt = previous.generatedAt;
-  }
+  const eventStartAt = toIsoDate(event?.eventDate) || startFallback;
   const eventEndAt = resolveEventEndAt(event);
-  return { snapshotStartAt, snapshotEndAt: eventEndAt };
+  return { snapshotStartAt: eventStartAt, snapshotEndAt: eventEndAt };
 }
 
 async function countApprovedTicketsSnapshot(eventId, options = {}) {
@@ -509,29 +467,6 @@ async function processInvoiceForEvent({
   return { status, invoiceId: invoice.id };
 }
 
-async function processPreEventInvoice(event, options = {}) {
-  const currency = resolveEventCurrency(event);
-  const unitPrice = UNIT_PRICE_BY_CURRENCY[currency];
-  const generatedAt = options.now instanceof Date ? options.now : new Date();
-  const dueAt = computePreInvoiceDueAt(event.eventDate);
-  if (!dueAt) throw new Error(`Invalid eventDate for event ${event.id}`);
-
-  const approvedTicketCount = await countApprovedTicketsSnapshot(event.id);
-  const totalAmount = roundMoney(approvedTicketCount * unitPrice);
-
-  return processInvoiceForEvent({
-    event,
-    invoiceType: PRE_EVENT_INVOICE_TYPE,
-    totalAmount,
-    approvedTicketCount,
-    unitPrice,
-    generatedAt,
-    dueAt,
-    previousInvoiceId: null,
-    options,
-  });
-}
-
 async function processFinalSettlementInvoice(event, options = {}) {
   const now = options.now instanceof Date ? options.now : new Date();
   const eventEndAt = resolveEventEndAt(event);
@@ -563,10 +498,6 @@ async function processFinalSettlementInvoice(event, options = {}) {
     return { status: "NO_BALANCE_DUE", eventId: event.id };
   }
 
-  const preInvoice = await prisma.organizerInvoice.findUnique({
-    where: { eventId_invoiceType: { eventId: event.id, invoiceType: PRE_EVENT_INVOICE_TYPE } },
-    select: { id: true },
-  });
   const generatedAt = now;
   const dueAt = computeFinalInvoiceDueAt(generatedAt);
   if (!dueAt) throw new Error(`Invalid generated date for final invoice event ${event.id}`);
@@ -579,7 +510,7 @@ async function processFinalSettlementInvoice(event, options = {}) {
     unitPrice,
     generatedAt,
     dueAt,
-    previousInvoiceId: preInvoice?.id || null,
+    previousInvoiceId: null,
     options,
   });
 }
@@ -587,46 +518,11 @@ async function processFinalSettlementInvoice(event, options = {}) {
 async function runOrganizerInvoiceGenerationCycle(options = {}) {
   const now = options.now instanceof Date ? options.now : new Date();
   const overdueUpdated = await markOverdueInvoices({ now });
-  const windowEnd = new Date(now.getTime() + INVOICE_WINDOW_HOURS_BEFORE_EVENT * 60 * 60 * 1000);
-
-  const preEvents = await prisma.userEvent.findMany({
-    where: {
-      adminStatus: "ACTIVE",
-      isDemo: false,
-      eventDate: { gt: now, lte: windowEnd },
-    },
-    select: {
-      id: true,
-      eventName: true,
-      eventDate: true,
-      eventEndDate: true,
-      createdAt: true,
-      organizerEmail: true,
-      accessCode: true,
-      organizerAccessCode: true,
-      designJson: true,
-    },
-    orderBy: { eventDate: "asc" },
-    take: 500,
-  });
-
-  const preResults = [];
-  for (const event of preEvents) {
-    try {
-      const result = await processPreEventInvoice(event, options);
-      preResults.push({ eventId: event.id, ...result });
-    } catch (error) {
-      logger.error("Organizer pre-event invoice cycle failed for event", {
-        eventId: event.id,
-        error: error?.message || "unknown",
-      });
-      preResults.push({ eventId: event.id, status: "FAILED", error: error?.message || "Unknown error" });
-    }
-  }
 
   const finalWindow = new Date(now.getTime() - FINAL_INVOICE_TRIGGER_MINUTES_AFTER_EVENT_END * 60 * 1000);
   const finalEvents = await prisma.userEvent.findMany({
     where: {
+      adminStatus: "ACTIVE",
       isDemo: false,
       OR: [
         { eventEndDate: { not: null, lte: finalWindow } },
@@ -664,8 +560,8 @@ async function runOrganizerInvoiceGenerationCycle(options = {}) {
 
   return {
     overdueUpdated,
-    scannedEvents: preEvents.length,
-    preResults,
+    scannedEvents: finalEvents.length,
+    preResults: [],
     finalScannedEvents: finalEvents.length,
     finalResults,
   };
@@ -693,7 +589,6 @@ async function sendPaymentReceiptNotice({ invoice, event, creditedAmount, amount
   });
 
   const message = buildPaymentReceiptMessage({
-    invoiceType: invoice.invoiceType,
     eventName: event?.eventName,
     currency: invoice.currencySnapshot,
     creditedAmount,
@@ -1080,25 +975,6 @@ async function isOrganizerBlockedFromNewEvents(organizerAccessCode) {
   return Boolean(overdueFinal);
 }
 
-async function getPreEventUnpaidWarning(eventId, eventDate, options = {}) {
-  const now = options.now instanceof Date ? options.now : new Date();
-  const eventStart = toIsoDate(eventDate);
-  if (!eventStart) return null;
-  const dueAt = computePreInvoiceDueAt(eventStart);
-  if (!dueAt) return null;
-  if (now < dueAt || now >= eventStart) return null;
-
-  const invoice = await prisma.organizerInvoice.findUnique({
-    where: { eventId_invoiceType: { eventId, invoiceType: PRE_EVENT_INVOICE_TYPE } },
-    select: { status: true, totalAmount: true, amountPaid: true },
-  });
-  if (!invoice) return null;
-  if (invoice.status === "PAID") return null;
-  if (computeAmountRemaining(invoice.totalAmount, invoice.amountPaid) <= 0) return null;
-
-  return PRE_EVENT_WARNING_MESSAGE;
-}
-
 async function submitInvoicePaymentEvidenceForOrganizer({
   organizerAccessCode,
   invoiceId,
@@ -1415,10 +1291,8 @@ async function setOrganizerInvoiceEvidenceAutoApprove(organizerAccessCode, enabl
 module.exports = {
   SUPPORTED_CURRENCIES,
   UNIT_PRICE_BY_CURRENCY,
-  PRE_EVENT_INVOICE_TYPE,
   FINAL_INVOICE_TYPE,
   BLOCK_NEW_EVENT_MESSAGE,
-  PRE_EVENT_WARNING_MESSAGE,
   FINAL_INVOICE_MESSAGE,
   normalizeCurrency,
   resolveEventCurrency,
@@ -1432,8 +1306,6 @@ module.exports = {
   allowInvoiceEvidenceAttachment,
   setOrganizerInvoiceEvidenceAutoApprove,
   isOrganizerBlockedFromNewEvents,
-  getPreEventUnpaidWarning,
   runOrganizerInvoiceGenerationCycle,
-  processPreEventInvoice,
   processFinalSettlementInvoice,
 };

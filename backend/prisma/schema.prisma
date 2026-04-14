@@ -63,7 +63,7 @@ model AdminCurrencyPaymentInstruction {
 model OrganizerInvoice {
   id                         String                @id @default(cuid())
   eventId                    String
-  invoiceType                OrganizerInvoiceType  @default(PRE_EVENT_24H)
+  invoiceType                OrganizerInvoiceType  @default(POST_EVENT_FINAL)
   previousInvoiceId          String?
   organizerEmailSnapshot     String
   currencySnapshot           SupportedCurrency

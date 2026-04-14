@@ -17,7 +17,6 @@ delete process.env.SMTP_PASS;
 const { app } = require("../index");
 const prisma = require("../utils/prisma");
 const {
-  processPreEventInvoice,
   processFinalSettlementInvoice,
   markOverdueInvoices,
   markInvoicePaid,
@@ -116,7 +115,7 @@ after(async () => {
   await prisma.$disconnect();
 });
 
-test("pre-event invoice snapshots ETB/USD/EUR pricing and instruction", async () => {
+test("final invoice snapshots ETB/USD/EUR pricing and instruction", async () => {
   const cases = [
     { symbol: "ETB", currency: "ETB", unitPrice: "5.00", total: "15.00" },
     { symbol: "$", currency: "USD", unitPrice: "0.99", total: "2.97" },
@@ -127,15 +126,16 @@ test("pre-event invoice snapshots ETB/USD/EUR pricing and instruction", async ()
     await setInstruction(item.currency, `${item.currency} payment instruction`);
     const event = await createEvent({ currencySymbol: item.symbol });
     await createApprovedTickets({ eventId: event.id, ticketCount: 3 });
-    const result = await processPreEventInvoice(event, {
+
+    const result = await processFinalSettlementInvoice(event, {
       sendInvoiceEmail: async () => {},
       sendInvoiceChat: async () => {},
-      now: new Date("2099-10-19T18:00:00.000Z"),
+      now: new Date("2099-10-20T20:31:00.000Z"),
     });
     assert.equal(result.status, "SENT");
 
     const invoice = await prisma.organizerInvoice.findUnique({
-      where: { eventId_invoiceType: { eventId: event.id, invoiceType: "PRE_EVENT_24H" } },
+      where: { eventId_invoiceType: { eventId: event.id, invoiceType: "POST_EVENT_FINAL" } },
     });
     assert.ok(invoice);
     assert.equal(invoice.currencySnapshot, item.currency);
@@ -145,116 +145,45 @@ test("pre-event invoice snapshots ETB/USD/EUR pricing and instruction", async ()
   }
 });
 
-test("CASE 1: paid early + extra tickets -> only delta billed in final invoice", async () => {
+test("final invoice is skipped until 30 minutes after event end", async () => {
   await setInstruction("USD", "USD bank details");
   const event = await createEvent({ currencySymbol: "$" });
+  await createApprovedTickets({ eventId: event.id, ticketCount: 1 });
 
-  await createApprovedTickets({ eventId: event.id, ticketCount: 2, createdAt: "2099-10-19T10:00:00.000Z" });
-  await processPreEventInvoice(event, {
+  const beforeCutoff = await processFinalSettlementInvoice(event, {
+    now: new Date("2099-10-20T20:29:00.000Z"),
     sendInvoiceEmail: async () => {},
     sendInvoiceChat: async () => {},
-    now: new Date("2099-10-19T18:00:00.000Z"),
   });
-  const preInvoice = await prisma.organizerInvoice.findUnique({
-    where: { eventId_invoiceType: { eventId: event.id, invoiceType: "PRE_EVENT_24H" } },
-  });
-  await markInvoicePaid(preInvoice.id, { now: new Date("2099-10-19T19:00:00.000Z") });
+  assert.equal(beforeCutoff.status, "SKIPPED_NOT_READY");
 
-  await createApprovedTickets({ eventId: event.id, ticketCount: 1, createdAt: "2099-10-20T19:30:00.000Z" });
-  const finalResult = await processFinalSettlementInvoice(event, {
+  const afterCutoff = await processFinalSettlementInvoice(event, {
     now: new Date("2099-10-20T20:31:00.000Z"),
     sendInvoiceEmail: async () => {},
     sendInvoiceChat: async () => {},
   });
-  assert.equal(finalResult.status, "SENT");
-
-  const finalInvoice = await prisma.organizerInvoice.findUnique({
-    where: { eventId_invoiceType: { eventId: event.id, invoiceType: "POST_EVENT_FINAL" } },
-  });
-  assert.ok(finalInvoice);
-  assert.equal(Number(finalInvoice.totalAmount).toFixed(2), "0.99");
+  assert.equal(afterCutoff.status, "SENT");
 });
 
-test("CASE 2: unpaid + extra tickets -> full remaining balance billed", async () => {
+test("final invoice only counts approved tickets created up to event end", async () => {
   await setInstruction("USD", "USD bank details");
   const event = await createEvent({ currencySymbol: "$" });
 
-  await createApprovedTickets({ eventId: event.id, ticketCount: 2, createdAt: "2099-10-19T10:00:00.000Z" });
-  await processPreEventInvoice(event, {
-    sendInvoiceEmail: async () => {},
-    sendInvoiceChat: async () => {},
-    now: new Date("2099-10-19T18:00:00.000Z"),
-  });
-  await createApprovedTickets({ eventId: event.id, ticketCount: 1, createdAt: "2099-10-20T19:30:00.000Z" });
+  await createApprovedTickets({ eventId: event.id, ticketCount: 2, createdAt: "2099-10-20T19:30:00.000Z" });
+  await createApprovedTickets({ eventId: event.id, ticketCount: 1, createdAt: "2099-10-20T20:30:00.000Z" });
 
-  const finalResult = await processFinalSettlementInvoice(event, {
+  const result = await processFinalSettlementInvoice(event, {
     now: new Date("2099-10-20T20:31:00.000Z"),
     sendInvoiceEmail: async () => {},
     sendInvoiceChat: async () => {},
   });
-  assert.equal(finalResult.status, "SENT");
+  assert.equal(result.status, "SENT");
 
-  const finalInvoice = await prisma.organizerInvoice.findUnique({
+  const invoice = await prisma.organizerInvoice.findUnique({
     where: { eventId_invoiceType: { eventId: event.id, invoiceType: "POST_EVENT_FINAL" } },
   });
-  assert.equal(Number(finalInvoice.totalAmount).toFixed(2), "2.97");
-});
-
-test("CASE 3: partial payment -> final remaining is mathematically correct", async () => {
-  await setInstruction("USD", "USD bank details");
-  const event = await createEvent({ currencySymbol: "$" });
-
-  await createApprovedTickets({ eventId: event.id, ticketCount: 2, createdAt: "2099-10-19T10:00:00.000Z" });
-  await processPreEventInvoice(event, {
-    sendInvoiceEmail: async () => {},
-    sendInvoiceChat: async () => {},
-    now: new Date("2099-10-19T18:00:00.000Z"),
-  });
-  const preInvoice = await prisma.organizerInvoice.findUnique({
-    where: { eventId_invoiceType: { eventId: event.id, invoiceType: "PRE_EVENT_24H" } },
-  });
-  await markInvoicePaid(preInvoice.id, { amountPaid: 1.0, now: new Date("2099-10-19T19:00:00.000Z") });
-  await createApprovedTickets({ eventId: event.id, ticketCount: 1, createdAt: "2099-10-20T19:30:00.000Z" });
-
-  const finalResult = await processFinalSettlementInvoice(event, {
-    now: new Date("2099-10-20T20:31:00.000Z"),
-    sendInvoiceEmail: async () => {},
-    sendInvoiceChat: async () => {},
-  });
-  assert.equal(finalResult.status, "SENT");
-
-  const finalInvoice = await prisma.organizerInvoice.findUnique({
-    where: { eventId_invoiceType: { eventId: event.id, invoiceType: "POST_EVENT_FINAL" } },
-  });
-  assert.equal(Number(finalInvoice.totalAmount).toFixed(2), "1.97");
-});
-
-test("CASE 4: no extra tickets after full payment -> no final invoice created", async () => {
-  await setInstruction("USD", "USD bank details");
-  const event = await createEvent({ currencySymbol: "$" });
-
-  await createApprovedTickets({ eventId: event.id, ticketCount: 2, createdAt: "2099-10-19T10:00:00.000Z" });
-  await processPreEventInvoice(event, {
-    sendInvoiceEmail: async () => {},
-    sendInvoiceChat: async () => {},
-    now: new Date("2099-10-19T18:00:00.000Z"),
-  });
-  const preInvoice = await prisma.organizerInvoice.findUnique({
-    where: { eventId_invoiceType: { eventId: event.id, invoiceType: "PRE_EVENT_24H" } },
-  });
-  await markInvoicePaid(preInvoice.id, { now: new Date("2099-10-19T19:00:00.000Z") });
-
-  const finalResult = await processFinalSettlementInvoice(event, {
-    now: new Date("2099-10-20T20:31:00.000Z"),
-    sendInvoiceEmail: async () => {},
-    sendInvoiceChat: async () => {},
-  });
-  assert.equal(finalResult.status, "NO_BALANCE_DUE");
-
-  const finalInvoice = await prisma.organizerInvoice.findUnique({
-    where: { eventId_invoiceType: { eventId: event.id, invoiceType: "POST_EVENT_FINAL" } },
-  });
-  assert.equal(finalInvoice, null);
+  assert.ok(invoice);
+  assert.equal(Number(invoice.totalAmount).toFixed(2), "1.98");
 });
 
 test("CASE 5: unpaid final invoice overdue blocks create-new event", async () => {
@@ -264,11 +193,6 @@ test("CASE 5: unpaid final invoice overdue blocks create-new event", async () =>
   const event = await createEvent({ currencySymbol: "$", organizerAccessCode, accessCode });
 
   await createApprovedTickets({ eventId: event.id, ticketCount: 2, createdAt: "2099-10-19T10:00:00.000Z" });
-  await processPreEventInvoice(event, {
-    sendInvoiceEmail: async () => {},
-    sendInvoiceChat: async () => {},
-    now: new Date("2099-10-19T18:00:00.000Z"),
-  });
   await processFinalSettlementInvoice(event, {
     now: new Date("2099-10-20T20:31:00.000Z"),
     sendInvoiceEmail: async () => {},
@@ -292,11 +216,6 @@ test("CASE 6: paying final invoice removes block and create-new works", async ()
   const event = await createEvent({ currencySymbol: "$", organizerAccessCode, accessCode });
 
   await createApprovedTickets({ eventId: event.id, ticketCount: 2, createdAt: "2099-10-19T10:00:00.000Z" });
-  await processPreEventInvoice(event, {
-    sendInvoiceEmail: async () => {},
-    sendInvoiceChat: async () => {},
-    now: new Date("2099-10-19T18:00:00.000Z"),
-  });
   await processFinalSettlementInvoice(event, {
     now: new Date("2099-10-20T20:31:00.000Z"),
     sendInvoiceEmail: async () => {},
@@ -322,19 +241,19 @@ test("partial payment increments amountPaid and keeps invoice unpaid until settl
   const event = await createEvent({ currencySymbol: "$" });
 
   await createApprovedTickets({ eventId: event.id, ticketCount: 2, createdAt: "2099-10-19T10:00:00.000Z" });
-  await processPreEventInvoice(event, {
+  await processFinalSettlementInvoice(event, {
+    now: new Date("2099-10-20T20:31:00.000Z"),
     sendInvoiceEmail: async () => {},
     sendInvoiceChat: async () => {},
-    now: new Date("2099-10-19T18:00:00.000Z"),
   });
 
   const invoice = await prisma.organizerInvoice.findUnique({
-    where: { eventId_invoiceType: { eventId: event.id, invoiceType: "PRE_EVENT_24H" } },
+    where: { eventId_invoiceType: { eventId: event.id, invoiceType: "POST_EVENT_FINAL" } },
   });
   const updated = await addInvoicePayment(invoice.id, {
     paymentAmount: 0.5,
     paymentNote: "first partial",
-    now: new Date("2099-10-19T18:30:00.000Z"),
+    now: new Date("2099-10-20T20:45:00.000Z"),
   });
 
   assert.equal(Number(updated.amountPaid).toFixed(2), "0.50");
@@ -348,19 +267,19 @@ test("multiple partial payments accumulate and clamp safely on overpayment", asy
   const event = await createEvent({ currencySymbol: "$" });
 
   await createApprovedTickets({ eventId: event.id, ticketCount: 2, createdAt: "2099-10-19T10:00:00.000Z" });
-  await processPreEventInvoice(event, {
+  await processFinalSettlementInvoice(event, {
+    now: new Date("2099-10-20T20:31:00.000Z"),
     sendInvoiceEmail: async () => {},
     sendInvoiceChat: async () => {},
-    now: new Date("2099-10-19T18:00:00.000Z"),
   });
 
   const invoice = await prisma.organizerInvoice.findUnique({
-    where: { eventId_invoiceType: { eventId: event.id, invoiceType: "PRE_EVENT_24H" } },
+    where: { eventId_invoiceType: { eventId: event.id, invoiceType: "POST_EVENT_FINAL" } },
   });
 
-  await addInvoicePayment(invoice.id, { paymentAmount: 0.7, now: new Date("2099-10-19T18:20:00.000Z") });
-  await addInvoicePayment(invoice.id, { paymentAmount: 0.7, now: new Date("2099-10-19T18:25:00.000Z") });
-  const settled = await addInvoicePayment(invoice.id, { paymentAmount: 5.0, now: new Date("2099-10-19T18:30:00.000Z") });
+  await addInvoicePayment(invoice.id, { paymentAmount: 0.7, now: new Date("2099-10-20T20:40:00.000Z") });
+  await addInvoicePayment(invoice.id, { paymentAmount: 0.7, now: new Date("2099-10-20T20:45:00.000Z") });
+  const settled = await addInvoicePayment(invoice.id, { paymentAmount: 5.0, now: new Date("2099-10-20T20:50:00.000Z") });
 
   assert.equal(Number(settled.amountPaid).toFixed(2), "1.98");
   assert.equal(Number(settled.amountRemaining).toFixed(2), "0.00");
@@ -372,18 +291,18 @@ test("paid invoice does not become overdue after dueAt passes", async () => {
   const event = await createEvent({ currencySymbol: "$" });
 
   await createApprovedTickets({ eventId: event.id, ticketCount: 1, createdAt: "2099-10-19T10:00:00.000Z" });
-  await processPreEventInvoice(event, {
+  await processFinalSettlementInvoice(event, {
+    now: new Date("2099-10-20T20:31:00.000Z"),
     sendInvoiceEmail: async () => {},
     sendInvoiceChat: async () => {},
-    now: new Date("2099-10-19T18:00:00.000Z"),
   });
 
   const invoice = await prisma.organizerInvoice.findUnique({
-    where: { eventId_invoiceType: { eventId: event.id, invoiceType: "PRE_EVENT_24H" } },
+    where: { eventId_invoiceType: { eventId: event.id, invoiceType: "POST_EVENT_FINAL" } },
   });
 
-  await addInvoicePayment(invoice.id, { paymentAmount: 0.99, now: new Date("2099-10-19T18:10:00.000Z") });
-  await markOverdueInvoices({ now: new Date("2099-10-20T14:00:00.000Z") });
+  await addInvoicePayment(invoice.id, { paymentAmount: 0.99, now: new Date("2099-10-20T21:00:00.000Z") });
+  await markOverdueInvoices({ now: new Date("2099-10-21T00:40:00.000Z") });
 
   const refreshed = await prisma.organizerInvoice.findUnique({ where: { id: invoice.id } });
   assert.equal(refreshed.status, "PAID");

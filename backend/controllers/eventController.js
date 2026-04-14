@@ -5,7 +5,6 @@ const { LIMITS, sanitizeText, safeError } = require("../utils/sanitize");
 const { createEvent, buildQrPayload, getPublicBaseUrl } = require("../services/eventService");
 const {
   isOrganizerBlockedFromNewEvents,
-  getPreEventUnpaidWarning,
   BLOCK_NEW_EVENT_MESSAGE,
   submitInvoicePaymentEvidenceForOrganizer,
   listInvoicePaymentEvidence,
@@ -279,7 +278,7 @@ async function getEventByCode(req, res) {
           },
         })
       : prisma.organizerInvoice.findFirst({
-          where: { eventId: event.id },
+          where: { eventId: event.id, invoiceType: "POST_EVENT_FINAL" },
           orderBy: { generatedAt: "desc" },
           select: {
             id: true,
@@ -293,7 +292,7 @@ async function getEventByCode(req, res) {
           },
         }),
     prisma.organizerInvoice.findMany({
-      where: { eventId: event.id },
+      where: { eventId: event.id, invoiceType: "POST_EVENT_FINAL" },
       orderBy: { generatedAt: "asc" },
       select: {
         id: true,
@@ -343,13 +342,6 @@ async function getEventByCode(req, res) {
     })),
   );
   const billingWarnings = [];
-  const preEventWarning = await getPreEventUnpaidWarning(event.id, event.eventDate);
-  if (preEventWarning) {
-    billingWarnings.push({
-      type: "PRE_EVENT_UNPAID_WARNING",
-      message: preEventWarning,
-    });
-  }
 
   res.json({
     organizerAccessCode: group.organizerAccessCode,
