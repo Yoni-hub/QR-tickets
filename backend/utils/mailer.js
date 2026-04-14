@@ -106,6 +106,10 @@ function getTransporter() {
       port,
       secure: port === 465,
       auth: user && pass ? { user, pass } : undefined,
+      // Avoid hanging requests when SMTP is slow/misconfigured.
+      connectionTimeout: 8_000,
+      greetingTimeout: 8_000,
+      socketTimeout: 15_000,
     });
     return cachedTransporter;
   }

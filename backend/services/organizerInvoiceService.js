@@ -701,11 +701,17 @@ async function markInvoicePaid(invoiceId, options = {}) {
       select: { id: true, eventName: true, organizerEmail: true, organizerAccessCode: true, accessCode: true, createdAt: true, eventDate: true, eventEndDate: true },
     });
     if (event) {
-      await sendPaymentReceiptNotice({
+      sendPaymentReceiptNotice({
         invoice: { ...invoice, ...updated },
         event,
         creditedAmount,
         amountRemaining: computeAmountRemaining(updated.totalAmount, updated.amountPaid),
+      }).catch((error) => {
+        logger.warn("Failed to send payment receipt notice", {
+          invoiceId: updated.id,
+          eventId: updated.eventId,
+          error: error?.message || "unknown",
+        });
       });
     }
   }
@@ -808,11 +814,17 @@ async function addInvoicePayment(invoiceId, options = {}) {
       select: { id: true, eventName: true, organizerEmail: true, organizerAccessCode: true, accessCode: true, createdAt: true, eventDate: true, eventEndDate: true },
     });
     if (event) {
-      await sendPaymentReceiptNotice({
+      sendPaymentReceiptNotice({
         invoice: { ...invoice, ...updated },
         event,
         creditedAmount: appliedAmount,
         amountRemaining,
+      }).catch((error) => {
+        logger.warn("Failed to send payment receipt notice", {
+          invoiceId: updated.id,
+          eventId: updated.eventId,
+          error: error?.message || "unknown",
+        });
       });
     }
   }
