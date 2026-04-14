@@ -66,7 +66,7 @@ const {
 } = require("../controllers/chatController");
 const { chatAttachmentUpload } = require("../middleware/chatUpload");
 const { validateRequest } = require("../middleware/validate");
-const { sendContactSupportEmail, sendOtpEmail } = require("../utils/mailer");
+const { sendContactSupportEmail, sendContactSupportAutoReplyEmail, sendOtpEmail } = require("../utils/mailer");
 const logger = require("../utils/logger");
 const {
   accessCodeParamSchema,
@@ -248,6 +248,12 @@ router.post("/public/contact", validateRequest({ body: contactBodySchema }), asy
   try {
     await sendContactSupportEmail({ fromEmail: email, message });
     contactUsedEmails.add(email);
+
+    // Send confirmation to the user directly (Zoho auto-responders reply to our MAIL_FROM, not the user).
+    sendContactSupportAutoReplyEmail({ to: email }).catch((err) => {
+      logger.warn("Contact support auto-reply email failed:", err);
+    });
+
     return res.json({ ok: true });
   } catch (err) {
     logger.error("Contact support email failed:", err);

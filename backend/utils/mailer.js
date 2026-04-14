@@ -397,7 +397,30 @@ async function sendContactSupportEmail({ fromEmail, message }) {
       <p style="white-space:pre-wrap;">${escapeHtml(message)}</p>
     </div>
   `;
-  return transporter.sendMail({ from, to, subject, text, html });
+  return transporter.sendMail({ from, to, subject, text, html, replyTo: String(fromEmail || "").trim() || undefined });
+}
+
+async function sendContactSupportAutoReplyEmail({ to }) {
+  const transporter = getTransporter();
+  const from = process.env.MAIL_FROM || "no-reply@localhost";
+  const normalizedTo = String(to || "").trim().toLowerCase();
+  if (!normalizedTo) return { skipped: true };
+  const subject = "We received your support message";
+  const text = [
+    "Hi there,",
+    "",
+    "Thanks for contacting Connsura support. Your message has been received and a member of our team will respond as soon as possible.",
+    "",
+    "Connsura Support Team",
+  ].join("\n");
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.45;color:#0f172a;">
+      <p>Hi there,</p>
+      <p>Thanks for contacting Connsura support. Your message has been received and a member of our team will respond as soon as possible.</p>
+      <p style="margin-top:18px;">Connsura Support Team</p>
+    </div>
+  `;
+  return transporter.sendMail({ from, to: normalizedTo, subject, text, html });
 }
 
 async function sendAdminInvoiceEvidenceSubmittedEmail({
@@ -515,6 +538,7 @@ module.exports = {
   sendClientRecoveryEmail,
   sendOrganizerRecoveryEmail,
   sendContactSupportEmail,
+  sendContactSupportAutoReplyEmail,
   sendAdminInvoiceEvidenceSubmittedEmail,
   sendOrganizerInvoiceEmail,
   sendOrganizerBillingUpdateEmail,
