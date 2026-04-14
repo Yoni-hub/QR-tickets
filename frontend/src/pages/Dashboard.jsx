@@ -504,6 +504,7 @@ export default function Dashboard() {
     promoterId: null,
   });
   const eventLockedModalCooldownRef = useRef(0);
+  const eventLockedOkRef = useRef(null);
 
   const accessCode = useMemo(() => code.trim(), [code]);
   const organizerChatAccessCode = useMemo(() => {
@@ -571,6 +572,12 @@ export default function Dashboard() {
   const openEventLockedModal = useCallback((message = "This event has ended. Event details can no longer be changed.") => {
     const now = Date.now();
     if (now - eventLockedModalCooldownRef.current < 350) return;
+    try {
+      const active = document.activeElement;
+      if (active && typeof active.blur === "function") active.blur();
+    } catch {
+      // ignore
+    }
     setEventLockedModal((prev) => {
       if (prev?.open) return prev;
       return { open: true, message };
@@ -580,6 +587,16 @@ export default function Dashboard() {
     eventLockedModalCooldownRef.current = Date.now();
     setEventLockedModal({ open: false, message: "" });
   }, []);
+
+  useEffect(() => {
+    if (!eventLockedModal.open) return undefined;
+    const timer = setTimeout(() => {
+      if (eventLockedOkRef.current && typeof eventLockedOkRef.current.focus === "function") {
+        eventLockedOkRef.current.focus();
+      }
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [eventLockedModal.open]);
   const visibleMenus = summary ? DASHBOARD_MENUS_ALL : DASHBOARD_MENUS_PRELOAD;
   const billingWarnings = Array.isArray(summary?.billingWarnings) ? summary.billingWarnings : [];
   const organizerInvoices = useMemo(() => {
@@ -2268,6 +2285,12 @@ export default function Dashboard() {
                     onChange={(e) => setEventDraft((prev) => ({ ...prev, organizerName: e.target.value }))}
                     placeholder="Organizer or brand name"
                     readOnly={isEditingExpiredEvent || isEditingStartedEvent}
+                    onPointerDown={(e) => {
+                      if (!(isEditingExpiredEvent || isEditingStartedEvent)) return;
+                      e.preventDefault();
+                      if (isEditingExpiredEvent) openEventLockedModal("This event has ended. Event details can no longer be changed.");
+                      else openEventLockedModal("Event has started. You cannot change event details after the start time.");
+                    }}
                     onFocus={() => {
                       if (isEditingExpiredEvent) openEventLockedModal("This event has ended. Event details can no longer be changed.");
                       else if (isEditingStartedEvent) openEventLockedModal("Event has started. You cannot change event details after the start time.");
@@ -2279,6 +2302,12 @@ export default function Dashboard() {
                     value={eventDraft.eventName}
                     onChange={(e) => setEventDraft((prev) => ({ ...prev, eventName: e.target.value }))}
                     readOnly={isEditingExpiredEvent || isEditingStartedEvent}
+                    onPointerDown={(e) => {
+                      if (!(isEditingExpiredEvent || isEditingStartedEvent)) return;
+                      e.preventDefault();
+                      if (isEditingExpiredEvent) openEventLockedModal("This event has ended. Event details can no longer be changed.");
+                      else openEventLockedModal("Event has started. You cannot change event details after the start time.");
+                    }}
                     onFocus={() => {
                       if (isEditingExpiredEvent) openEventLockedModal("This event has ended. Event details can no longer be changed.");
                       else if (isEditingStartedEvent) openEventLockedModal("Event has started. You cannot change event details after the start time.");
@@ -3755,9 +3784,9 @@ export default function Dashboard() {
             </div>
             <div className="mt-4 flex justify-end">
               <AppButton
+                ref={eventLockedOkRef}
                 type="button"
                 variant="primary"
-                onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                 onClick={closeEventLockedModal}
               >
                 OK
