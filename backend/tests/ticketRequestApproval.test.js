@@ -219,3 +219,30 @@ test("prevents approving an already rejected request", async () => {
   const issuedTickets = await prisma.ticket.findMany({ where: { ticketRequestId: requestId } });
   assert.equal(issuedTickets.length, 0);
 });
+
+test("blocks approving a request after the event end time", async () => {
+  const code = uniqueId("REQEND").toUpperCase();
+  const event = await createEvent({
+    accessCode: code,
+    organizerAccessCode: `${code}ORG`,
+    slug: uniqueId("req-end").toLowerCase(),
+  });
+  const { response } = await createTicketRequestViaPublicRoute({ event, email: "after-end@example.com", quantity: 1 });
+  const requestId = response.body.request.id;
+
+  await prisma.userEvent.update({
+    where: { id: event.id },
+    data: { eventEndDate: new Date(Date.now() - 60 * 1000) },
+  });
+
+  const approveResponse = await request(app).post(`/api/ticket-requests/${requestId}/approve`).send({
+    accessCode: event.accessCode,
+    eventId: event.id,
+  });
+
+  assert.equal(approveResponse.status, 403);
+  assert.match(approveResponse.body.error || "", /event has ended/i);
+
+  const issuedTickets = await prisma.ticket.findMany({ where: { ticketRequestId: requestId } });
+  assert.equal(issuedTickets.length, 0);
+});

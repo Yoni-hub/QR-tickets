@@ -26,6 +26,13 @@ function parseEventId(value) {
   return String(value || "").trim();
 }
 
+function resolveEventEndAt(event) {
+  const raw = event?.eventEndDate || event?.eventDate;
+  if (!raw) return null;
+  const date = raw instanceof Date ? raw : new Date(raw);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 function normalizeChatMessage(value) {
   return String(value || "").trim();
 }
@@ -467,6 +474,12 @@ async function approveTicketRequest(req, res) {
 
   if (request.status === "REJECTED") {
     res.status(400).json({ error: "Rejected request cannot be approved." });
+    return;
+  }
+
+  const eventEndAt = resolveEventEndAt(event);
+  if (eventEndAt && new Date() >= eventEndAt) {
+    res.status(403).json({ error: "This event has ended. Ticket requests can no longer be approved." });
     return;
   }
 
