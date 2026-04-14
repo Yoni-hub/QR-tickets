@@ -1628,7 +1628,7 @@ export default function Dashboard() {
       return { label: "NO SALES YET", className: "border-slate-200 bg-slate-100 text-slate-700" };
     }
     if (allInvoicesPaidInFull) {
-      return { label: "PAYED IN FULL", className: "border-emerald-200 bg-emerald-50 text-emerald-700" };
+      return { label: "PAID IN FULL", className: "border-emerald-200 bg-emerald-50 text-emerald-700" };
     }
     if (amountRemaining > 0) {
       return { label: "BALANCE REMAINING", className: "border-amber-200 bg-amber-50 text-amber-800" };
