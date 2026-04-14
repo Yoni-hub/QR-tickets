@@ -12,7 +12,7 @@ const {
 const { generateTicketPublicId } = require("../utils/ticketPublicId");
 const { checkDailyTicketCap } = require("../utils/dailyCaps");
 const { verifyTurnstile } = require("../utils/turnstile");
-const { sendOtpEmail, sendOrganizerRecoveryEmail, sendOrganizerBillingUpdateEmail } = require("../utils/mailer");
+const { sendOtpEmail, sendOrganizerRecoveryEmail, sendOrganizerBillingUpdateEmail, sendAdminInvoiceEvidenceSubmittedEmail } = require("../utils/mailer");
 const {
   DEFAULT_TICKET_TYPE,
   reservePendingTicketIds,
@@ -1134,6 +1134,38 @@ async function submitOrganizerInvoicePaymentEvidence(req, res) {
       note: req.body?.note,
       evidenceImageDataUrl: req.body?.evidenceImageDataUrl,
     });
+
+    if (result?.evidence?.status === "PENDING") {
+      prisma.userEvent.findUnique({
+        where: { id: eventId },
+        select: {
+          id: true,
+          eventName: true,
+          organizerName: true,
+          organizerEmail: true,
+          organizerAccessCode: true,
+          accessCode: true,
+        },
+      }).then((event) => {
+        if (!event) return null;
+        const organizerCode = String(event.organizerAccessCode || event.accessCode || "").trim();
+        return sendAdminInvoiceEvidenceSubmittedEmail({
+          organizerName: event.organizerName || "",
+          organizerEmail: event.organizerEmail || "",
+          organizerAccessCode: organizerCode,
+          eventName: event.eventName || "",
+          eventId: event.id,
+          invoiceId,
+          submittedAt: result?.evidence?.submittedAt || null,
+        });
+      }).catch((error) => {
+        logger.warn("Failed to send admin invoice evidence submitted email", {
+          eventId,
+          invoiceId,
+          error: error?.message || "unknown",
+        });
+      });
+    }
     res.status(201).json(result);
   } catch (error) {
     const code = String(error?.code || "");

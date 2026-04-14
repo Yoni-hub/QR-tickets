@@ -1072,12 +1072,19 @@ async function listAdminInvoices(req, res) {
     },
   });
   const autoApproveEnabledCount = await prisma.userEvent.count({ where: { invoiceEvidenceAutoApprove: true } });
+  const unpaidEventGroups = await prisma.organizerInvoice.groupBy({
+    by: ["eventId"],
+    where: { invoiceType: FINAL_INVOICE_TYPE, status: { in: ["SENT", "OVERDUE"] } },
+    _count: { eventId: true },
+  });
+  const unpaidEventCount = unpaidEventGroups.length;
 
   res.json({
     items,
     meta: {
       autoApproveEnabledCount,
       autoApproveDisabledCount: Math.max(0, (summary?._count?._all || 0) - autoApproveEnabledCount),
+      unpaidEventCount,
     },
   });
 }

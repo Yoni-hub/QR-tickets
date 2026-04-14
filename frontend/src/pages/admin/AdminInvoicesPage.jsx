@@ -33,7 +33,7 @@ export default function AdminInvoicesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [items, setItems] = useState([]);
-  const [meta, setMeta] = useState({ autoApproveEnabledCount: 0, autoApproveDisabledCount: 0 });
+  const [meta, setMeta] = useState({ autoApproveEnabledCount: 0, autoApproveDisabledCount: 0, unpaidEventCount: 0 });
   const [activeFilter, setActiveFilter] = useState("ALL");
   const [autoApproveFilter, setAutoApproveFilter] = useState("ALL");
   const [search, setSearch] = useState("");
@@ -81,6 +81,7 @@ export default function AdminInvoicesPage() {
       setMeta({
         autoApproveEnabledCount: Number(response.data?.meta?.autoApproveEnabledCount || 0),
         autoApproveDisabledCount: Number(response.data?.meta?.autoApproveDisabledCount || 0),
+        unpaidEventCount: Number(response.data?.meta?.unpaidEventCount || 0),
       });
     } catch (requestError) {
       setError(requestError.response?.data?.error || "Could not load invoices.");
@@ -260,7 +261,9 @@ export default function AdminInvoicesPage() {
                 activeFilter === filterItem.id ? "bg-slate-900 text-white" : "bg-white text-slate-700"
               }`}
             >
-              {filterItem.label}
+              {filterItem.id === "UNPAID"
+                ? `UNPAID (${meta.unpaidEventCount || 0})`
+                : filterItem.label}
             </button>
           ))}
         </div>

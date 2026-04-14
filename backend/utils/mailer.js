@@ -400,6 +400,54 @@ async function sendContactSupportEmail({ fromEmail, message }) {
   return transporter.sendMail({ from, to, subject, text, html });
 }
 
+async function sendAdminInvoiceEvidenceSubmittedEmail({
+  organizerName,
+  organizerEmail,
+  organizerAccessCode,
+  eventName,
+  eventId,
+  invoiceId,
+  submittedAt,
+}) {
+  const transporter = getTransporter();
+  const from = process.env.MAIL_FROM || "no-reply@localhost";
+  const to = String(process.env.ADMIN_NOTIFY_EMAIL || "support@connsura.com").trim() || "support@connsura.com";
+  const submittedText = submittedAt ? new Date(submittedAt).toLocaleString() : "";
+  const subject = `Invoice evidence submitted: ${String(eventName || "event")}`;
+  const text = [
+    "Hello Admin,",
+    "",
+    "New invoice payment evidence was submitted by an organizer.",
+    "",
+    organizerName ? `Organizer: ${String(organizerName)}` : null,
+    organizerEmail ? `Organizer email: ${String(organizerEmail)}` : null,
+    organizerAccessCode ? `Organizer code: ${String(organizerAccessCode)}` : null,
+    eventName ? `Event: ${String(eventName)}` : null,
+    eventId ? `Event ID: ${String(eventId)}` : null,
+    invoiceId ? `Invoice ID: ${String(invoiceId)}` : null,
+    submittedText ? `Submitted at: ${submittedText}` : null,
+    "",
+    "Open the admin invoice page to review and approve the evidence.",
+  ].filter(Boolean).join("\n");
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.45;color:#0f172a;">
+      <p>Hello Admin,</p>
+      <p>New invoice payment evidence was submitted by an organizer.</p>
+      <ul>
+        ${organizerName ? `<li><strong>Organizer:</strong> ${escapeHtml(String(organizerName))}</li>` : ""}
+        ${organizerEmail ? `<li><strong>Organizer email:</strong> ${escapeHtml(String(organizerEmail))}</li>` : ""}
+        ${organizerAccessCode ? `<li><strong>Organizer code:</strong> ${escapeHtml(String(organizerAccessCode))}</li>` : ""}
+        ${eventName ? `<li><strong>Event:</strong> ${escapeHtml(String(eventName))}</li>` : ""}
+        ${eventId ? `<li><strong>Event ID:</strong> ${escapeHtml(String(eventId))}</li>` : ""}
+        ${invoiceId ? `<li><strong>Invoice ID:</strong> ${escapeHtml(String(invoiceId))}</li>` : ""}
+        ${submittedText ? `<li><strong>Submitted at:</strong> ${escapeHtml(String(submittedText))}</li>` : ""}
+      </ul>
+      <p>Open the admin invoice page to review and approve the evidence.</p>
+    </div>
+  `;
+  return transporter.sendMail({ from, to, subject, text, html });
+}
+
 async function sendOrganizerInvoiceEmail({
   to,
   eventName,
@@ -467,6 +515,7 @@ module.exports = {
   sendClientRecoveryEmail,
   sendOrganizerRecoveryEmail,
   sendContactSupportEmail,
+  sendAdminInvoiceEvidenceSubmittedEmail,
   sendOrganizerInvoiceEmail,
   sendOrganizerBillingUpdateEmail,
 };
