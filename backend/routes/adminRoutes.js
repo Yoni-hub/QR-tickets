@@ -27,6 +27,7 @@ const {
   addAdminInvoicePayment,
   retryAdminInvoiceDelivery,
   approveAdminInvoicePaymentEvidence,
+  sendAdminEvidenceNotifyTest,
   patchAdminInvoiceEvidenceAutoApprove,
   patchAdminGlobalInvoiceEvidenceAutoApprove,
   patchAdminAllowInvoiceEvidenceAttachment,
@@ -89,6 +90,7 @@ router.patch("/invoices/:invoiceId/add-payment", addAdminInvoicePayment);
 router.patch("/invoices/:invoiceId/retry-delivery", retryAdminInvoiceDelivery);
 router.patch("/invoices/:invoiceId/allow-evidence-attachment", patchAdminAllowInvoiceEvidenceAttachment);
 router.patch("/invoices/payment-evidence/:evidenceId/approve", approveAdminInvoicePaymentEvidence);
+router.post("/invoices/test-evidence-notify", sendAdminEvidenceNotifyTest);
 router.patch("/events/:eventId/invoice-evidence-auto-approve", patchAdminInvoiceEvidenceAutoApprove);
 router.patch("/events/invoice-evidence-auto-approve-all", patchAdminGlobalInvoiceEvidenceAutoApprove);
 router.get("/audit-log", listAdminAuditLog);

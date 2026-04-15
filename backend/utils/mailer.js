@@ -468,7 +468,20 @@ async function sendAdminInvoiceEvidenceSubmittedEmail({
       <p>Open the admin invoice page to review and approve the evidence.</p>
     </div>
   `;
-  return transporter.sendMail({ from, to, subject, text, html });
+  return transporter.sendMail({
+    from,
+    to,
+    subject,
+    text,
+    html,
+    headers: {
+      // Reduce chances of triggering vacation/auto-responders and prevent mail loops.
+      "Auto-Submitted": "auto-generated",
+      Precedence: "bulk",
+      "X-Auto-Response-Suppress": "All",
+      "X-Loop": "connsura-qr-tickets",
+    },
+  });
 }
 
 async function sendOrganizerInvoiceEmail({

@@ -14,6 +14,7 @@ const {
   allowInvoiceEvidenceAttachment,
   setOrganizerInvoiceEvidenceAutoApprove,
 } = require("../services/organizerInvoiceService");
+const { sendAdminInvoiceEvidenceSubmittedEmail } = require("../utils/mailer");
 
 function normalizeLimit(rawValue, fallback = 50, min = 1, max = 200) {
   const parsed = Number.parseInt(String(rawValue || ""), 10);
@@ -1832,6 +1833,19 @@ async function approveAdminInvoicePaymentEvidence(req, res) {
   }
 }
 
+async function sendAdminEvidenceNotifyTest(_req, res) {
+  await sendAdminInvoiceEvidenceSubmittedEmail({
+    organizerName: "Test Organizer",
+    organizerEmail: "organizer@example.com",
+    organizerAccessCode: "TESTORGCODE",
+    eventName: "Test Event",
+    eventId: "test-event-id",
+    invoiceId: "test-invoice-id",
+    submittedAt: new Date(),
+  });
+  res.json({ ok: true });
+}
+
 async function patchAdminInvoiceEvidenceAutoApprove(req, res) {
   const eventId = String(req.params.eventId || "").trim();
   if (!eventId) {
@@ -1946,6 +1960,7 @@ module.exports = {
   addAdminInvoicePayment,
   retryAdminInvoiceDelivery,
   approveAdminInvoicePaymentEvidence,
+  sendAdminEvidenceNotifyTest,
   patchAdminInvoiceEvidenceAutoApprove,
   patchAdminGlobalInvoiceEvidenceAutoApprove,
   patchAdminAllowInvoiceEvidenceAttachment,
