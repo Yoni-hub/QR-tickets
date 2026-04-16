@@ -389,6 +389,12 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const location = useLocation();
   const [params, setParams] = useSearchParams();
+
+  const normalizeAccessCode = useCallback((value) => {
+    // URLSearchParams decodes `+` as a space in query strings.
+    // Organizer codes may contain `+`, so normalize spaces back to `+`.
+    return String(value || "").trim().replace(/ /g, "+");
+  }, []);
   const VALID_MENU_IDS = ["events", "tickets", "requests", "payment", "chat", "settings"];
   const activeMenu = VALID_MENU_IDS.includes(String(params.get("menu") || "").toLowerCase())
     ? String(params.get("menu")).toLowerCase()
@@ -400,7 +406,7 @@ export default function Dashboard() {
       return next;
     }, { replace: true });
   }, [setParams]);
-  const [code, setCode] = useState(params.get("code") || "");
+  const [code, setCode] = useState(() => normalizeAccessCode(params.get("code") || ""));
   const [showPublicPreview, setShowPublicPreview] = useState(false);
   const [ticketPage, setTicketPage] = useState(1);
   const [ticketTypeFilter, setTicketTypeFilter] = useState("ALL");
@@ -443,8 +449,10 @@ export default function Dashboard() {
   useEffect(() => {
     if (eventEditMode !== EVENT_EDIT_MODES.CREATE) return;
     prefetchTurnstileToken();
+    const retry = setTimeout(() => prefetchTurnstileToken(), 700);
     // Prefetch only when entering CREATE mode; token is cached briefly in the hook.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => clearTimeout(retry);
   }, [eventEditMode]);
   const [verifyingGateOtp, setVerifyingGateOtp] = useState(false);
   const [gateEmailFb, setGateEmailFb] = useFeedback();
@@ -861,7 +869,7 @@ export default function Dashboard() {
   };
 
   const loadDashboard = useCallback(async (targetCode, requestedEventId = "", requestedInvoiceId = "", options = {}) => {
-    const trimmedCode = String(targetCode || "").trim();
+    const trimmedCode = normalizeAccessCode(targetCode);
     if (!trimmedCode || dashboardLoadingRef.current) return;
     const minDelayMs = (options && typeof options === "object" && Number.isFinite(Number(options.minDelayMs)))
       ? Number(options.minDelayMs)
@@ -926,7 +934,7 @@ export default function Dashboard() {
   }, [setParams, params, applySummaryEvent]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = async () => {
-    const trimmedCode = code.trim();
+    const trimmedCode = normalizeAccessCode(code);
     if (!trimmedCode) {
       setLoadFb("info", "New here? Fill in your event details to generate your access code.");
       return;

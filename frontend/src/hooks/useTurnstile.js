@@ -93,7 +93,11 @@ export function useTurnstile() {
     };
 
     window.turnstile.reset(widgetIdRef.current);
-    window.turnstile.execute(widgetIdRef.current);
+    // Execute on next tick to avoid Turnstile "already executing" warnings in some browsers.
+    setTimeout(() => {
+      if (!window.turnstile || widgetIdRef.current == null) return;
+      window.turnstile.execute(widgetIdRef.current);
+    }, 0);
 
     return promise;
   };
