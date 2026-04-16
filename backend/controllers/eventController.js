@@ -208,16 +208,28 @@ function resolveTicketGroupsFromDesign(designJson) {
 
 
 async function createLiveEvent(req, res) {
+  const perfEnabled = req.body?.clientPerf != null;
+  const perf = perfEnabled ? { clientPerf: req.body?.clientPerf || null } : null;
+  const perfStart = perfEnabled ? Number(process.hrtime.bigint() / 1000000n) : 0;
+
+  const captchaStart = perfEnabled ? Number(process.hrtime.bigint() / 1000000n) : 0;
   const captchaOk = await verifyTurnstile(req.body?.cfTurnstileToken, req.ip);
+  if (perfEnabled) perf.captchaMs = Number(process.hrtime.bigint() / 1000000n) - captchaStart;
   if (!captchaOk) {
-    res.status(403).json({ error: "CAPTCHA verification failed. Please try again." });
+    res.status(403).json({ error: "CAPTCHA verification failed. Please try again.", ...(perfEnabled ? { perf } : {}) });
     return;
   }
   try {
+    const createStart = perfEnabled ? Number(process.hrtime.bigint() / 1000000n) : 0;
     const data = await createEvent(req.body || {}, false);
-    res.status(201).json(data);
+    if (perfEnabled) {
+      perf.createEventMs = Number(process.hrtime.bigint() / 1000000n) - createStart;
+      perf.totalMs = Number(process.hrtime.bigint() / 1000000n) - perfStart;
+    }
+    res.status(201).json({ ...data, ...(perfEnabled ? { perf } : {}) });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: safeError(error, "Failed to create event.") });
+    if (perfEnabled) perf.totalMs = Number(process.hrtime.bigint() / 1000000n) - perfStart;
+    res.status(error.statusCode || 500).json({ error: safeError(error, "Failed to create event."), ...(perfEnabled ? { perf } : {}) });
   }
 }
 
@@ -982,33 +994,48 @@ async function updateEventInline(req, res) {
 }
 
 async function createEventForAccessCode(req, res) {
+  const perfEnabled = req.body?.clientPerf != null;
+  const perf = perfEnabled ? { clientPerf: req.body?.clientPerf || null } : null;
+  const perfStart = perfEnabled ? Number(process.hrtime.bigint() / 1000000n) : 0;
+
   const accessCode = (req.params.accessCode || "").trim();
   if (!accessCode) {
-    res.status(400).json({ error: "accessCode is required." });
+    res.status(400).json({ error: "accessCode is required.", ...(perfEnabled ? { perf } : {}) });
     return;
   }
 
-  const captchaPromise = verifyTurnstile(req.body?.cfTurnstileToken, req.ip);
+  const captchaStart = perfEnabled ? Number(process.hrtime.bigint() / 1000000n) : 0;
+  const captchaPromise = verifyTurnstile(req.body?.cfTurnstileToken, req.ip).then((ok) => {
+    if (perfEnabled) perf.captchaMs = Number(process.hrtime.bigint() / 1000000n) - captchaStart;
+    return ok;
+  });
 
   // Fast-path query: for create-new, we only need organizerAccessCode + a few organizer-level defaults.
   // Avoid loading full event groups (designJson, tickets, etc.) which can be large for long-lived organizers.
+  const directStart = perfEnabled ? Number(process.hrtime.bigint() / 1000000n) : 0;
   const directPromise = prisma.userEvent.findFirst({
     where: { OR: [{ accessCode }, { organizerAccessCode: accessCode }] },
     select: { accessCode: true, organizerAccessCode: true },
+  }).then((row) => {
+    if (perfEnabled) perf.resolveOrganizerMs = Number(process.hrtime.bigint() / 1000000n) - directStart;
+    return row;
   });
 
   const [captchaOk, direct] = await Promise.all([captchaPromise, directPromise]);
   if (!captchaOk) {
-    res.status(403).json({ error: "CAPTCHA verification failed. Please try again." });
+    if (perfEnabled) perf.totalMs = Number(process.hrtime.bigint() / 1000000n) - perfStart;
+    res.status(403).json({ error: "CAPTCHA verification failed. Please try again.", ...(perfEnabled ? { perf } : {}) });
     return;
   }
   if (!direct) {
-    res.status(404).json({ error: "Event not found." });
+    if (perfEnabled) perf.totalMs = Number(process.hrtime.bigint() / 1000000n) - perfStart;
+    res.status(404).json({ error: "Event not found.", ...(perfEnabled ? { perf } : {}) });
     return;
   }
 
   const organizerAccessCode = direct.organizerAccessCode || direct.accessCode || accessCode;
 
+  const groupStart = perfEnabled ? Number(process.hrtime.bigint() / 1000000n) : 0;
   const groupRows = await prisma.userEvent.findMany({
     where: {
       OR: [
@@ -1024,10 +1051,14 @@ async function createEventForAccessCode(req, res) {
       notifyOnMessage: true,
     },
   });
+  if (perfEnabled) perf.loadOrganizerGroupMs = Number(process.hrtime.bigint() / 1000000n) - groupStart;
 
+  const blockedStart = perfEnabled ? Number(process.hrtime.bigint() / 1000000n) : 0;
   const blockedFromNewEvents = await isOrganizerBlockedFromNewEvents(organizerAccessCode);
+  if (perfEnabled) perf.blockedCheckMs = Number(process.hrtime.bigint() / 1000000n) - blockedStart;
   if (blockedFromNewEvents) {
-    res.status(403).json({ error: BLOCK_NEW_EVENT_MESSAGE });
+    if (perfEnabled) perf.totalMs = Number(process.hrtime.bigint() / 1000000n) - perfStart;
+    res.status(403).json({ error: BLOCK_NEW_EVENT_MESSAGE, ...(perfEnabled ? { perf } : {}) });
     return;
   }
 
@@ -1041,37 +1072,49 @@ async function createEventForAccessCode(req, res) {
   const parsedEventEndDate = eventEndDateRaw ? new Date(eventEndDateRaw) : null;
 
   if (!eventName || !eventAddress || !eventDateRaw) {
-    res.status(400).json({ error: "eventName, eventAddress, and eventDate are required." });
+    if (perfEnabled) perf.totalMs = Number(process.hrtime.bigint() / 1000000n) - perfStart;
+    res.status(400).json({ error: "eventName, eventAddress, and eventDate are required.", ...(perfEnabled ? { perf } : {}) });
     return;
   }
   if (Number.isNaN(parsedEventDate?.getTime())) {
-    res.status(400).json({ error: "Invalid eventDate." });
+    if (perfEnabled) perf.totalMs = Number(process.hrtime.bigint() / 1000000n) - perfStart;
+    res.status(400).json({ error: "Invalid eventDate.", ...(perfEnabled ? { perf } : {}) });
     return;
   }
   if (eventEndDateRaw && Number.isNaN(parsedEventEndDate?.getTime())) {
-    res.status(400).json({ error: "Invalid eventEndDate." });
+    if (perfEnabled) perf.totalMs = Number(process.hrtime.bigint() / 1000000n) - perfStart;
+    res.status(400).json({ error: "Invalid eventEndDate.", ...(perfEnabled ? { perf } : {}) });
     return;
   }
   if (parsedEventDate && parsedEventDate <= new Date()) {
-    res.status(400).json({ error: "Event start date must be in the future." });
+    if (perfEnabled) perf.totalMs = Number(process.hrtime.bigint() / 1000000n) - perfStart;
+    res.status(400).json({ error: "Event start date must be in the future.", ...(perfEnabled ? { perf } : {}) });
     return;
   }
   if (parsedEventEndDate && parsedEventDate && parsedEventEndDate <= parsedEventDate) {
-    res.status(400).json({ error: "Event end date must be after the start date." });
+    if (perfEnabled) perf.totalMs = Number(process.hrtime.bigint() / 1000000n) - perfStart;
+    res.status(400).json({ error: "Event end date must be after the start date.", ...(perfEnabled ? { perf } : {}) });
     return;
   }
 
+  const genCodeStart = perfEnabled ? Number(process.hrtime.bigint() / 1000000n) : 0;
   const nextAccessCode = await generateAccessCode(async (candidate) => {
     const existing = await prisma.userEvent.findUnique({ where: { accessCode: candidate } });
     return !existing;
   });
+  if (perfEnabled) perf.generateAccessCodeMs = Number(process.hrtime.bigint() / 1000000n) - genCodeStart;
+
+  const slugStart = perfEnabled ? Number(process.hrtime.bigint() / 1000000n) : 0;
   const slug = await generateEventSlug(eventName);
+  if (perfEnabled) perf.generateSlugMs = Number(process.hrtime.bigint() / 1000000n) - slugStart;
   const groupEmailVerified = groupRows.some((e) => e.emailVerified === true);
   const groupOrganizerEmail = groupRows
     .map((entry) => String(entry.organizerEmail || "").trim().toLowerCase())
     .find(Boolean) || null;
   const groupNotifyOnRequest = groupRows.some((e) => e.notifyOnRequest === true);
   const groupNotifyOnMessage = groupRows.some((e) => e.notifyOnMessage === true);
+
+  const createStart = perfEnabled ? Number(process.hrtime.bigint() / 1000000n) : 0;
   const created = await prisma.userEvent.create({
     data: {
       organizerName: organizerName || null,
@@ -1104,10 +1147,15 @@ async function createEventForAccessCode(req, res) {
       paymentInstructions: true,
     },
   });
+  if (perfEnabled) {
+    perf.createEventMs = Number(process.hrtime.bigint() / 1000000n) - createStart;
+    perf.totalMs = Number(process.hrtime.bigint() / 1000000n) - perfStart;
+  }
 
   res.status(201).json({
     event: created,
     organizerAccessCode,
+    ...(perfEnabled ? { perf } : {}),
   });
 }
 

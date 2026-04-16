@@ -413,6 +413,7 @@ export default function Dashboard() {
   const [eventDraft, setEventDraft] = useState({ organizerName: "", eventName: "", eventDate: "", eventEndDate: "", eventAddress: "", paymentInstructions: "", salesCutoffAt: "", salesWindowStart: "", salesWindowEnd: "", maxTicketsPerEmail: "" });
   const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
   const [savingEvent, setSavingEvent] = useState(false);
+  const [savePerfPhase, setSavePerfPhase] = useState("");
   const [savingTicketDraft, setSavingTicketDraft] = useState(false);
   const [tickets, setTickets] = useState([]);
   const [ticketRequests, setTicketRequests] = useState([]);
@@ -553,7 +554,9 @@ export default function Dashboard() {
   const showHeroSection = shouldOpenHomeMode && !summary && !accessCode;
   const showLoadDashboard = !shouldOpenHomeMode && !summary;
   const eventPrimaryActionLabel = isAccessCodeGenerationMode ? "Generate Access Code" : "Save Event";
-  const eventPrimaryLoadingLabel = isAccessCodeGenerationMode ? "Generating..." : "Saving...";
+  const eventPrimaryLoadingLabel = isAccessCodeGenerationMode
+    ? "Generating..."
+    : (savePerfPhase || "Saving...");
   const isEditingExpiredEvent = useMemo(() => {
     if (eventEditMode !== EVENT_EDIT_MODES.EDIT) return false;
     const expiryValue = summary?.event?.eventEndDate || summary?.event?.eventDate;
@@ -1455,16 +1458,30 @@ export default function Dashboard() {
       return;
     }
     setSavingEvent(true);
+    setSavePerfPhase("");
     try {
       if (eventEditMode === EVENT_EDIT_MODES.CREATE) {
         let cfTurnstileToken = "";
         try {
+          setSavePerfPhase("Verifying...");
+          const perfTokenStart = Date.now();
           cfTurnstileToken = await getTurnstileToken();
+          const perfTokenMs = Date.now() - perfTokenStart;
+
+          // Attach perf info to help debug production latency. Backend schemas are passthrough,
+          // so this won't break validation.
+          // eslint-disable-next-line no-underscore-dangle
+          var __clientPerf = {
+            perfId: `save-${Math.random().toString(36).slice(2, 8)}-${Date.now()}`,
+            tokenMs: perfTokenMs,
+            clickedAt: new Date().toISOString(),
+          };
         } catch {
           setEventFb("error", "CAPTCHA verification failed. Please try again.");
           return;
         }
         if (!accessCode) {
+          setSavePerfPhase("Saving...");
           const response = await api.post("/events", {
             organizerName: eventDraft.organizerName,
             eventName: eventDraft.eventName,
@@ -1474,6 +1491,7 @@ export default function Dashboard() {
             paymentInstructions: eventDraft.paymentInstructions,
             generateAccessOnly: true,
             cfTurnstileToken,
+            clientPerf: __clientPerf,
           });
           const nextOrganizerCode = String(
             response.data?.organizerAccessCode || response.data?.accessCode || "",
@@ -1492,6 +1510,7 @@ export default function Dashboard() {
           return;
         }
 
+        setSavePerfPhase("Saving...");
         const response = await api.post(`/events/by-code/${encodeURIComponent(accessCode)}/create-new`, {
           organizerName: eventDraft.organizerName,
           eventName: eventDraft.eventName,
@@ -1500,7 +1519,9 @@ export default function Dashboard() {
           eventAddress: eventDraft.eventAddress,
           paymentInstructions: eventDraft.paymentInstructions,
           cfTurnstileToken,
+          clientPerf: __clientPerf,
         });
+        setSavePerfPhase("Loading...");
         await loadDashboard(accessCode, response.data?.event?.id, "", { minDelayMs: 0 });
         setEventFb("success", "New event created.");
         return;
@@ -1555,6 +1576,7 @@ export default function Dashboard() {
       setEventFb("error", errMsg);
     } finally {
       setSavingEvent(false);
+      setSavePerfPhase("");
     }
   };
 
