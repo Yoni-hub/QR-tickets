@@ -982,23 +982,50 @@ async function updateEventInline(req, res) {
 }
 
 async function createEventForAccessCode(req, res) {
-  const captchaOk = await verifyTurnstile(req.body?.cfTurnstileToken, req.ip);
-  if (!captchaOk) {
-    res.status(403).json({ error: "CAPTCHA verification failed. Please try again." });
-    return;
-  }
   const accessCode = (req.params.accessCode || "").trim();
   if (!accessCode) {
     res.status(400).json({ error: "accessCode is required." });
     return;
   }
 
-  const group = await resolveEventGroupByAccessCode(accessCode);
-  if (!group) {
+  const captchaPromise = verifyTurnstile(req.body?.cfTurnstileToken, req.ip);
+
+  // Fast-path query: for create-new, we only need organizerAccessCode + a few organizer-level defaults.
+  // Avoid loading full event groups (designJson, tickets, etc.) which can be large for long-lived organizers.
+  const directPromise = prisma.userEvent.findFirst({
+    where: { OR: [{ accessCode }, { organizerAccessCode: accessCode }] },
+    select: { accessCode: true, organizerAccessCode: true },
+  });
+
+  const [captchaOk, direct] = await Promise.all([captchaPromise, directPromise]);
+  if (!captchaOk) {
+    res.status(403).json({ error: "CAPTCHA verification failed. Please try again." });
+    return;
+  }
+  if (!direct) {
     res.status(404).json({ error: "Event not found." });
     return;
   }
-  const blockedFromNewEvents = await isOrganizerBlockedFromNewEvents(group.organizerAccessCode);
+
+  const organizerAccessCode = direct.organizerAccessCode || direct.accessCode || accessCode;
+
+  const groupRows = await prisma.userEvent.findMany({
+    where: {
+      OR: [
+        { organizerAccessCode },
+        { accessCode: organizerAccessCode },
+      ],
+    },
+    orderBy: { createdAt: "asc" },
+    select: {
+      emailVerified: true,
+      organizerEmail: true,
+      notifyOnRequest: true,
+      notifyOnMessage: true,
+    },
+  });
+
+  const blockedFromNewEvents = await isOrganizerBlockedFromNewEvents(organizerAccessCode);
   if (blockedFromNewEvents) {
     res.status(403).json({ error: BLOCK_NEW_EVENT_MESSAGE });
     return;
@@ -1039,12 +1066,12 @@ async function createEventForAccessCode(req, res) {
     return !existing;
   });
   const slug = await generateEventSlug(eventName);
-  const groupEmailVerified = group.events.some((e) => e.emailVerified === true);
-  const groupOrganizerEmail = group.events
+  const groupEmailVerified = groupRows.some((e) => e.emailVerified === true);
+  const groupOrganizerEmail = groupRows
     .map((entry) => String(entry.organizerEmail || "").trim().toLowerCase())
     .find(Boolean) || null;
-  const groupNotifyOnRequest = group.events.some((e) => e.notifyOnRequest === true);
-  const groupNotifyOnMessage = group.events.some((e) => e.notifyOnMessage === true);
+  const groupNotifyOnRequest = groupRows.some((e) => e.notifyOnRequest === true);
+  const groupNotifyOnMessage = groupRows.some((e) => e.notifyOnMessage === true);
   const created = await prisma.userEvent.create({
     data: {
       organizerName: organizerName || null,
@@ -1056,7 +1083,7 @@ async function createEventForAccessCode(req, res) {
       paymentInstructions: paymentInstructions || null,
       quantity: 0,
       accessCode: nextAccessCode,
-      organizerAccessCode: group.organizerAccessCode,
+      organizerAccessCode,
       slug,
       isDemo: false,
       emailVerified: groupEmailVerified,
@@ -1080,7 +1107,7 @@ async function createEventForAccessCode(req, res) {
 
   res.status(201).json({
     event: created,
-    organizerAccessCode: group.organizerAccessCode,
+    organizerAccessCode,
   });
 }
 
