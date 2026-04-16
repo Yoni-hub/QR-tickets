@@ -1092,7 +1092,7 @@ async function listAdminInvoices(req, res) {
 
 async function getAdminSettings(_req, res) {
   const paymentInstructionRows = await prisma.adminCurrencyPaymentInstruction.findMany({
-    select: { currency: true, instructionText: true, updatedAt: true },
+    select: { currency: true, instructionText: true, unitPrice: true, updatedAt: true },
     orderBy: { currency: "asc" },
   });
   const paymentInstructions = SUPPORTED_CURRENCIES.map((currency) => {
@@ -1100,6 +1100,7 @@ async function getAdminSettings(_req, res) {
     return {
       currency,
       instructionText: row?.instructionText || "",
+      unitPrice: row?.unitPrice != null ? Number(row.unitPrice) : null,
       updatedAt: row?.updatedAt || null,
     };
   });
@@ -1131,7 +1132,7 @@ async function getAdminSettings(_req, res) {
 
 async function getAdminPaymentInstructions(_req, res) {
   const rows = await prisma.adminCurrencyPaymentInstruction.findMany({
-    select: { currency: true, instructionText: true, updatedAt: true },
+    select: { currency: true, instructionText: true, unitPrice: true, updatedAt: true },
     orderBy: { currency: "asc" },
   });
 
@@ -1140,6 +1141,7 @@ async function getAdminPaymentInstructions(_req, res) {
     return {
       currency,
       instructionText: row?.instructionText || "",
+      unitPrice: row?.unitPrice != null ? Number(row.unitPrice) : null,
       updatedAt: row?.updatedAt || null,
     };
   });
@@ -1202,6 +1204,7 @@ async function lookupAdminOtpRecords(req, res) {
 async function patchAdminPaymentInstructions(req, res) {
   const payload = req.body && typeof req.body === "object" ? req.body : {};
   const updates = payload.instructions && typeof payload.instructions === "object" ? payload.instructions : null;
+  const unitPriceUpdates = payload.unitPrices && typeof payload.unitPrices === "object" ? payload.unitPrices : null;
   if (!updates) {
     res.status(400).json({ error: "instructions object is required." });
     return;
@@ -1209,7 +1212,13 @@ async function patchAdminPaymentInstructions(req, res) {
 
   const normalized = [];
   for (const currency of SUPPORTED_CURRENCIES) {
-    if (!(currency in updates)) continue;
+    const hasInstructionUpdate = currency in updates;
+    const hasUnitPriceUpdate = unitPriceUpdates ? currency in unitPriceUpdates : false;
+    if (!hasInstructionUpdate && !hasUnitPriceUpdate) continue;
+    if (!hasInstructionUpdate) {
+      res.status(400).json({ error: `${currency} instruction is required when updating unit price.` });
+      return;
+    }
     const instructionText = String(updates[currency] || "").trim();
     if (!instructionText) {
       res.status(400).json({ error: `${currency} instruction is required when provided.` });
@@ -1219,7 +1228,19 @@ async function patchAdminPaymentInstructions(req, res) {
       res.status(400).json({ error: `${currency} instruction is too long.` });
       return;
     }
-    normalized.push({ currency, instructionText });
+
+    let unitPrice = undefined;
+    if (hasUnitPriceUpdate) {
+      const unitPriceRaw = unitPriceUpdates[currency];
+      const parsed = typeof unitPriceRaw === "number" ? unitPriceRaw : Number(String(unitPriceRaw || "").trim());
+      if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1000) {
+        res.status(400).json({ error: `${currency} unit price must be 0 or a positive number (max 1000).` });
+        return;
+      }
+      unitPrice = Number(parsed.toFixed(2)).toFixed(2);
+    }
+
+    normalized.push({ currency, instructionText, unitPrice });
   }
 
   if (!normalized.length) {
@@ -1234,9 +1255,11 @@ async function patchAdminPaymentInstructions(req, res) {
         create: {
           currency: entry.currency,
           instructionText: entry.instructionText,
+          ...(entry.unitPrice !== undefined ? { unitPrice: entry.unitPrice } : {}),
         },
         update: {
           instructionText: entry.instructionText,
+          ...(entry.unitPrice !== undefined ? { unitPrice: entry.unitPrice } : {}),
         },
       }),
     ),
@@ -1252,7 +1275,7 @@ async function patchAdminPaymentInstructions(req, res) {
   });
 
   const rows = await prisma.adminCurrencyPaymentInstruction.findMany({
-    select: { currency: true, instructionText: true, updatedAt: true },
+    select: { currency: true, instructionText: true, unitPrice: true, updatedAt: true },
     orderBy: { currency: "asc" },
   });
   const items = SUPPORTED_CURRENCIES.map((currency) => {
@@ -1260,6 +1283,7 @@ async function patchAdminPaymentInstructions(req, res) {
     return {
       currency,
       instructionText: row?.instructionText || "",
+      unitPrice: row?.unitPrice != null ? Number(row.unitPrice) : null,
       updatedAt: row?.updatedAt || null,
     };
   });

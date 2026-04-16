@@ -109,6 +109,31 @@ export default function Scanner() {
   const audioContextRef = useRef(null);
   const lastTicketScanRef = useRef({ id: "", timestamp: 0 });
   const resultLockedRef = useRef(false);
+  const checkingRef = useRef(false);
+  const organizerAccessCodeRef = useRef("");
+  const selectedEventIdRef = useRef("");
+  const scannerUnlockedRef = useRef(false);
+  const enforceEventDateRef = useRef(false);
+
+  useEffect(() => {
+    checkingRef.current = checking;
+  }, [checking]);
+
+  useEffect(() => {
+    organizerAccessCodeRef.current = organizerAccessCode;
+  }, [organizerAccessCode]);
+
+  useEffect(() => {
+    selectedEventIdRef.current = selectedEventId;
+  }, [selectedEventId]);
+
+  useEffect(() => {
+    scannerUnlockedRef.current = scannerUnlocked;
+  }, [scannerUnlocked]);
+
+  useEffect(() => {
+    enforceEventDateRef.current = enforceEventDate;
+  }, [enforceEventDate]);
 
   const selectedEvent = useMemo(
     () => events.find((item) => item.id === selectedEventId) || null,
@@ -178,11 +203,17 @@ export default function Scanner() {
   };
 
   const submitScan = async (publicId, rawValue = publicId, source = "manual") => {
-    if (checking || resultLockedRef.current || !scannerUnlocked || !selectedEventId) return;
+    const currentAccessCode = String(organizerAccessCodeRef.current || "").trim();
+    const currentEventId = String(selectedEventIdRef.current || "").trim();
+    const currentUnlocked = Boolean(scannerUnlockedRef.current);
+    if (checkingRef.current || resultLockedRef.current || !currentUnlocked || !currentEventId) return;
     const now = Date.now();
     const previous = lastTicketScanRef.current;
 
     if (previous.id === publicId && now - previous.timestamp <= DUPLICATE_SCAN_THRESHOLD_MS) {
+      // Camera decoders often emit the same QR multiple times while the request is in-flight.
+      // If we're already checking, ignore it quietly instead of flashing a duplicate result.
+      if (checkingRef.current) return;
       setOutcomeWithAutoReset({
         result: "DUPLICATE_SCAN",
         statusText: "DUPLICATE SCAN",
@@ -192,19 +223,20 @@ export default function Scanner() {
     }
 
     lastTicketScanRef.current = { id: publicId, timestamp: now };
+    checkingRef.current = true;
     setChecking(true);
     setFeedback({ kind: "", message: "" });
 
     try {
       const response = await withMinDelay(
         api.post("/scans", {
-          organizerAccessCode,
-          eventId: selectedEventId,
-          accessCode: organizerAccessCode,
+          organizerAccessCode: currentAccessCode,
+          eventId: currentEventId,
+          accessCode: currentAccessCode,
           ticketPublicId: publicId,
           rawScannedValue: rawValue,
           scannerSource: source,
-          enforceEventDate,
+          enforceEventDate: Boolean(enforceEventDateRef.current),
         }),
       );
       const payload = toOutcome(response.data || {});
@@ -217,6 +249,7 @@ export default function Scanner() {
         supportingText: "Ticket not found or not valid for this organizer",
       });
     } finally {
+      checkingRef.current = false;
       setChecking(false);
     }
   };
@@ -236,7 +269,7 @@ export default function Scanner() {
           { facingMode: "environment" },
           { fps: 10, qrbox: { width: 250, height: 250 } },
           async (decodedText) => {
-            if (checking || resultLockedRef.current) return;
+            if (checkingRef.current || resultLockedRef.current) return;
             const parsedId = extractTicketPublicId(decodedText);
             if (!parsedId) {
               setOutcomeWithAutoReset({

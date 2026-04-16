@@ -17,6 +17,7 @@ const {
   DEFAULT_TICKET_TYPE,
   reservePendingTicketIds,
 } = require("../services/pendingTicketReservations");
+const { lockEventUnitPriceIfMissing } = require("../services/billingUnitPriceService");
 const logger = require("../utils/logger");
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -586,6 +587,10 @@ async function generateTicketsByAccessCode(req, res) {
     },
   });
 
+  if (event.billingUnitPriceSnapshot == null) {
+    await lockEventUnitPriceIfMissing(event.id, currency);
+  }
+
   res.status(201).json({
     created: createdCount,
     eventId: event.id,
@@ -617,6 +622,7 @@ async function updateEventInline(req, res) {
       ticketType: true,
       ticketPrice: true,
       designJson: true,
+      billingUnitPriceSnapshot: true,
       salesCutoffAt: true,
       salesWindowStart: true,
       salesWindowEnd: true,
@@ -876,6 +882,7 @@ async function updateEventInline(req, res) {
       ticketPrice: true,
       paymentInstructions: true,
       designJson: true,
+      billingUnitPriceSnapshot: true,
       salesCutoffAt: true,
       salesWindowStart: true,
       salesWindowEnd: true,
@@ -940,6 +947,11 @@ async function updateEventInline(req, res) {
 
       await prisma.$transaction(updates);
     }
+  }
+
+  if (hasDesignJson && updated.billingUnitPriceSnapshot == null) {
+    const currency = updated.designJson?.currency || req.body?.designJson?.currency;
+    await lockEventUnitPriceIfMissing(updated.id, currency);
   }
 
   res.json({ event: updated });

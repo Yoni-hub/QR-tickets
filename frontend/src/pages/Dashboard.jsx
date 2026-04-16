@@ -564,11 +564,12 @@ export default function Dashboard() {
     return new Date() >= start;
   }, [eventEditMode, summary?.event?.eventDate]);
   const hasSoldTickets = useMemo(() => {
+    if (eventEditMode !== EVENT_EDIT_MODES.EDIT) return false;
     const total = Number(summary?.totalTickets || 0);
     const remaining = Number(summary?.remainingTickets || 0);
     if (!Number.isFinite(total) || !Number.isFinite(remaining)) return false;
     return total - remaining > 0;
-  }, [summary?.totalTickets, summary?.remainingTickets]);
+  }, [eventEditMode, summary?.totalTickets, summary?.remainingTickets]);
   const openEventLockedModal = useCallback((message = "This event has ended. Event details can no longer be changed.") => {
     const now = Date.now();
     if (now - eventLockedModalCooldownRef.current < 350) return;

@@ -19,6 +19,11 @@ export default function AdminSettingsPage() {
     USD: "",
     EUR: "",
   });
+  const [unitPrices, setUnitPrices] = useState({
+    ETB: "",
+    USD: "",
+    EUR: "",
+  });
 
   const load = async () => {
     setLoading(true);
@@ -27,12 +32,15 @@ export default function AdminSettingsPage() {
       const response = await adminApi.get("/settings");
       setSettings(response.data);
       const instructionMap = { ETB: "", USD: "", EUR: "" };
+      const unitPriceMap = { ETB: "", USD: "", EUR: "" };
       for (const row of response.data?.paymentInstructions || []) {
         if (row?.currency && Object.prototype.hasOwnProperty.call(instructionMap, row.currency)) {
           instructionMap[row.currency] = String(row.instructionText || "");
+          unitPriceMap[row.currency] = row.unitPrice != null ? String(Number(row.unitPrice).toFixed(2)) : "";
         }
       }
       setInstructions(instructionMap);
+      setUnitPrices(unitPriceMap);
     } catch (requestError) {
       setLoadError(requestError.response?.data?.error || "Could not load admin settings.");
     } finally {
@@ -48,6 +56,10 @@ export default function AdminSettingsPage() {
     setInstructions((prev) => ({ ...prev, [currency]: value }));
   };
 
+  const handleUnitPriceChange = (currency, value) => {
+    setUnitPrices((prev) => ({ ...prev, [currency]: value }));
+  };
+
   const saveInstructions = async () => {
     setSaveMessage("");
     setFormError("");
@@ -56,6 +68,11 @@ export default function AdminSettingsPage() {
         ETB: instructions.ETB,
         USD: instructions.USD,
         EUR: instructions.EUR,
+      },
+      unitPrices: {
+        ETB: unitPrices.ETB,
+        USD: unitPrices.USD,
+        EUR: unitPrices.EUR,
       },
     };
     setSaving(true);
@@ -116,7 +133,7 @@ export default function AdminSettingsPage() {
       <article className="rounded border bg-white p-4">
         <h2 className="text-lg font-semibold">Invoice Payment Instructions</h2>
         <p className="mt-1 text-xs text-slate-500">
-          These instructions are used by invoice currency and snapshotted into each generated invoice.
+          These instructions and unit prices are used by invoice currency and snapshotted into each generated invoice.
         </p>
         <div className="mt-3 space-y-3">
           {["ETB", "USD", "EUR"].map((currency) => (
@@ -130,6 +147,19 @@ export default function AdminSettingsPage() {
                 className="w-full rounded border px-3 py-2 text-sm"
                 placeholder={`Enter ${currency} payment instruction`}
               />
+              <div className="grid gap-1 sm:grid-cols-2 sm:items-center">
+                <label htmlFor={`unit-price-${currency}`} className="text-sm font-semibold">
+                  {currency} Unit Price (per approved ticket)
+                </label>
+                <input
+                  id={`unit-price-${currency}`}
+                  inputMode="decimal"
+                  value={unitPrices[currency]}
+                  onChange={(event) => handleUnitPriceChange(currency, event.target.value)}
+                  className="w-full rounded border px-3 py-2 text-sm"
+                  placeholder={currency === "ETB" ? "5.00" : "0.99"}
+                />
+              </div>
             </div>
           ))}
         </div>

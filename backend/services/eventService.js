@@ -2,6 +2,7 @@
 const { generateAccessCode, generateOrganizerAccessCode } = require("../utils/accessCode");
 const { generateTicketPublicId } = require("../utils/ticketPublicId");
 const { checkDailyEventCap, checkDailyTicketCap } = require("../utils/dailyCaps");
+const { normalizeCurrency, resolveUnitPriceForCurrency, toDecimalMoneyString } = require("./billingUnitPriceService");
 
 function getPublicBaseUrl() {
   return (process.env.PUBLIC_BASE_URL || "http://localhost:5174").replace(/\/$/, "");
@@ -101,6 +102,9 @@ async function createEvent(payload, isDemo = false) {
     ? selections[0].ticketPrice
     : (payload.ticketPrice ? Number(payload.ticketPrice) : null);
 
+  const currency = normalizeCurrency(payload.currency || "$");
+  const unitPrice = await resolveUnitPriceForCurrency(currency);
+
   const slug = await generateEventSlug(payload.eventSlug || payload.eventName || "event");
   const event = await prisma.userEvent.create({
     data: {
@@ -112,8 +116,9 @@ async function createEvent(payload, isDemo = false) {
       slug,
       ticketType: primaryTicketType,
       ticketPrice: primaryTicketPrice,
+      billingUnitPriceSnapshot: toDecimalMoneyString(unitPrice),
       paymentInstructions: String(payload.paymentInstructions || "").trim() || null,
-      designJson: { currency: String(payload.currency || "$").trim() || "$" },
+      designJson: { currency },
       quantity,
       accessCode,
       organizerAccessCode,

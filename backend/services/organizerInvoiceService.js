@@ -3,13 +3,13 @@ const logger = require("../utils/logger");
 const { sendOrganizerInvoiceEmail, sendOrganizerBillingUpdateEmail } = require("../utils/mailer");
 const { CHAT_ACTOR, CHAT_CONVERSATION_TYPE, startConversationForActor, sendMessageForActor } = require("./chatService");
 const { getPublicBaseUrl } = require("./eventService");
+const { SUPPORTED_CURRENCIES, readLockedEventUnitPrice, lockEventUnitPriceIfMissing } = require("./billingUnitPriceService");
 
 const FINAL_INVOICE_TRIGGER_MINUTES_AFTER_EVENT_END = 30;
 const FINAL_INVOICE_DUE_HOURS_AFTER_GENERATION = 3;
 // Legacy invoice type kept for backwards compatibility with older data.
 const PRE_EVENT_INVOICE_TYPE = "PRE_EVENT_24H";
 const FINAL_INVOICE_TYPE = "POST_EVENT_FINAL";
-const SUPPORTED_CURRENCIES = ["ETB", "USD", "EUR"];
 const BLOCK_NEW_EVENT_MESSAGE = "You currently have an unpaid overdue balance. New event creation is temporarily blocked until the outstanding invoice is paid in full.";
 
 function formatCurrencyAmount(currency, amount) {
@@ -76,6 +76,15 @@ function normalizeCurrency(value) {
 function resolveEventCurrency(event) {
   const designCurrency = String(event?.designJson?.currency || "").trim();
   return normalizeCurrency(designCurrency);
+}
+
+async function resolveLockedUnitPriceForEvent(event) {
+  const locked = readLockedEventUnitPrice(event);
+  if (locked != null) return locked;
+
+  const currency = resolveEventCurrency(event);
+  const { unitPrice } = await lockEventUnitPriceIfMissing(event.id, currency);
+  return unitPrice;
 }
 
 function roundMoney(value) {
@@ -489,7 +498,7 @@ async function processFinalSettlementInvoice(event, options = {}) {
   }
 
   const currency = resolveEventCurrency(event);
-  const unitPrice = UNIT_PRICE_BY_CURRENCY[currency];
+  const unitPrice = await resolveLockedUnitPriceForEvent(event);
   const approvedTicketCount = await countApprovedTicketsSnapshot(event.id, { upTo: eventEndAt });
   const totalCharges = roundMoney(approvedTicketCount * unitPrice);
   const totalPaid = await sumEventPayments(event.id);
@@ -539,6 +548,7 @@ async function runOrganizerInvoiceGenerationCycle(options = {}) {
       accessCode: true,
       organizerAccessCode: true,
       designJson: true,
+      billingUnitPriceSnapshot: true,
     },
     orderBy: { eventDate: "asc" },
     take: 500,

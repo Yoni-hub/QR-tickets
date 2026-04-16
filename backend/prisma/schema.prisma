@@ -17,6 +17,7 @@ model UserEvent {
   slug        String?     @unique
   ticketType  String?
   ticketPrice Decimal?    @db.Decimal(10, 2)
+  billingUnitPriceSnapshot Decimal? @db.Decimal(10, 2)
   paymentInstructions String?
   designJson  Json?
   adminStatus EventAdminStatus @default(ACTIVE)
@@ -56,6 +57,7 @@ model AdminCurrencyPaymentInstruction {
   id              String            @id @default(cuid())
   currency        SupportedCurrency @unique
   instructionText String
+  unitPrice       Decimal?          @db.Decimal(10, 2)
   updatedAt       DateTime          @updatedAt
   createdAt       DateTime          @default(now())
 }
