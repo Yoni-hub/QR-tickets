@@ -1442,16 +1442,15 @@ export default function Dashboard() {
       return;
     }
     setSavingEvent(true);
-    let cfTurnstileToken = "";
-    try {
-      cfTurnstileToken = await getTurnstileToken();
-    } catch {
-      setEventFb("error", "CAPTCHA verification failed. Please try again.");
-      setSavingEvent(false);
-      return;
-    }
     try {
       if (eventEditMode === EVENT_EDIT_MODES.CREATE) {
+        let cfTurnstileToken = "";
+        try {
+          cfTurnstileToken = await getTurnstileToken();
+        } catch {
+          setEventFb("error", "CAPTCHA verification failed. Please try again.");
+          return;
+        }
         if (!accessCode) {
           const response = await api.post("/events", {
             organizerName: eventDraft.organizerName,
