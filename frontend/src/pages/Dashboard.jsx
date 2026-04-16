@@ -385,7 +385,7 @@ function DraggableShareButton({ onClick }) {
 }
 
 export default function Dashboard() {
-  const { containerRef: turnstileRef, getToken: getTurnstileToken } = useTurnstile();
+  const { containerRef: turnstileRef, getToken: getTurnstileToken, prefetchToken: prefetchTurnstileToken } = useTurnstile();
   const navigate = useNavigate();
   const location = useLocation();
   const [params, setParams] = useSearchParams();
@@ -438,6 +438,13 @@ export default function Dashboard() {
   const [gateOtpInput, setGateOtpInput] = useState("");
   const [gateOtpSent, setGateOtpSent] = useState(false);
   const [sendingGateOtp, setSendingGateOtp] = useState(false);
+
+  useEffect(() => {
+    if (eventEditMode !== EVENT_EDIT_MODES.CREATE) return;
+    prefetchTurnstileToken();
+    // Prefetch only when entering CREATE mode; token is cached briefly in the hook.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eventEditMode]);
   const [verifyingGateOtp, setVerifyingGateOtp] = useState(false);
   const [gateEmailFb, setGateEmailFb] = useFeedback();
   const [gateMode, setGateMode] = useState("otp");
