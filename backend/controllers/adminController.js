@@ -3,6 +3,7 @@ const { generateAccessCode } = require("../utils/accessCode");
 const { getPublicBaseUrl } = require("../services/eventService");
 const { resolveConfiguredAdminKey } = require("../middleware/adminAuth");
 const { writeAdminAuditLog } = require("../utils/adminAudit");
+const { LIMITS, sanitizeText, safeError } = require("../utils/sanitize");
 const {
   SUPPORTED_CURRENCIES,
   FINAL_INVOICE_TYPE,
@@ -13,6 +14,8 @@ const {
   approveInvoicePaymentEvidence,
   allowInvoiceEvidenceAttachment,
   setOrganizerInvoiceEvidenceAutoApprove,
+  isOrganizerBlockedFromNewEvents,
+  BLOCK_NEW_EVENT_MESSAGE,
 } = require("../services/organizerInvoiceService");
 const { sendAdminInvoiceEvidenceSubmittedEmail } = require("../utils/mailer");
 
@@ -61,6 +64,30 @@ function resolveLatestDelivery(deliveries) {
 
 function buildTicketUrl(ticketPublicId) {
   return `${getPublicBaseUrl()}/t/${ticketPublicId}`;
+}
+
+function perfNowMs() {
+  return Number(process.hrtime.bigint() / 1000000n);
+}
+
+function slugify(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "")
+    .slice(0, 72);
+}
+
+async function generateEventSlug(eventName, currentEventId = "") {
+  const base = slugify(eventName) || "event";
+  let slug = base;
+  let index = 2;
+  while (true) {
+    const existing = await prisma.userEvent.findUnique({ where: { slug } });
+    if (!existing || existing.id === currentEventId) return slug;
+    slug = `${base}-${index}`;
+    index += 1;
+  }
 }
 
 async function getAdminOverview(_req, res) {
@@ -1956,6 +1983,138 @@ async function patchAdminAllowInvoiceEvidenceAttachment(req, res) {
   }
 }
 
+async function adminPerfCreateEventByOrganizerCode(req, res) {
+  const startedAtMs = perfNowMs();
+  const timings = {};
+
+  try {
+    const rawOrganizerCode = String(req.body?.organizerAccessCode || req.body?.accessCode || "").trim();
+    const organizerAccessCodeInput = sanitizeText(rawOrganizerCode, 64);
+    if (!organizerAccessCodeInput) {
+      res.status(400).json({ error: "organizerAccessCode is required." });
+      return;
+    }
+
+    const eventName = sanitizeText(req.body?.eventName, LIMITS.EVENT_NAME) || `Perf Event ${new Date().toISOString()}`;
+    const organizerName = sanitizeText(req.body?.organizerName, LIMITS.NAME);
+    const eventAddress = sanitizeText(req.body?.eventAddress, LIMITS.EVENT_ADDRESS) || "Perf Address";
+    const paymentInstructions = sanitizeText(req.body?.paymentInstructions, LIMITS.PAYMENT_INSTRUCTIONS);
+
+    const eventDateRaw = String(req.body?.eventDate || "").trim();
+    const parsedEventDate = eventDateRaw ? new Date(eventDateRaw) : null;
+    const eventEndDateRaw = String(req.body?.eventEndDate || "").trim();
+    const parsedEventEndDate = eventEndDateRaw ? new Date(eventEndDateRaw) : null;
+
+    if (!eventDateRaw || !parsedEventDate || Number.isNaN(parsedEventDate.getTime())) {
+      res.status(400).json({ error: "Valid eventDate is required." });
+      return;
+    }
+    if (eventEndDateRaw && (!parsedEventEndDate || Number.isNaN(parsedEventEndDate.getTime()))) {
+      res.status(400).json({ error: "Invalid eventEndDate." });
+      return;
+    }
+    if (parsedEventEndDate && parsedEventEndDate <= parsedEventDate) {
+      res.status(400).json({ error: "Event end date must be after the start date." });
+      return;
+    }
+    if (req.body?.allowPast !== true && parsedEventDate <= new Date()) {
+      res.status(400).json({ error: "Event start date must be in the future." });
+      return;
+    }
+
+    const directStart = perfNowMs();
+    const direct = await prisma.userEvent.findFirst({
+      where: { OR: [{ accessCode: organizerAccessCodeInput }, { organizerAccessCode: organizerAccessCodeInput }] },
+      select: { accessCode: true, organizerAccessCode: true },
+    });
+    timings.resolveOrganizerMs = perfNowMs() - directStart;
+    if (!direct) {
+      res.status(404).json({ error: "Organizer not found for provided code." });
+      return;
+    }
+    const organizerAccessCode = String(direct.organizerAccessCode || direct.accessCode || organizerAccessCodeInput).trim();
+
+    const groupStart = perfNowMs();
+    const groupRows = await prisma.userEvent.findMany({
+      where: { OR: [{ organizerAccessCode }, { accessCode: organizerAccessCode }] },
+      orderBy: { createdAt: "asc" },
+      select: { emailVerified: true, organizerEmail: true, notifyOnRequest: true, notifyOnMessage: true },
+    });
+    timings.loadOrganizerGroupMs = perfNowMs() - groupStart;
+
+    const blockedStart = perfNowMs();
+    const blockedFromNewEvents = await isOrganizerBlockedFromNewEvents(organizerAccessCode);
+    timings.blockedCheckMs = perfNowMs() - blockedStart;
+    if (blockedFromNewEvents && req.body?.ignoreOverdueBlock !== true) {
+      res.status(403).json({ error: BLOCK_NEW_EVENT_MESSAGE });
+      return;
+    }
+
+    const accessStart = perfNowMs();
+    const nextAccessCode = await generateAccessCode(async (candidate) => {
+      const existing = await prisma.userEvent.findUnique({ where: { accessCode: candidate } });
+      return !existing;
+    });
+    timings.generateAccessCodeMs = perfNowMs() - accessStart;
+
+    const slugStart = perfNowMs();
+    const slug = await generateEventSlug(eventName);
+    timings.generateSlugMs = perfNowMs() - slugStart;
+
+    const groupEmailVerified = groupRows.some((row) => row.emailVerified === true);
+    const groupOrganizerEmail = groupRows
+      .map((entry) => String(entry.organizerEmail || "").trim().toLowerCase())
+      .find(Boolean) || null;
+    const groupNotifyOnRequest = groupRows.some((row) => row.notifyOnRequest === true);
+    const groupNotifyOnMessage = groupRows.some((row) => row.notifyOnMessage === true);
+
+    const createStart = perfNowMs();
+    const created = await prisma.userEvent.create({
+      data: {
+        organizerName: organizerName || null,
+        organizerEmail: groupOrganizerEmail,
+        eventName,
+        eventAddress,
+        eventDate: parsedEventDate,
+        eventEndDate: parsedEventEndDate || null,
+        paymentInstructions: paymentInstructions || null,
+        quantity: 0,
+        accessCode: nextAccessCode,
+        organizerAccessCode,
+        slug,
+        isDemo: Boolean(req.body?.isDemo),
+        emailVerified: groupEmailVerified,
+        notifyOnRequest: groupNotifyOnRequest,
+        notifyOnMessage: groupNotifyOnMessage,
+      },
+      select: {
+        id: true,
+        slug: true,
+        organizerName: true,
+        eventName: true,
+        eventDate: true,
+        eventEndDate: true,
+        eventAddress: true,
+        accessCode: true,
+        organizerAccessCode: true,
+        createdAt: true,
+      },
+    });
+    timings.createEventMs = perfNowMs() - createStart;
+    timings.totalMs = perfNowMs() - startedAtMs;
+
+    res.json({
+      ok: true,
+      note: "ADMIN PERF: creates a real event row (admin-only). Remove when done profiling.",
+      organizerAccessCode,
+      event: created,
+      timings,
+    });
+  } catch (error) {
+    res.status(500).json({ error: safeError(error, "Perf endpoint failed."), timings });
+  }
+}
+
 module.exports = {
   getAdminOverview,
   listAdminEvents,
@@ -1988,4 +2147,5 @@ module.exports = {
   patchAdminInvoiceEvidenceAutoApprove,
   patchAdminGlobalInvoiceEvidenceAutoApprove,
   patchAdminAllowInvoiceEvidenceAttachment,
+  adminPerfCreateEventByOrganizerCode,
 };
