@@ -677,6 +677,7 @@ async function updateEventInline(req, res) {
   const eventEndDateRaw = String(req.body?.eventEndDate || "").trim();
   const parsedEventEndDate = eventEndDateRaw ? new Date(eventEndDateRaw) : null;
   const hasEventEndDate = Object.prototype.hasOwnProperty.call(req.body || {}, "eventEndDate");
+  const hasTicketType = Object.prototype.hasOwnProperty.call(req.body || {}, "ticketType");
   const ticketType = sanitizeText(req.body?.ticketType, LIMITS.TICKET_TYPE);
   const hasTicketPrice = Object.prototype.hasOwnProperty.call(req.body || {}, "ticketPrice");
   const ticketPriceRaw = String(req.body?.ticketPrice ?? "").trim();
@@ -733,6 +734,30 @@ async function updateEventInline(req, res) {
     return l === r;
   };
 
+  const canonicalizeDesignForCompare = (designJson) => {
+    if (!designJson || typeof designJson !== "object") return "";
+    const rawGroups = Array.isArray(designJson.ticketGroups) ? designJson.ticketGroups : [];
+    const cleanedGroups = rawGroups
+      .map((group) => {
+        if (!group || typeof group !== "object") return null;
+        const clone = { ...group };
+        delete clone.quantity;
+        delete clone.priceText;
+        delete clone.ticketTypeLabel;
+        return clone;
+      })
+      .filter(Boolean)
+      .sort((a, b) => String(a.ticketType || "").localeCompare(String(b.ticketType || "")));
+    const base = { ...designJson, ticketGroups: cleanedGroups };
+    return JSON.stringify(base);
+  };
+
+  const existingTicketType = String(existing.ticketType || "");
+  const existingTicketPrice = existing.ticketPrice == null ? null : Number(existing.ticketPrice);
+  const ticketTypeChanged = hasTicketType && String(ticketType || "") !== existingTicketType;
+  const ticketPriceChanged = hasTicketPrice && (parsedTicketPrice ?? null) !== (existingTicketPrice ?? null);
+  const designChanged = hasDesignJson && canonicalizeDesignForCompare(existing.designJson) !== canonicalizeDesignForCompare(incomingDesignJson);
+
   // Rule 2: After event start, organizer cannot change anything except add ticket quantities.
   if (eventStarted) {
     const changes = [];
@@ -743,31 +768,13 @@ async function updateEventInline(req, res) {
     if (paymentInstructions !== null && paymentInstructions !== undefined && paymentInstructions !== String(existing.paymentInstructions || "")) changes.push("paymentInstructions");
     if (parsedEventDate && !datesEqual(parsedEventDate, existing.eventDate)) changes.push("eventDate");
     if (hasEventEndDate && !datesEqual(parsedEventEndDate, existing.eventEndDate)) changes.push("eventEndDate");
-    if (ticketType && ticketType !== String(existing.ticketType || "")) changes.push("ticketType");
-    if (hasTicketPrice && (parsedTicketPrice ?? null) !== (existing.ticketPrice == null ? null : Number(existing.ticketPrice))) changes.push("ticketPrice");
+    if (ticketTypeChanged) changes.push("ticketType");
+    if (ticketPriceChanged) changes.push("ticketPrice");
     if (hasSalesCutoff && !datesEqual(parsedSalesCutoff, existing.salesCutoffAt)) changes.push("salesCutoffAt");
     if (salesWindowStart !== undefined && salesWindowStart !== (existing.salesWindowStart || null)) changes.push("salesWindowStart");
     if (salesWindowEnd !== undefined && salesWindowEnd !== (existing.salesWindowEnd || null)) changes.push("salesWindowEnd");
     if (maxTicketsPerEmail !== undefined && maxTicketsPerEmail !== (existing.maxTicketsPerEmail || null)) changes.push("maxTicketsPerEmail");
     if (hasDesignJson && incomingCurrency !== existingCurrency) changes.push("currency");
-
-    const canonicalizeDesignForLock = (designJson) => {
-      if (!designJson || typeof designJson !== "object") return "";
-      const rawGroups = Array.isArray(designJson.ticketGroups) ? designJson.ticketGroups : [];
-      const cleanedGroups = rawGroups
-        .map((g) => {
-          if (!g || typeof g !== "object") return null;
-          const clone = { ...g };
-          delete clone.quantity;
-          delete clone.priceText;
-          delete clone.ticketTypeLabel;
-          return clone;
-        })
-        .filter(Boolean)
-        .sort((a, b) => String(a.ticketType || "").localeCompare(String(b.ticketType || "")));
-      const base = { ...designJson, ticketGroups: cleanedGroups };
-      return JSON.stringify(base);
-    };
 
     const allowQuantityIncreaseOnly = () => {
       if (!hasDesignJson) return false;
@@ -786,7 +793,7 @@ async function updateEventInline(req, res) {
         const newPrice = ng.ticketPrice == null ? null : Number(ng.ticketPrice);
         if (oldPrice !== newPrice) return false;
       }
-      if (canonicalizeDesignForLock(existing.designJson) !== canonicalizeDesignForLock(incomingDesignJson)) return false;
+      if (canonicalizeDesignForCompare(existing.designJson) !== canonicalizeDesignForCompare(incomingDesignJson)) return false;
       return true;
     };
 
@@ -794,7 +801,7 @@ async function updateEventInline(req, res) {
       res.status(400).json({ error: "Event has started. You cannot change event details after the start time." });
       return;
     }
-    if (hasDesignJson && !allowQuantityIncreaseOnly()) {
+    if (designChanged && !allowQuantityIncreaseOnly()) {
       res.status(400).json({ error: "Event has started. Only increasing ticket quantities is allowed." });
       return;
     }
@@ -843,7 +850,7 @@ async function updateEventInline(req, res) {
   }
 
   // Guard: capacity cannot be set below already-sold count per ticket type
-  if (hasDesignJson && Array.isArray(req.body.designJson?.ticketGroups)) {
+  if (designChanged && Array.isArray(req.body.designJson?.ticketGroups)) {
     const soldByType = await prisma.ticket.groupBy({
       by: ["ticketType"],
       where: { eventId, OR: [{ ticketRequestId: { not: null } }, { status: "USED" }] },
@@ -880,7 +887,7 @@ async function updateEventInline(req, res) {
       ...(hasEventEndDate ? { eventEndDate: parsedEventEndDate || null } : {}),
       ...(ticketType ? { ticketType } : {}),
       ...(hasTicketPrice ? { ticketPrice: parsedTicketPrice } : {}),
-      ...(hasDesignJson ? { designJson: req.body.designJson } : {}),
+      ...(designChanged ? { designJson: req.body.designJson } : {}),
       ...(hasSalesCutoff ? { salesCutoffAt: parsedSalesCutoff || null } : {}),
       ...(salesWindowStart !== undefined ? { salesWindowStart } : {}),
       ...(salesWindowEnd !== undefined ? { salesWindowEnd } : {}),
@@ -910,7 +917,7 @@ async function updateEventInline(req, res) {
   // Keep existing editable tickets aligned with latest event editor changes.
   // Ticket verify pages read ticket-level snapshots (ticketType/ticketPrice/designJson),
   // so event-level updates alone are not enough for already-generated inventory.
-  const shouldSyncTickets = Boolean(ticketType) || hasTicketPrice || hasDesignJson;
+  const shouldSyncTickets = ticketTypeChanged || ticketPriceChanged || designChanged;
   if (shouldSyncTickets) {
     const editableTickets = await prisma.ticket.findMany({
       where: {
@@ -966,7 +973,7 @@ async function updateEventInline(req, res) {
     }
   }
 
-  if (hasDesignJson && updated.billingUnitPriceSnapshot == null) {
+  if (designChanged && updated.billingUnitPriceSnapshot == null) {
     const currency = updated.designJson?.currency || req.body?.designJson?.currency;
     await lockEventUnitPriceIfMissing(updated.id, currency);
   }
