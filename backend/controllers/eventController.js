@@ -8,6 +8,7 @@ const {
   BLOCK_NEW_EVENT_MESSAGE,
   submitInvoicePaymentEvidenceForOrganizer,
   listInvoicePaymentEvidence,
+  getOrganizerOverdueBalance,
 } = require("../services/organizerInvoiceService");
 const { generateTicketPublicId } = require("../utils/ticketPublicId");
 const { checkDailyTicketCap } = require("../utils/dailyCaps");
@@ -343,6 +344,22 @@ async function getEventByCode(req, res) {
     })),
   );
   const billingWarnings = [];
+
+  const overdueBalance = await getOrganizerOverdueBalance(group.organizerAccessCode);
+  if (overdueBalance) {
+    const currency = String(overdueBalance.currency || "").trim();
+    const amount = Number(overdueBalance.amountRemaining || 0).toFixed(2);
+    const eventName = String(overdueBalance.eventName || "").trim() || "a previous event";
+    billingWarnings.push({
+      type: "OVERDUE_BALANCE",
+      message: `Balance due: ${currency} ${amount} for ${eventName}. New event creation is disabled until it is paid.`,
+      currency,
+      amountRemaining: Number(overdueBalance.amountRemaining || 0),
+      eventId: overdueBalance.eventId,
+      invoiceId: overdueBalance.invoiceId,
+      dueAt: overdueBalance.dueAt,
+    });
+  }
 
   res.json({
     organizerAccessCode: group.organizerAccessCode,

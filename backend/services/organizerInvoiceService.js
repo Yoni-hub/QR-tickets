@@ -997,6 +997,48 @@ async function isOrganizerBlockedFromNewEvents(organizerAccessCode) {
   return Boolean(overdueFinal);
 }
 
+async function getOrganizerOverdueBalance(organizerAccessCode) {
+  const code = String(organizerAccessCode || "").trim();
+  if (!code) return null;
+
+  const overdueInvoice = await prisma.organizerInvoice.findFirst({
+    where: {
+      invoiceType: FINAL_INVOICE_TYPE,
+      status: "OVERDUE",
+      event: {
+        OR: [
+          { organizerAccessCode: code },
+          { accessCode: code },
+        ],
+      },
+    },
+    orderBy: [{ dueAt: "desc" }],
+    select: {
+      id: true,
+      eventId: true,
+      currencySnapshot: true,
+      totalAmount: true,
+      amountPaid: true,
+      dueAt: true,
+      event: { select: { eventName: true } },
+    },
+  });
+
+  if (!overdueInvoice) return null;
+
+  const amountRemaining = computeAmountRemaining(overdueInvoice.totalAmount, overdueInvoice.amountPaid);
+  if (amountRemaining <= 0) return null;
+
+  return {
+    invoiceId: overdueInvoice.id,
+    eventId: overdueInvoice.eventId,
+    eventName: overdueInvoice.event?.eventName || null,
+    currency: overdueInvoice.currencySnapshot,
+    amountRemaining,
+    dueAt: overdueInvoice.dueAt,
+  };
+}
+
 async function submitInvoicePaymentEvidenceForOrganizer({
   organizerAccessCode,
   invoiceId,
@@ -1328,6 +1370,7 @@ module.exports = {
   allowInvoiceEvidenceAttachment,
   setOrganizerInvoiceEvidenceAutoApprove,
   isOrganizerBlockedFromNewEvents,
+  getOrganizerOverdueBalance,
   runOrganizerInvoiceGenerationCycle,
   processFinalSettlementInvoice,
 };

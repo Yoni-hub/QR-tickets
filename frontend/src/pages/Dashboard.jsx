@@ -600,6 +600,10 @@ export default function Dashboard() {
   }, [eventLockedModal.open]);
   const visibleMenus = summary ? DASHBOARD_MENUS_ALL : DASHBOARD_MENUS_PRELOAD;
   const billingWarnings = Array.isArray(summary?.billingWarnings) ? summary.billingWarnings : [];
+  const newEventBlockWarning = useMemo(() => {
+    const match = billingWarnings.find((warning) => String(warning?.type || "") === "OVERDUE_BALANCE");
+    return match || null;
+  }, [billingWarnings]);
   const organizerInvoices = useMemo(() => {
     const items = Array.isArray(summary?.organizerInvoices) ? summary.organizerInvoices : [];
     return [...items].sort((left, right) => toTimestamp(left?.generatedAt) - toTimestamp(right?.generatedAt));
@@ -2263,6 +2267,11 @@ export default function Dashboard() {
             <>
               <section className="mt-4 rounded border p-4">
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-[100px_1fr] sm:items-center">
+                  {newEventBlockWarning ? (
+                    <div className="sm:col-span-2 -mt-1 mb-1 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                      {newEventBlockWarning.message}
+                    </div>
+                  ) : null}
                   <p className="font-semibold">Event:</p>
                   <select
                     className="w-full rounded border p-2 text-sm"
