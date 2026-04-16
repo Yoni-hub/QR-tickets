@@ -850,9 +850,13 @@ export default function Dashboard() {
     setTickets(ticketsRes.data.tickets || []);
   };
 
-  const loadDashboard = useCallback(async (targetCode, requestedEventId = "", requestedInvoiceId = "") => {
+  const loadDashboard = useCallback(async (targetCode, requestedEventId = "", requestedInvoiceId = "", options = {}) => {
     const trimmedCode = String(targetCode || "").trim();
     if (!trimmedCode || dashboardLoadingRef.current) return;
+    const minDelayMs = (options && typeof options === "object" && Number.isFinite(Number(options.minDelayMs)))
+      ? Number(options.minDelayMs)
+      : 450;
+
     dashboardLoadingRef.current = true;
     setLoading(true);
     setLoadFb("", "");
@@ -876,7 +880,7 @@ export default function Dashboard() {
       if (storedInvoiceId) requestParams.invoiceId = storedInvoiceId;
       const summaryRes = await withMinDelay(api.get(`/events/by-code/${encodeURIComponent(trimmedCode)}`, {
         params: requestParams,
-      }));
+      }), minDelayMs);
       applySummaryEvent(summaryRes.data);
       if (summaryRes.data?.event?.id) {
         localStorage.setItem(storageKey, summaryRes.data.event.id);
@@ -885,8 +889,10 @@ export default function Dashboard() {
       setTicketStatusFilter(TICKET_STATUS_FILTERS.TOTAL);
       setShowPublicPreview(false);
       setTicketPage(1);
-      await loadTicketsForEvent(summaryRes.data.event.id);
-      await loadRequestsAndPromoters(trimmedCode, summaryRes.data.event.id);
+      await Promise.all([
+        loadTicketsForEvent(summaryRes.data.event.id),
+        loadRequestsAndPromoters(trimmedCode, summaryRes.data.event.id),
+      ]);
       setLoadFb("success", "Dashboard loaded.");
       window.localStorage.setItem("qr-dashboard:loaded-once", "1");
       localStorage.setItem(LOCAL_SAVED_CODE_KEY, trimmedCode);
@@ -1488,7 +1494,7 @@ export default function Dashboard() {
           paymentInstructions: eventDraft.paymentInstructions,
           cfTurnstileToken,
         });
-        await loadDashboard(accessCode, response.data?.event?.id);
+        await loadDashboard(accessCode, response.data?.event?.id, "", { minDelayMs: 0 });
         setEventFb("success", "New event created.");
         return;
       }
