@@ -3658,7 +3658,7 @@ export default function Dashboard() {
 
           {evidencePreview ? (
             <ModalOverlay className="bg-black/70">
-              <section className="w-full max-w-4xl rounded border bg-slate-900 p-3 shadow-xl">
+              <section className="w-full max-w-4xl overflow-hidden rounded border bg-slate-900 p-3 shadow-xl">
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <p className="text-sm font-semibold text-white">Payment Evidence</p>
                   <AppButton type="button" variant="secondary" className="px-2 py-1 text-xs" onClick={() => setEvidencePreview("")}>
@@ -3666,7 +3666,7 @@ export default function Dashboard() {
                   </AppButton>
                 </div>
                 <div className="flex max-h-[78vh] items-center justify-center overflow-auto rounded bg-black p-2">
-                  <img src={evidencePreview} alt="Payment evidence" className="max-h-[74vh] w-auto rounded bg-white" />
+                  <img src={evidencePreview} alt="Payment evidence" className="max-h-[74vh] max-w-full rounded bg-white object-contain" />
                 </div>
               </section>
             </ModalOverlay>

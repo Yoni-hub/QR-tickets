@@ -7,7 +7,9 @@ export default function ModalOverlay({ children, className = "" }) {
   }, []);
 
   return (
-    <div className={`fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-3 sm:items-center ${className}`}>
+    <div
+      className={`fixed inset-0 z-[100] flex items-end justify-center bg-black/40 p-3 pt-[calc(0.75rem+env(safe-area-inset-top))] pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:items-center ${className}`}
+    >
       {children}
     </div>
   );
