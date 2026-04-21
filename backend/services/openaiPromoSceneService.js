@@ -205,10 +205,11 @@ async function generateOneScenePng({ apiKey, model, prompt }) {
   throw error;
 }
 
-async function generatePromoSceneImages({ draftId, scriptText, onScreenText }) {
+async function generatePromoSceneImages({ draftId, scriptText, onScreenText, sceneCount } = {}) {
   const apiKey = requireOpenAiApiKey();
   const model = String(process.env.OPENAI_IMAGE_MODEL || "gpt-image-1").trim() || "gpt-image-1";
-  const count = Math.max(1, Math.min(5, Number(process.env.PROMO_SCENE_COUNT || 4)));
+  const requestedCount = Number.isFinite(Number(sceneCount)) ? Number(sceneCount) : Number(process.env.PROMO_SCENE_COUNT || 4);
+  const count = Math.max(1, Math.min(5, requestedCount));
   const lines = toSceneLines({ onScreenText, scriptText, maxLines: count });
   const concepts = buildSceneConcepts(lines, count);
   const style = String(process.env.OPENAI_SCENE_STYLE || "dynamic event atmosphere, cinematic lighting, realistic photography").trim();

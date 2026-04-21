@@ -69,6 +69,7 @@ const {
   updatePromoDraft,
   generatePromoOnScreenText,
   generatePromoAudio,
+  generatePromoGraphicImage,
   renderPromoVideo,
   uploadPromoDraftToTikTok,
   downloadPromoAudio,
@@ -127,6 +128,7 @@ router.post("/tiktok/promo/generate-today", generateTodayPromoDraft);
 router.patch("/tiktok/promo/:draftId", updatePromoDraft);
 router.post("/tiktok/promo/:draftId/generate-onscreen", generatePromoOnScreenText);
 router.post("/tiktok/promo/:draftId/generate-audio", generatePromoAudio);
+router.post("/tiktok/promo/:draftId/generate-image", generatePromoGraphicImage);
 router.get("/tiktok/promo/:draftId/audio", downloadPromoAudio);
 router.post("/tiktok/promo/:draftId/render-video", renderPromoVideo);
 router.get("/tiktok/promo/:draftId/video", downloadPromoVideo);

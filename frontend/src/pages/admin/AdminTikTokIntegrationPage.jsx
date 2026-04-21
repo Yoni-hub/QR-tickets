@@ -39,6 +39,8 @@ export default function AdminTikTokIntegrationPage() {
   const [autoStep, setAutoStep] = useState("");
   const [audioGenerating, setAudioGenerating] = useState(false);
   const [onscreenGenerating, setOnscreenGenerating] = useState(false);
+  const [graphicGenerating, setGraphicGenerating] = useState(false);
+  const [graphicImageUrl, setGraphicImageUrl] = useState("");
   const [draftForm, setDraftForm] = useState({
     scriptText: "",
     onScreenText: "",
@@ -108,6 +110,12 @@ export default function AdminTikTokIntegrationPage() {
     loadStatus();
     loadDraft();
   }, []);
+
+  useEffect(() => {
+    return () => {
+      if (graphicImageUrl) URL.revokeObjectURL(graphicImageUrl);
+    };
+  }, [graphicImageUrl]);
 
   const connected = Boolean(status?.connected);
 
@@ -309,6 +317,28 @@ export default function AdminTikTokIntegrationPage() {
 
   const [videoRendering, setVideoRendering] = useState(false);
   const [mediaError, setMediaError] = useState({ audio: "", video: "" });
+  const generateGraphicImage = async () => {
+    if (!draft?.id) return;
+    setGraphicGenerating(true);
+    setDraftError("");
+    setFlash({ type: "", message: "" });
+    try {
+      const response = await adminApi.post(`/tiktok/promo/${draft.id}/generate-image`, {}, { responseType: "blob" });
+      const blob = response?.data;
+      if (!blob || !blob.size) throw new Error("Image response was empty.");
+      const nextUrl = URL.createObjectURL(blob);
+      setGraphicImageUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return nextUrl;
+      });
+      setFlash({ type: "success", message: "Graphic image generated." });
+    } catch (error) {
+      setDraftError(error.response?.data?.error || error?.message || "Could not generate graphic image.");
+    } finally {
+      setGraphicGenerating(false);
+    }
+  };
+
   const renderVideo = async () => {
     if (!draft?.id) return;
     setVideoRendering(true);
@@ -548,6 +578,15 @@ export default function AdminTikTokIntegrationPage() {
                   </AppButton>
                   <AppButton
                     variant="indigo"
+                    loading={graphicGenerating}
+                    loadingText="Generating image..."
+                    onClick={generateGraphicImage}
+                    disabled={!draft?.id || draftGenerating || draftSaving || audioGenerating || autoGenerating || videoRendering}
+                  >
+                    Generate Graphic (Image Only)
+                  </AppButton>
+                  <AppButton
+                    variant="indigo"
                     loading={videoRendering}
                     loadingText="Rendering video..."
                     onClick={renderVideo}
@@ -589,6 +628,13 @@ export default function AdminTikTokIntegrationPage() {
                       </a>
                       .
                     </p>
+                  </div>
+                ) : null}
+
+                {graphicImageUrl ? (
+                  <div className="rounded border bg-slate-50 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Graphic Preview</p>
+                    <img src={graphicImageUrl} alt="Generated promo graphic" className="mt-2 w-full rounded" />
                   </div>
                 ) : null}
 

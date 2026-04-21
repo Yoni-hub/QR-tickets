@@ -313,6 +313,74 @@ async function generatePromoAudio(req, res) {
   }
 }
 
+function imageContentTypeFromPath(filePath) {
+  const ext = String(path.extname(filePath || "")).toLowerCase();
+  if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
+  if (ext === ".webp") return "image/webp";
+  return "image/png";
+}
+
+async function generatePromoGraphicImage(req, res) {
+  try {
+    const draftId = String(req.params?.draftId || "").trim();
+    if (!draftId) {
+      res.status(400).json({ error: "Missing draftId." });
+      return;
+    }
+
+    const draft = await prisma.promoDraft.findUnique({ where: { id: draftId } });
+    if (!draft) {
+      res.status(404).json({ error: "Draft not found." });
+      return;
+    }
+
+    const sourceRaw = String(process.env.PROMO_SCENE_SOURCE || "auto").trim().toLowerCase();
+    const sceneSource = ["ai", "stock", "auto"].includes(sourceRaw) ? sourceRaw : "auto";
+
+    let selectedImagePath = "";
+    if (sceneSource === "ai" || sceneSource === "auto") {
+      try {
+        const aiScenePaths = await generatePromoSceneImages({
+          draftId,
+          scriptText: draft.scriptText,
+          onScreenText: draft.onScreenText,
+          sceneCount: 1,
+        });
+        selectedImagePath = String(aiScenePaths[0] || "");
+      } catch (error) {
+        logger.warn({
+          message: "promo_graphic_ai_generation_failed",
+          draftId,
+          error: String(error?.message || "unknown"),
+        });
+        if (sceneSource === "ai") throw error;
+      }
+    }
+
+    if (!selectedImagePath && (sceneSource === "stock" || sceneSource === "auto")) {
+      const broll = await getRandomBrollVideo({ durationSeconds: 20 });
+      if (Array.isArray(broll?.imagePaths) && broll.imagePaths.length) {
+        selectedImagePath = String(broll.imagePaths[0] || "");
+      }
+    }
+
+    if (!selectedImagePath || !fs.existsSync(selectedImagePath)) {
+      res.status(502).json({ error: "Could not generate a graphic image right now." });
+      return;
+    }
+
+    res.setHeader("Content-Type", imageContentTypeFromPath(selectedImagePath));
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Content-Disposition", `inline; filename="promo-graphic-${draftId}.png"`);
+    const stream = fs.createReadStream(selectedImagePath);
+    req.on("aborted", () => stream.destroy());
+    res.on("close", () => stream.destroy());
+    stream.pipe(res);
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: safeError(error, "Could not generate graphic image.") });
+  }
+}
+
 function buildRenderFailureMessage(error) {
   const header = safeError({ statusCode: 400, message: error?.message || "Video render failed." }, "Video render failed.");
   const details = typeof error?.details === "string" ? error.details.trim() : "";
@@ -575,6 +643,7 @@ module.exports = {
   updatePromoDraft,
   generatePromoOnScreenText,
   generatePromoAudio,
+  generatePromoGraphicImage,
   renderPromoVideo,
   downloadPromoVideo,
   uploadPromoDraftToTikTok,
