@@ -14,6 +14,10 @@ function formatDateTime(value) {
   }
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export default function AdminTikTokIntegrationPage() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -176,6 +180,23 @@ export default function AdminTikTokIntegrationPage() {
     }
   };
 
+  const waitForVideoReady = async (draftId, { timeoutMs = 320000, pollMs = 4000 } = {}) => {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      await sleep(pollMs);
+      const response = await adminApi.get("/tiktok/promo/latest");
+      const latest = response.data?.draft || null;
+      if (!latest || latest.id !== draftId) continue;
+
+      setDraft(latest);
+      if (latest.videoReady) return latest;
+      if (latest.status === "FAILED") {
+        throw new Error(latest.lastError || "Video rendering failed.");
+      }
+    }
+    throw new Error("Video rendering is taking longer than expected. Please refresh in a minute.");
+  };
+
   const generateTodayAndRender = async () => {
     setAutoGenerating(true);
     setAutoStep("Generating script...");
@@ -207,9 +228,15 @@ export default function AdminTikTokIntegrationPage() {
       const withAudio = audio.data?.draft || withOnscreen;
       setDraft(withAudio);
 
-      setAutoStep("Rendering video (this can take ~1-2 minutes)...");
+      setAutoStep("Rendering video...");
       const video = await adminApi.post(`/tiktok/promo/${next.id}/render-video`);
-      const withVideo = video.data?.draft || withAudio;
+      const renderStart = video.data?.draft || withAudio;
+      setDraft(renderStart);
+      let withVideo = renderStart;
+      if (!renderStart?.videoReady) {
+        setAutoStep("Rendering video in background...");
+        withVideo = await waitForVideoReady(next.id);
+      }
       setDraft(withVideo);
 
       setAutoStep("");
@@ -291,6 +318,11 @@ export default function AdminTikTokIntegrationPage() {
       const response = await adminApi.post(`/tiktok/promo/${draft.id}/render-video`);
       const next = response.data?.draft || null;
       setDraft(next);
+      let finalDraft = next;
+      if (next?.id && !next?.videoReady) {
+        finalDraft = await waitForVideoReady(next.id);
+      }
+      setDraft(finalDraft);
       setMediaError({ audio: "", video: "" });
       setFlash({ type: "success", message: "Video rendered." });
     } catch (error) {

@@ -10,6 +10,7 @@ const { getRandomBrollVideo } = require("../services/stockBrollService");
 const path = require("path");
 
 const PLATFORM = "TIKTOK";
+const activeVideoRenderJobs = new Set();
 
 function startOfUtcDay(date = new Date()) {
   const d = new Date(date);
@@ -304,6 +305,57 @@ async function generatePromoAudio(req, res) {
   }
 }
 
+function buildRenderFailureMessage(error) {
+  const header = safeError({ statusCode: 400, message: error?.message || "Video render failed." }, "Video render failed.");
+  const details = typeof error?.details === "string" ? error.details.trim() : "";
+  const combined = `${header}${details ? `\n\n${details}` : ""}`.trim();
+  return combined.length > 3500 ? combined.slice(-3500) : combined;
+}
+
+async function runPromoVideoRenderJob(draftId) {
+  const draft = await prisma.promoDraft.findUnique({ where: { id: draftId } });
+  if (!draft) {
+    const error = new Error("Draft not found.");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const logoPath = path.resolve(__dirname, "..", "assets", "og_latest_logo.png");
+  if (!fs.existsSync(logoPath)) {
+    const error = new Error("Logo asset is missing.");
+    error.statusCode = 500;
+    throw error;
+  }
+
+  const audioPath = draft.audioStorageKey ? resolvePromoAudioAbsolutePath(draft.audioStorageKey) : "";
+  const broll = await getRandomBrollVideo({ durationSeconds: 20 });
+  if (broll?.path) {
+    logger.info({ message: "promo_broll_selected", provider: broll.provider, id: broll.id });
+  } else {
+    logger.info({ message: "promo_broll_missing" });
+  }
+
+  const mp4 = await renderPromoVideoMp4({
+    durationSeconds: 20,
+    scriptText: draft.onScreenText || draft.scriptText,
+    logoPngPath: logoPath,
+    audioMp3Path: audioPath,
+    brollMp4Path: broll?.path || "",
+  });
+
+  const saved = await savePromoVideoMp4({ draftId, mp4Buffer: mp4 });
+  const row = await prisma.promoDraft.update({
+    where: { id: draftId },
+    data: {
+      status: "VIDEO_RENDERED",
+      videoStorageKey: saved.storageKey,
+      lastError: null,
+    },
+  });
+
+  return row;
+}
+
 async function renderPromoVideo(req, res) {
   const draftId = String(req.params?.draftId || "").trim();
   try {
@@ -312,49 +364,68 @@ async function renderPromoVideo(req, res) {
       return;
     }
 
-    const draft = await prisma.promoDraft.findUnique({ where: { id: draftId } });
+    const draft = await prisma.promoDraft.findUnique({
+      where: { id: draftId },
+      select: { id: true, videoStorageKey: true },
+    });
     if (!draft) {
       res.status(404).json({ error: "Draft not found." });
       return;
     }
 
-    const logoPath = path.resolve(__dirname, "..", "assets", "og_latest_logo.png");
-    if (!fs.existsSync(logoPath)) {
-      res.status(500).json({ error: "Logo asset is missing." });
+    if (draft.videoStorageKey) {
+      const row = await prisma.promoDraft.findUnique({ where: { id: draftId } });
+      res.status(200).json({ draft: serializeDraft(row) });
       return;
     }
 
-    const audioPath = draft.audioStorageKey ? resolvePromoAudioAbsolutePath(draft.audioStorageKey) : "";
-    const broll = await getRandomBrollVideo({ durationSeconds: 20 });
-    if (broll?.path) {
-      logger.info({ message: "promo_broll_selected", provider: broll.provider, id: broll.id });
-    } else {
-      logger.info({ message: "promo_broll_missing" });
+    if (activeVideoRenderJobs.has(draftId)) {
+      const row = await prisma.promoDraft.findUnique({ where: { id: draftId } });
+      res.status(202).json({ draft: serializeDraft(row), rendering: true });
+      return;
     }
-    const mp4 = await renderPromoVideoMp4({
-      durationSeconds: 20,
-      scriptText: draft.onScreenText || draft.scriptText,
-      logoPngPath: logoPath,
-      audioMp3Path: audioPath,
-      brollMp4Path: broll?.path || "",
+
+    activeVideoRenderJobs.add(draftId);
+    await prisma.promoDraft
+      .update({
+        where: { id: draftId },
+        data: {
+          lastError: null,
+        },
+      })
+      .catch(() => null);
+
+    setImmediate(async () => {
+      try {
+        await runPromoVideoRenderJob(draftId);
+      } catch (error) {
+        const message = buildRenderFailureMessage(error);
+        logger.error({
+          message: "promo_video_render_failed",
+          draftId,
+          error: error?.message,
+          code: error?.code,
+          details: typeof error?.details === "string" ? error.details.slice(0, 800) : undefined,
+        });
+
+        await prisma.promoDraft
+          .update({
+            where: { id: draftId },
+            data: {
+              status: "FAILED",
+              lastError: message.slice(-4000),
+            },
+          })
+          .catch(() => null);
+      } finally {
+        activeVideoRenderJobs.delete(draftId);
+      }
     });
 
-    const saved = await savePromoVideoMp4({ draftId, mp4Buffer: mp4 });
-    const row = await prisma.promoDraft.update({
-      where: { id: draftId },
-      data: {
-        status: "VIDEO_RENDERED",
-        videoStorageKey: saved.storageKey,
-        lastError: null,
-      },
-    });
-
-    res.status(200).json({ draft: serializeDraft(row) });
+    const row = await prisma.promoDraft.findUnique({ where: { id: draftId } });
+    res.status(202).json({ draft: serializeDraft(row), rendering: true });
   } catch (error) {
-    const header = safeError({ statusCode: 400, message: error?.message || "Video render failed." }, "Video render failed.");
-    const details = typeof error?.details === "string" ? error.details.trim() : "";
-    const combined = `${header}${details ? `\n\n${details}` : ""}`.trim();
-    const message = combined.length > 3500 ? combined.slice(-3500) : combined;
+    const message = buildRenderFailureMessage(error);
 
     logger.error({
       message: "promo_video_render_failed",
