@@ -40,13 +40,63 @@ function toSceneLines({ onScreenText, scriptText, maxLines = 5 }) {
   return source.slice(0, Math.max(1, maxLines));
 }
 
-function buildScenePrompt({ baseStyle, sceneLine, idx, total }) {
+const SCENE_PROFILES = [
+  {
+    shot: "wide establishing shot",
+    setting: "outside a busy event venue entrance",
+    lighting: "golden-hour natural light",
+    action: "attendees forming an orderly line while staff prepares to scan tickets",
+  },
+  {
+    shot: "medium action shot",
+    setting: "entry gate checkpoint",
+    lighting: "bright clean daylight",
+    action: "a staff member scanning a QR ticket on a guest smartphone",
+  },
+  {
+    shot: "dynamic crowd shot",
+    setting: "inside the venue near entry lanes",
+    lighting: "concert-style ambient lights with realistic skin tones",
+    action: "guests moving smoothly through check-in without congestion",
+  },
+  {
+    shot: "close-up detail shot",
+    setting: "ticket validation moment at the gate",
+    lighting: "high-contrast cinematic key light",
+    action: "hands holding wristbands, lanyards, and scanned tickets",
+  },
+  {
+    shot: "celebratory lifestyle shot",
+    setting: "post check-in event atmosphere",
+    lighting: "vibrant evening venue lights",
+    action: "happy attendees entering confidently after quick validation",
+  },
+];
+
+function buildSceneConcepts(lines, count) {
+  const safeLines = Array.isArray(lines) && lines.length ? lines : ["fast event check-in"];
+  const concepts = [];
+  for (let index = 0; index < count; index += 1) {
+    const line = safeLines[index % safeLines.length];
+    const profile = SCENE_PROFILES[index % SCENE_PROFILES.length];
+    concepts.push({ line, profile, idx: index, total: count });
+  }
+  return concepts;
+}
+
+function buildScenePrompt({ baseStyle, sceneLine, idx, total, profile }) {
   const style = String(baseStyle || "").trim();
   return [
     "Create a vertical cinematic background image for a short event promo video.",
     "No text, no logos, no UI screenshots, no watermarks, no brand names.",
     "Show people, venues, ticketing, crowd flow, check-in moments, or atmosphere.",
+    "Use realistic photography style, not illustration.",
+    "The scene must look clearly different from other scenes in shot type, setting, and action focus.",
     "Modern, vibrant, professional, social-media friendly composition.",
+    `Shot type: ${profile?.shot || "cinematic event shot"}`,
+    `Setting: ${profile?.setting || "event venue entrance"}`,
+    `Lighting: ${profile?.lighting || "natural cinematic lighting"}`,
+    `Action focus: ${profile?.action || "fast QR ticket check-in"}`,
     `Scene ${idx + 1} of ${total}: ${sceneLine}`,
     style ? `Visual style: ${style}` : "",
   ]
@@ -105,21 +155,28 @@ async function generatePromoSceneImages({ draftId, scriptText, onScreenText }) {
   const model = String(process.env.OPENAI_IMAGE_MODEL || "gpt-image-1").trim() || "gpt-image-1";
   const count = Math.max(1, Math.min(5, Number(process.env.PROMO_SCENE_COUNT || 4)));
   const lines = toSceneLines({ onScreenText, scriptText, maxLines: count });
+  const concepts = buildSceneConcepts(lines, count);
   const style = String(process.env.OPENAI_SCENE_STYLE || "dynamic event atmosphere, cinematic lighting, realistic photography").trim();
 
   ensureSceneRoot();
   const safeDraftId = sanitizeId(draftId);
   const scenePaths = [];
 
-  for (let index = 0; index < lines.length; index += 1) {
+  for (let index = 0; index < concepts.length; index += 1) {
+    const concept = concepts[index];
     const prompt = buildScenePrompt({
       baseStyle: style,
-      sceneLine: lines[index],
-      idx: index,
-      total: lines.length,
+      sceneLine: concept.line,
+      idx: concept.idx,
+      total: concept.total,
+      profile: concept.profile,
     });
     const pngBuffer = await generateOneScenePng({ apiKey, model, prompt });
-    const key = crypto.createHash("sha256").update(`${safeDraftId}|${index}|${lines[index]}`).digest("hex").slice(0, 12);
+    const key = crypto
+      .createHash("sha256")
+      .update(`${safeDraftId}|${index}|${concept.line}|${concept.profile?.shot || ""}|${concept.profile?.setting || ""}`)
+      .digest("hex")
+      .slice(0, 12);
     const fileName = `${safeDraftId}-scene-${String(index + 1).padStart(2, "0")}-${key}.png`;
     const absolutePath = path.join(SCENE_ROOT, fileName);
     await fs.promises.writeFile(absolutePath, pngBuffer);
@@ -139,4 +196,3 @@ async function generatePromoSceneImages({ draftId, scriptText, onScreenText }) {
 module.exports = {
   generatePromoSceneImages,
 };
-
