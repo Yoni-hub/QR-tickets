@@ -73,7 +73,7 @@ async function downloadToFile({ url, destPath, maxBytes = 70 * 1024 * 1024, head
   });
 
   if (response.status < 200 || response.status >= 300) {
-    const error = new Error(`Stock video download failed (${response.status}).`);
+    const error = new Error(`Stock media download failed (${response.status}).`);
     error.statusCode = 502;
     throw error;
   }
@@ -86,7 +86,7 @@ async function downloadToFile({ url, destPath, maxBytes = 70 * 1024 * 1024, head
     response.data.on("data", (chunk) => {
       downloaded += chunk.length;
       if (downloaded > maxBytes) {
-        reject(new Error("Stock video is too large to download."));
+        reject(new Error("Stock media is too large to download."));
         response.data.destroy();
         writer.destroy();
       }
@@ -119,6 +119,37 @@ function chooseBestPexelsFile(videoFiles = []) {
   });
 
   return candidates[0] || null;
+}
+
+function chooseBestPexelsPhoto(photo = {}) {
+  const src = photo?.src || {};
+  return (
+    src.large2x ||
+    src.original ||
+    src.large ||
+    src.medium ||
+    src.small ||
+    ""
+  );
+}
+
+function pickPortraitFirst(list = []) {
+  const items = Array.isArray(list) ? list : [];
+  const portrait = items.filter((item) => Number(item?.height || 0) >= Number(item?.width || 0));
+  return portrait.length ? portrait : items;
+}
+
+function fileExtFromUrl(url, fallback = ".jpg") {
+  try {
+    const parsed = new URL(String(url || ""));
+    const ext = path.extname(parsed.pathname || "");
+    if (!ext) return fallback;
+    const lower = ext.toLowerCase();
+    if ([".jpg", ".jpeg", ".png", ".webp", ".mp4"].includes(lower)) return lower;
+    return fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 async function tryPexelsBroll({ durationSeconds }) {
@@ -168,7 +199,61 @@ async function tryPexelsBroll({ durationSeconds }) {
   });
 
   if (debug) logger.info({ message: "broll_pexels_downloaded", id: String(selected.id), file: fileName });
-  return { path: destPath, provider: "pexels", id: String(selected.id) };
+  return { type: "video", path: destPath, provider: "pexels", id: String(selected.id) };
+}
+
+async function tryPexelsImageBroll({ durationSeconds }) {
+  const apiKey = getEnvWithAliases("PEXELS_API_KEY", ["PIXELS_API_KEY", "PEXELS_KEY", "PEXELS_APIKEY"]);
+  if (!apiKey) return null;
+
+  const queries = parseListEnv("PROMO_BROLL_QUERIES", DEFAULT_QUERIES);
+  const query = pickRandom(queries);
+  if (!query) return null;
+
+  const debug = String(process.env.PROMO_BROLL_DEBUG || "").trim() === "1";
+  if (debug) logger.info({ message: "broll_pexels_image_search", query });
+
+  const url = `https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&orientation=portrait&per_page=25`;
+  const response = await axios.get(url, {
+    timeout: 20000,
+    headers: { Authorization: apiKey },
+    validateStatus: () => true,
+  });
+
+  if (response.status < 200 || response.status >= 300) {
+    logger.warn({ message: "pexels_image_broll_search_failed", status: response.status });
+    return null;
+  }
+
+  const photos = pickPortraitFirst(Array.isArray(response.data?.photos) ? response.data.photos : []);
+  if (!photos.length) return null;
+
+  const count = Math.max(1, Math.min(4, Number(process.env.PROMO_BROLL_IMAGE_COUNT || 3)));
+  const selected = photos.slice(0, count);
+  const maxMb = Number(process.env.PROMO_BROLL_MAX_MB || 70);
+
+  await ensureCacheDir();
+  const imagePaths = [];
+  for (const photo of selected) {
+    const mediaUrl = chooseBestPexelsPhoto(photo);
+    if (!mediaUrl) continue;
+    const ext = fileExtFromUrl(mediaUrl, ".jpg");
+    const fileName = safeBasename(`pexels-photo-${photo.id || crypto.randomUUID()}${ext}`);
+    const destPath = path.join(CACHE_DIR, fileName);
+    if (!fs.existsSync(destPath)) {
+      await downloadToFile({
+        url: mediaUrl,
+        destPath,
+        maxBytes: Math.max(8, maxMb) * 1024 * 1024,
+        headers: { Authorization: apiKey },
+      });
+    }
+    imagePaths.push(destPath);
+  }
+
+  if (!imagePaths.length) return null;
+  if (debug) logger.info({ message: "broll_pexels_images_downloaded", count: imagePaths.length });
+  return { type: "images", imagePaths, provider: "pexels", id: String(query) };
 }
 
 async function tryPixabayBroll({ durationSeconds }) {
@@ -221,7 +306,58 @@ async function tryPixabayBroll({ durationSeconds }) {
   });
 
   if (debug) logger.info({ message: "broll_pixabay_downloaded", id: String(selected.id), file: fileName });
-  return { path: destPath, provider: "pixabay", id: String(selected.id) };
+  return { type: "video", path: destPath, provider: "pixabay", id: String(selected.id) };
+}
+
+async function tryPixabayImageBroll() {
+  const apiKey = getEnvWithAliases("PIXABAY_API_KEY", ["PIXABAY_KEY", "PIXABAY_APIKEY"]);
+  if (!apiKey) return null;
+
+  const queries = parseListEnv("PROMO_BROLL_QUERIES", DEFAULT_QUERIES);
+  const query = pickRandom(queries);
+  if (!query) return null;
+
+  const debug = String(process.env.PROMO_BROLL_DEBUG || "").trim() === "1";
+  if (debug) logger.info({ message: "broll_pixabay_image_search", query });
+
+  const url = `https://pixabay.com/api/?key=${encodeURIComponent(apiKey)}&q=${encodeURIComponent(
+    query,
+  )}&orientation=vertical&image_type=photo&per_page=30&safesearch=true`;
+
+  const response = await axios.get(url, { timeout: 20000, validateStatus: () => true });
+  if (response.status < 200 || response.status >= 300) {
+    logger.warn({ message: "pixabay_image_broll_search_failed", status: response.status });
+    return null;
+  }
+
+  const hits = pickPortraitFirst(Array.isArray(response.data?.hits) ? response.data.hits : []);
+  if (!hits.length) return null;
+
+  const count = Math.max(1, Math.min(4, Number(process.env.PROMO_BROLL_IMAGE_COUNT || 3)));
+  const selected = hits.slice(0, count);
+  const maxMb = Number(process.env.PROMO_BROLL_MAX_MB || 70);
+
+  await ensureCacheDir();
+  const imagePaths = [];
+  for (const hit of selected) {
+    const mediaUrl = String(hit?.largeImageURL || hit?.webformatURL || "").trim();
+    if (!mediaUrl) continue;
+    const ext = fileExtFromUrl(mediaUrl, ".jpg");
+    const fileName = safeBasename(`pixabay-photo-${hit.id || crypto.randomUUID()}${ext}`);
+    const destPath = path.join(CACHE_DIR, fileName);
+    if (!fs.existsSync(destPath)) {
+      await downloadToFile({
+        url: mediaUrl,
+        destPath,
+        maxBytes: Math.max(8, maxMb) * 1024 * 1024,
+      });
+    }
+    imagePaths.push(destPath);
+  }
+
+  if (!imagePaths.length) return null;
+  if (debug) logger.info({ message: "broll_pixabay_images_downloaded", count: imagePaths.length });
+  return { type: "images", imagePaths, provider: "pixabay", id: String(query) };
 }
 
 async function getRandomBrollVideo({ durationSeconds = 20 } = {}) {
@@ -236,10 +372,14 @@ async function getRandomBrollVideo({ durationSeconds = 20 } = {}) {
       if (provider === "pexels") {
         const result = await tryPexelsBroll({ durationSeconds });
         if (result?.path) return result;
+        const imageFallback = await tryPexelsImageBroll({ durationSeconds });
+        if (imageFallback?.imagePaths?.length) return imageFallback;
       }
       if (provider === "pixabay") {
         const result = await tryPixabayBroll({ durationSeconds });
         if (result?.path) return result;
+        const imageFallback = await tryPixabayImageBroll();
+        if (imageFallback?.imagePaths?.length) return imageFallback;
       }
     } catch (error) {
       const code = String(error?.code || "").trim();

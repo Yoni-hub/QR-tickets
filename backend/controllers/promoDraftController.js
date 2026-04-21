@@ -329,8 +329,14 @@ async function runPromoVideoRenderJob(draftId) {
 
   const audioPath = draft.audioStorageKey ? resolvePromoAudioAbsolutePath(draft.audioStorageKey) : "";
   const broll = await getRandomBrollVideo({ durationSeconds: 20 });
-  if (broll?.path) {
-    logger.info({ message: "promo_broll_selected", provider: broll.provider, id: broll.id });
+  if (broll?.path || (Array.isArray(broll?.imagePaths) && broll.imagePaths.length)) {
+    logger.info({
+      message: "promo_broll_selected",
+      provider: broll.provider,
+      id: broll.id,
+      type: broll.path ? "video" : "images",
+      imageCount: Array.isArray(broll.imagePaths) ? broll.imagePaths.length : 0,
+    });
   } else {
     logger.info({ message: "promo_broll_missing" });
   }
@@ -341,6 +347,7 @@ async function runPromoVideoRenderJob(draftId) {
     logoPngPath: logoPath,
     audioMp3Path: audioPath,
     brollMp4Path: broll?.path || "",
+    brollImagePaths: Array.isArray(broll?.imagePaths) ? broll.imagePaths : [],
   });
 
   const saved = await savePromoVideoMp4({ draftId, mp4Buffer: mp4 });
