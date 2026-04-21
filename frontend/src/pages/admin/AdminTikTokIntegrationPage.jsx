@@ -229,7 +229,7 @@ export default function AdminTikTokIntegrationPage() {
       setDraft(withAudio);
 
       setAutoStep("Rendering video...");
-      const video = await adminApi.post(`/tiktok/promo/${next.id}/render-video`);
+      const video = await adminApi.post(`/tiktok/promo/${next.id}/render-video?force=1`);
       const renderStart = video.data?.draft || withAudio;
       setDraft(renderStart);
       let withVideo = renderStart;
@@ -315,7 +315,7 @@ export default function AdminTikTokIntegrationPage() {
     setDraftError("");
     setFlash({ type: "", message: "" });
     try {
-      const response = await adminApi.post(`/tiktok/promo/${draft.id}/render-video`);
+      const response = await adminApi.post(`/tiktok/promo/${draft.id}/render-video?force=1`);
       const next = response.data?.draft || null;
       setDraft(next);
       let finalDraft = next;

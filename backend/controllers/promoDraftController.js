@@ -402,6 +402,8 @@ async function runPromoVideoRenderJob(draftId) {
 async function renderPromoVideo(req, res) {
   const draftId = String(req.params?.draftId || "").trim();
   try {
+    const forceRaw = String(req.query?.force ?? req.body?.force ?? "").trim().toLowerCase();
+    const forceRender = forceRaw === "1" || forceRaw === "true" || forceRaw === "yes";
     if (!draftId) {
       res.status(400).json({ error: "Missing draftId." });
       return;
@@ -416,7 +418,7 @@ async function renderPromoVideo(req, res) {
       return;
     }
 
-    if (draft.videoStorageKey) {
+    if (draft.videoStorageKey && !forceRender) {
       const row = await prisma.promoDraft.findUnique({ where: { id: draftId } });
       res.status(200).json({ draft: serializeDraft(row) });
       return;
@@ -433,6 +435,7 @@ async function renderPromoVideo(req, res) {
       .update({
         where: { id: draftId },
         data: {
+          ...(forceRender ? { videoStorageKey: null } : {}),
           lastError: null,
         },
       })

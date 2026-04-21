@@ -48,22 +48,58 @@ const SCENE_PROFILES = [
     action: "attendees forming an orderly line while staff prepares to scan tickets",
   },
   {
+    shot: "drone-style overhead shot",
+    setting: "festival grounds and entry lanes",
+    lighting: "late-afternoon sunlight with long shadows",
+    action: "crowd flow moving through multiple checkpoints",
+  },
+  {
+    shot: "close-up detail shot",
+    setting: "event staff setup table",
+    lighting: "clean soft indoor key light",
+    action: "hands preparing lanyards, wristbands, and badges before gates open",
+  },
+  {
     shot: "medium action shot",
     setting: "entry gate checkpoint",
     lighting: "bright clean daylight",
     action: "a staff member scanning a QR ticket on a guest smartphone",
   },
   {
-    shot: "dynamic crowd shot",
-    setting: "inside the venue near entry lanes",
-    lighting: "concert-style ambient lights with realistic skin tones",
-    action: "guests moving smoothly through check-in without congestion",
+    shot: "dynamic candid shot",
+    setting: "security lane and bag-check area",
+    lighting: "neutral daylight with soft contrast",
+    action: "guests progressing quickly through security with no bottleneck",
   },
   {
-    shot: "close-up detail shot",
-    setting: "ticket validation moment at the gate",
-    lighting: "high-contrast cinematic key light",
-    action: "hands holding wristbands, lanyards, and scanned tickets",
+    shot: "wide cinematic interior shot",
+    setting: "venue lobby with digital signage and wayfinding",
+    lighting: "bright architectural lighting",
+    action: "attendees entering and splitting into different zones smoothly",
+  },
+  {
+    shot: "close portrait shot",
+    setting: "host and guests near gate barrier",
+    lighting: "natural skin-tone accurate daylight",
+    action: "friendly greeting and welcome moment before entry",
+  },
+  {
+    shot: "high-energy crowd shot",
+    setting: "inside a live concert floor",
+    lighting: "colored stage lights and haze atmosphere",
+    action: "excited crowd enjoying the show after successful check-in",
+  },
+  {
+    shot: "night lifestyle shot",
+    setting: "outdoor nightlife event entrance",
+    lighting: "neon and LED accents with realistic faces",
+    action: "guests approaching a fast-moving entry queue",
+  },
+  {
+    shot: "professional operations shot",
+    setting: "event operations corner backstage",
+    lighting: "clean practical lighting",
+    action: "organizer coordinating staff with clipboard and radio",
   },
   {
     shot: "celebratory lifestyle shot",
@@ -73,30 +109,49 @@ const SCENE_PROFILES = [
   },
 ];
 
+const SCENE_VISUAL_STYLES = [
+  "cinematic realism, shallow depth of field, 35mm look",
+  "high-energy documentary photo style, motion-rich composition",
+  "premium commercial ad photography, polished and clean",
+  "urban nightlife realism, rich contrast and vibrant colors",
+  "natural daylight editorial style, crisp and authentic",
+  "festival atmosphere with subtle film grain and practical lights",
+];
+
+function stableOffset(seed, modulo) {
+  const value = crypto.createHash("sha256").update(String(seed || "scene-seed")).digest().readUInt32BE(0);
+  return modulo > 0 ? value % modulo : 0;
+}
+
 function buildSceneConcepts(lines, count) {
   const safeLines = Array.isArray(lines) && lines.length ? lines : ["fast event check-in"];
+  const profileOffset = stableOffset(`profiles:${safeLines.join("|")}:${count}`, SCENE_PROFILES.length);
+  const styleOffset = stableOffset(`styles:${safeLines.join("|")}:${count}`, SCENE_VISUAL_STYLES.length);
   const concepts = [];
   for (let index = 0; index < count; index += 1) {
     const line = safeLines[index % safeLines.length];
-    const profile = SCENE_PROFILES[index % SCENE_PROFILES.length];
-    concepts.push({ line, profile, idx: index, total: count });
+    const profile = SCENE_PROFILES[(profileOffset + index) % SCENE_PROFILES.length];
+    const visualStyle = SCENE_VISUAL_STYLES[(styleOffset + index) % SCENE_VISUAL_STYLES.length];
+    concepts.push({ line, profile, idx: index, total: count, visualStyle });
   }
   return concepts;
 }
 
-function buildScenePrompt({ baseStyle, sceneLine, idx, total, profile }) {
+function buildScenePrompt({ baseStyle, sceneLine, idx, total, profile, visualStyle }) {
   const style = String(baseStyle || "").trim();
   return [
     "Create a vertical cinematic background image for a short event promo video.",
     "No text, no logos, no UI screenshots, no watermarks, no brand names.",
     "Show people, venues, ticketing, crowd flow, check-in moments, or atmosphere.",
     "Use realistic photography style, not illustration.",
-    "The scene must look clearly different from other scenes in shot type, setting, and action focus.",
+    "This scene must look clearly different from other scenes in camera perspective, location, and subject focus.",
+    "Avoid generating a repeated gate-scanning scene unless this prompt explicitly asks for it.",
     "Modern, vibrant, professional, social-media friendly composition.",
     `Shot type: ${profile?.shot || "cinematic event shot"}`,
     `Setting: ${profile?.setting || "event venue entrance"}`,
     `Lighting: ${profile?.lighting || "natural cinematic lighting"}`,
     `Action focus: ${profile?.action || "fast QR ticket check-in"}`,
+    `Per-scene visual treatment: ${visualStyle || "cinematic realism"}`,
     `Scene ${idx + 1} of ${total}: ${sceneLine}`,
     style ? `Visual style: ${style}` : "",
   ]
@@ -170,6 +225,7 @@ async function generatePromoSceneImages({ draftId, scriptText, onScreenText }) {
       idx: concept.idx,
       total: concept.total,
       profile: concept.profile,
+      visualStyle: concept.visualStyle,
     });
     const pngBuffer = await generateOneScenePng({ apiKey, model, prompt });
     const key = crypto
