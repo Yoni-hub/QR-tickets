@@ -4,6 +4,7 @@ const prisma = require("../utils/prisma");
 const logger = require("../utils/logger");
 const { sanitizeText, safeError } = require("../utils/sanitize");
 const { generateDailyPromoDraft, generateOnScreenText, generateTtsMp3 } = require("../services/openaiPromoService");
+const { generatePromoSceneImages } = require("../services/openaiPromoSceneService");
 const { resolvePromoAudioAbsolutePath, resolvePromoVideoAbsolutePath, savePromoAudioMp3, savePromoVideoMp4 } = require("../services/promoStorageService");
 const { renderPromoVideoMp4 } = require("../services/ffmpegPromoVideoService");
 const { getRandomBrollVideo } = require("../services/stockBrollService");
@@ -328,17 +329,45 @@ async function runPromoVideoRenderJob(draftId) {
   }
 
   const audioPath = draft.audioStorageKey ? resolvePromoAudioAbsolutePath(draft.audioStorageKey) : "";
-  const broll = await getRandomBrollVideo({ durationSeconds: 20 });
-  if (broll?.path || (Array.isArray(broll?.imagePaths) && broll.imagePaths.length)) {
-    logger.info({
-      message: "promo_broll_selected",
-      provider: broll.provider,
-      id: broll.id,
-      type: broll.path ? "video" : "images",
-      imageCount: Array.isArray(broll.imagePaths) ? broll.imagePaths.length : 0,
-    });
-  } else {
-    logger.info({ message: "promo_broll_missing" });
+  const sourceRaw = String(process.env.PROMO_SCENE_SOURCE || "auto").trim().toLowerCase();
+  const sceneSource = ["ai", "stock", "auto"].includes(sourceRaw) ? sourceRaw : "auto";
+
+  let broll = null;
+  let aiScenePaths = [];
+
+  if (sceneSource === "ai" || sceneSource === "auto") {
+    try {
+      aiScenePaths = await generatePromoSceneImages({
+        draftId,
+        scriptText: draft.scriptText,
+        onScreenText: draft.onScreenText,
+      });
+      if (aiScenePaths.length) {
+        logger.info({ message: "promo_scene_source_selected", source: "ai", sceneCount: aiScenePaths.length, draftId });
+      }
+    } catch (error) {
+      logger.warn({
+        message: "promo_ai_scene_generation_failed",
+        draftId,
+        error: String(error?.message || "unknown"),
+      });
+      if (sceneSource === "ai") throw error;
+    }
+  }
+
+  if (!aiScenePaths.length && (sceneSource === "stock" || sceneSource === "auto")) {
+    broll = await getRandomBrollVideo({ durationSeconds: 20 });
+    if (broll?.path || (Array.isArray(broll?.imagePaths) && broll.imagePaths.length)) {
+      logger.info({
+        message: "promo_broll_selected",
+        provider: broll.provider,
+        id: broll.id,
+        type: broll.path ? "video" : "images",
+        imageCount: Array.isArray(broll.imagePaths) ? broll.imagePaths.length : 0,
+      });
+    } else {
+      logger.info({ message: "promo_broll_missing" });
+    }
   }
 
   const mp4 = await renderPromoVideoMp4({
@@ -347,7 +376,7 @@ async function runPromoVideoRenderJob(draftId) {
     logoPngPath: logoPath,
     audioMp3Path: audioPath,
     brollMp4Path: broll?.path || "",
-    brollImagePaths: Array.isArray(broll?.imagePaths) ? broll.imagePaths : [],
+    brollImagePaths: aiScenePaths.length ? aiScenePaths : Array.isArray(broll?.imagePaths) ? broll.imagePaths : [],
   });
 
   const saved = await savePromoVideoMp4({ draftId, mp4Buffer: mp4 });
