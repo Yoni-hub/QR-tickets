@@ -163,6 +163,26 @@ Admin action APIs:
 - `POST /api/admin/deliveries/:deliveryId/retry`
 - `PATCH /api/admin/scans/:scanId/mark-suspicious`
 
+## Admin Integrations (Protected by `x-admin-key`)
+- `GET /api/admin/tiktok/login` (starts TikTok OAuth redirect)
+- `GET /api/admin/tiktok/status` (connection status + minimal account metadata)
+- `POST /api/admin/tiktok/disconnect` (removes stored token)
+- `GET /api/admin/tiktok/callback` (alias callback handler; primary redirect URI is `/tiktok/callback`)
+
+TikTok redirect URI (public, handled by backend):
+- `GET /tiktok/callback` (processes code/state server-side then redirects to `/admin/integrations/tiktok`)
+
+TikTok promo drafts (admin-only):
+- `GET /api/admin/tiktok/promo/latest`
+- `POST /api/admin/tiktok/promo/generate-today`
+- `PATCH /api/admin/tiktok/promo/:draftId`
+- `POST /api/admin/tiktok/promo/:draftId/generate-onscreen` (condenses script into 4-6 short overlay lines)
+- `POST /api/admin/tiktok/promo/:draftId/generate-audio`
+- `GET /api/admin/tiktok/promo/:draftId/audio` (downloads generated MP3, admin-only)
+- `POST /api/admin/tiktok/promo/:draftId/render-video` (renders a 20s 1080x1920 MP4, admin-only)
+- `GET /api/admin/tiktok/promo/:draftId/video` (downloads rendered MP4, admin-only)
+- `POST /api/admin/tiktok/promo/:draftId/upload-draft` (not implemented yet)
+
 ## Checkpoint Updates
 
 - 2026-03-09: Added chat endpoints for organizer/client request messaging, added admin client token listing endpoint, and updated public ticket request validation expectations.

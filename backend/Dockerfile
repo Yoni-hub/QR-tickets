@@ -8,6 +8,8 @@ RUN apt-get update && apt-get install -y \
     openssl \
     postgresql-client \
     chromium \
+    ffmpeg \
+    fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 # Tell puppeteer to use system chromium instead of downloading its own

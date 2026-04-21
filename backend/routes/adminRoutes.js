@@ -57,6 +57,23 @@ const {
   updateAdminSupportConversationStatus,
 } = require("../controllers/chatController");
 const { chatAttachmentUpload } = require("../middleware/chatUpload");
+const {
+  adminTikTokLogin,
+  adminTikTokCallback,
+  adminTikTokStatus,
+  adminTikTokDisconnect,
+} = require("../controllers/tiktokIntegrationController");
+const {
+  getLatestPromoDraft,
+  generateTodayPromoDraft,
+  updatePromoDraft,
+  generatePromoOnScreenText,
+  generatePromoAudio,
+  renderPromoVideo,
+  uploadPromoDraftToTikTok,
+  downloadPromoAudio,
+  downloadPromoVideo,
+} = require("../controllers/promoDraftController");
 
 const router = express.Router();
 
@@ -97,6 +114,23 @@ router.patch("/events/:eventId/invoice-evidence-auto-approve", patchAdminInvoice
 router.patch("/events/invoice-evidence-auto-approve-all", patchAdminGlobalInvoiceEvidenceAutoApprove);
 router.get("/audit-log", listAdminAuditLog);
 router.get("/client-dash-tokens", listAdminClientDashTokens);
+
+// Admin-only TikTok integration (OAuth)
+router.get("/tiktok/login", adminTikTokLogin);
+router.get("/tiktok/callback", adminTikTokCallback);
+router.get("/tiktok/status", adminTikTokStatus);
+router.post("/tiktok/disconnect", adminTikTokDisconnect);
+
+// Admin-only TikTok promo drafts (daily)
+router.get("/tiktok/promo/latest", getLatestPromoDraft);
+router.post("/tiktok/promo/generate-today", generateTodayPromoDraft);
+router.patch("/tiktok/promo/:draftId", updatePromoDraft);
+router.post("/tiktok/promo/:draftId/generate-onscreen", generatePromoOnScreenText);
+router.post("/tiktok/promo/:draftId/generate-audio", generatePromoAudio);
+router.get("/tiktok/promo/:draftId/audio", downloadPromoAudio);
+router.post("/tiktok/promo/:draftId/render-video", renderPromoVideo);
+router.get("/tiktok/promo/:draftId/video", downloadPromoVideo);
+router.post("/tiktok/promo/:draftId/upload-draft", uploadPromoDraftToTikTok);
 
 // Requested aliases for club/manual ticketing flows.
 router.get("/ticket-requests", getOrganizerTicketRequests);

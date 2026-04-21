@@ -20,6 +20,7 @@ import AdminInvoicesPage from "./pages/admin/AdminInvoicesPage";
 import AdminSettingsPage from "./pages/admin/AdminSettingsPage";
 import AdminAuditLogPage from "./pages/admin/AdminAuditLogPage";
 import AdminClientDashTokensPage from "./pages/admin/AdminClientDashTokensPage";
+import AdminTikTokIntegrationPage from "./pages/admin/AdminTikTokIntegrationPage";
 import HelpPage from "./pages/HelpPage";
 import TermsPage from "./pages/TermsPage";
 import PrivacyPage from "./pages/PrivacyPage";
@@ -176,6 +177,7 @@ export default function App() {
           <Route path="support" element={<AdminSupportPage />} />
           <Route path="settings" element={<AdminSettingsPage />} />
           <Route path="audit-log" element={<AdminAuditLogPage />} />
+          <Route path="integrations/tiktok" element={<AdminTikTokIntegrationPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

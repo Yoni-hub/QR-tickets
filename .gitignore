@@ -10,6 +10,8 @@ backend/node_modules/
 frontend/node_modules/
 .claude/
 backend/storage/
+backend/uploads/
+backend/tools/
 backend/env/prod.env
 backend/env/staging.env
 ops/qr-tickets/.env

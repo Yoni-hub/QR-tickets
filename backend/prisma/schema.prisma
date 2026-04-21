@@ -62,6 +62,32 @@ model AdminCurrencyPaymentInstruction {
   createdAt       DateTime          @default(now())
 }
 
+model SocialIntegration {
+  id                    String         @id @default(cuid())
+  provider              SocialProvider @unique
+  accessTokenEnc        String
+  refreshTokenEnc       String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  openId                String?
+  displayName           String?
+  connectedAt           DateTime?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+}
+
+model OAuthState {
+  id         String         @id @default(cuid())
+  provider   SocialProvider
+  stateHash  String         @unique
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime       @default(now())
+
+  @@index([provider, expiresAt])
+  @@index([consumedAt])
+}
+
 model OrganizerInvoice {
   id                         String                @id @default(cuid())
   eventId                    String
@@ -501,6 +527,42 @@ enum SupportedCurrency {
   ETB
   USD
   EUR
+}
+
+enum SocialProvider {
+  TIKTOK
+}
+
+enum PromoPlatform {
+  TIKTOK
+}
+
+enum PromoDraftStatus {
+  SCRIPT_ONLY
+  READY_TO_UPLOAD
+  AUDIO_RENDERED
+  VIDEO_RENDERED
+  FAILED
+}
+
+model PromoDraft {
+  id            String           @id @default(cuid())
+  platform      PromoPlatform
+  scheduledFor  DateTime
+  status        PromoDraftStatus @default(SCRIPT_ONLY)
+  scriptText    String
+  onScreenText  String?
+  captionText   String?
+  voiceoverText String?
+  audioStorageKey String?
+  videoStorageKey String?
+  lastError     String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@unique([platform, scheduledFor])
+  @@index([platform, scheduledFor])
+  @@index([status, updatedAt])
 }
 
 enum OrganizerInvoiceType {

@@ -15,6 +15,7 @@ const apiRoutes = require("./routes/apiRoutes");
 const socketManager = require("./socket/socketManager");
 const { registerSocketHandlers } = require("./socket/socketHandler");
 const { startOrganizerInvoiceScheduler } = require("./services/organizerInvoiceScheduler");
+const { publicTikTokCallback } = require("./controllers/tiktokIntegrationController");
 
 const app = express();
 app.set("trust proxy", 1);
@@ -105,6 +106,9 @@ app.use("/api/public/support/conversations", supportLimiter);
 app.get("/health", (_req, res) => {
   res.status(200).json({ status: "ok" });
 });
+
+// TikTok OAuth callback (registered redirect URI)
+app.get("/tiktok/callback", publicTikTokCallback);
 
 // OG preview for social crawlers — nginx routes bot User-Agents here for /e/:slug
 app.get("/e/:slug", async (req, res) => {

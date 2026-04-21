@@ -62,6 +62,22 @@ Source of truth:
 - internal audit log for admin actions
 - fields: `action`, `targetType`, `targetId`, `eventId`, `metadata`, `createdAt`
 
+## SocialIntegration
+- stores server-side credentials for admin-only third-party integrations (starting with TikTok)
+- `provider`: `TIKTOK`
+- encrypted tokens: `accessTokenEnc`, `refreshTokenEnc?` (encrypted at rest using `TOKEN_ENCRYPTION_KEY`)
+- token metadata: `accessTokenExpiresAt?`, `refreshTokenExpiresAt?`
+- account metadata: `openId?`, `displayName?`
+- timestamps: `connectedAt?`, `createdAt`, `updatedAt`
+
+## OAuthState
+- one-time OAuth state records used to validate admin OAuth callbacks (CSRF protection)
+- fields: `provider`, `stateHash` (stored hashed), `expiresAt`, `consumedAt?`, `createdAt`
+
+## PromoDraft
+- daily admin-reviewed promo content drafts (script/caption/voiceover) per platform
+- fields: `platform` (`TIKTOK`), `scheduledFor`, `status`, `scriptText`, `onScreenText?`, `captionText?`, `voiceoverText?`, `audioStorageKey?`, `videoStorageKey?`, `lastError?`, `createdAt`, `updatedAt`
+
 ## Unified Chat (Pairwise Only)
 
 ## ChatConversation
