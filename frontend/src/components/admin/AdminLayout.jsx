@@ -12,7 +12,6 @@ const NAV_ITEMS = [
   { to: "/admin/invoices", label: "Invoices" },
   { to: "/admin/support", label: "Chat" },
   { to: "/admin/client-dash-tokens", label: "Client Dash Tokens" },
-  { to: "/admin/integrations/tiktok", label: "TikTok" },
   { to: "/admin/settings", label: "Settings" },
   { to: "/admin/audit-log", label: "Audit Log" },
 ];

@@ -160,7 +160,8 @@ function redirectToAdminWithResult(res, result, message) {
   const params = new URLSearchParams();
   if (result) params.set("result", result);
   if (message) params.set("message", message);
-  res.redirect(302, `/admin/integrations/tiktok?${params.toString()}`);
+  const query = params.toString();
+  res.redirect(302, query ? `/admin/dashboard?${query}` : "/admin/dashboard");
 }
 
 async function handleTikTokCallback(req, res) {
