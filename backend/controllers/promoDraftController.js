@@ -188,6 +188,8 @@ async function generateTodayPromoDraft(req, res) {
         scriptText,
         captionText,
         voiceoverText,
+        audioStorageKey: null,
+        videoStorageKey: null,
         lastError: null,
         updatedAt: now,
       },
@@ -223,6 +225,8 @@ async function updatePromoDraft(req, res) {
         onScreenText: onScreenText || null,
         captionText: captionText || null,
         voiceoverText: voiceoverText || null,
+        audioStorageKey: null,
+        videoStorageKey: null,
         lastError: null,
       },
     });
@@ -253,7 +257,9 @@ async function generatePromoOnScreenText(req, res) {
     const row = await prisma.promoDraft.update({
       where: { id: draftId },
       data: {
+        status: "SCRIPT_ONLY",
         onScreenText,
+        videoStorageKey: null,
         lastError: null,
       },
     });
@@ -295,6 +301,7 @@ async function generatePromoAudio(req, res) {
       data: {
         status: "AUDIO_RENDERED",
         audioStorageKey: saved.storageKey,
+        videoStorageKey: null,
         lastError: null,
       },
     });
