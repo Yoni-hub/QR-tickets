@@ -47,6 +47,30 @@ if [ -z "$ADMIN_PANEL_KEY" ]; then
   ADMIN_PANEL_KEY="${EXISTING:-$(openssl rand -hex 24)}"
 fi
 
+read_existing_env() {
+  local key="$1"
+  local file="$ENV_DIR/backend.env"
+  if [ ! -f "$file" ]; then
+    return 0
+  fi
+  local line
+  line=$(grep -m1 "^${key}=" "$file" || true)
+  if [ -n "$line" ]; then
+    printf '%s' "${line#*=}"
+  fi
+}
+
+OPENAI_API_KEY="${OPENAI_API_KEY:-$(read_existing_env OPENAI_API_KEY)}"
+TIKTOK_CLIENT_KEY="${TIKTOK_CLIENT_KEY:-$(read_existing_env TIKTOK_CLIENT_KEY)}"
+TIKTOK_CLIENT_SECRET="${TIKTOK_CLIENT_SECRET:-$(read_existing_env TIKTOK_CLIENT_SECRET)}"
+TOKEN_ENCRYPTION_KEY="${TOKEN_ENCRYPTION_KEY:-$(read_existing_env TOKEN_ENCRYPTION_KEY)}"
+PEXELS_API_KEY="${PEXELS_API_KEY:-$(read_existing_env PEXELS_API_KEY)}"
+PIXABAY_API_KEY="${PIXABAY_API_KEY:-$(read_existing_env PIXABAY_API_KEY)}"
+
+if [ -z "$TOKEN_ENCRYPTION_KEY" ]; then
+  TOKEN_ENCRYPTION_KEY="$(openssl rand -base64 32)"
+fi
+
 # ─── Write backend env ──────────────────────────────────────────────────────
 echo "[deploy] Writing backend env..."
 cat > "$ENV_DIR/backend.env" <<EOF
@@ -70,6 +94,22 @@ AWS_REGION=${AWS_REGION:-us-east-1}
 AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
 AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
 S3_BUCKET_NAME=${S3_BUCKET_NAME}
+TIKTOK_CLIENT_KEY=${TIKTOK_CLIENT_KEY}
+TIKTOK_CLIENT_SECRET=${TIKTOK_CLIENT_SECRET}
+TIKTOK_REDIRECT_URI=${TIKTOK_REDIRECT_URI:-https://qr-tickets.connsura.com/tiktok/callback}
+TOKEN_ENCRYPTION_KEY=${TOKEN_ENCRYPTION_KEY}
+OPENAI_API_KEY=${OPENAI_API_KEY}
+OPENAI_TEXT_MODEL=${OPENAI_TEXT_MODEL:-gpt-5.2}
+OPENAI_TEXT_TEMPERATURE=${OPENAI_TEXT_TEMPERATURE:-1.0}
+OPENAI_TTS_MODEL=${OPENAI_TTS_MODEL:-gpt-4o-mini-tts}
+OPENAI_TTS_VOICE=${OPENAI_TTS_VOICE:-marin}
+PEXELS_API_KEY=${PEXELS_API_KEY}
+PIXABAY_API_KEY=${PIXABAY_API_KEY}
+PROMO_BROLL_PROVIDERS="${PROMO_BROLL_PROVIDERS:-pexels,pixabay}"
+PROMO_BROLL_QUERIES="${PROMO_BROLL_QUERIES:-event entrance,concert entrance,ticket scanning,qr code scan,people scanning qr code,crowd at event,busy check in,smartphone qr code}"
+PROMO_BROLL_MAX_MB=${PROMO_BROLL_MAX_MB:-70}
+PROMO_VIDEO_TEMPLATE=${PROMO_VIDEO_TEMPLATE:-auto}
+FFMPEG_PATH=${FFMPEG_PATH}
 EOF
 
 # ─── Write postgres env ─────────────────────────────────────────────────────
