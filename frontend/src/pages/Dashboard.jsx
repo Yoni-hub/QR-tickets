@@ -3498,6 +3498,7 @@ export default function Dashboard() {
             <section className="mt-4">
               {organizerChatAccessCode ? (
                 <ChatInboxLayout
+                  key={`organizer-chat-${organizerChatAccessCode}-${String(summary?.event?.id || "none")}`}
                   title="Organizer Chat"
                   actorType="ORGANIZER"
                   api={organizerChatApiClient}

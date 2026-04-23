@@ -500,6 +500,22 @@ async function listConversationsForActor(actor, options = {}) {
   const query = normalizeText(options.q, 100).toLowerCase();
   const normalizedEventId = options.eventId ? String(options.eventId).trim() : "";
 
+  if (actor.type === CHAT_ACTOR.ORGANIZER && normalizedEventId) {
+    const scopedEvent = await prisma.userEvent.findFirst({
+      where: {
+        id: normalizedEventId,
+        OR: [
+          { organizerAccessCode: actor.organizerAccessCode },
+          { accessCode: actor.organizerAccessCode },
+        ],
+      },
+      select: { id: true },
+    });
+    if (!scopedEvent) {
+      return [];
+    }
+  }
+
   const eventFilter =
     normalizedEventId
       ? (
@@ -514,13 +530,19 @@ async function listConversationsForActor(actor, options = {}) {
       )
       : {};
 
+  const whereClauses = [actorWhere];
+  if (status === CHAT_CONVERSATION_STATUS.OPEN || status === CHAT_CONVERSATION_STATUS.CLOSED) {
+    whereClauses.push({ status });
+  }
+  if (Object.values(CHAT_CONVERSATION_TYPE).includes(conversationType)) {
+    whereClauses.push({ conversationType });
+  }
+  if (Object.keys(eventFilter).length) {
+    whereClauses.push(eventFilter);
+  }
+
   const items = await prisma.chatConversation.findMany({
-    where: {
-      ...actorWhere,
-      ...(status === CHAT_CONVERSATION_STATUS.OPEN || status === CHAT_CONVERSATION_STATUS.CLOSED ? { status } : {}),
-      ...(Object.values(CHAT_CONVERSATION_TYPE).includes(conversationType) ? { conversationType } : {}),
-      ...eventFilter,
-    },
+    where: { AND: whereClauses },
     orderBy: [{ lastMessageAt: "desc" }],
     take: 200,
     include: {

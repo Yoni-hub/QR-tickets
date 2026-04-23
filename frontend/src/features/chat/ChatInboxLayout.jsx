@@ -158,6 +158,7 @@ export default function ChatInboxLayout({
     () => conversations.find((item) => item.id === selectedId) || null,
     [conversations, selectedId],
   );
+  const listParamsKey = useMemo(() => JSON.stringify(listParams || {}), [listParams]);
 
   const filteredConversations = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -220,8 +221,13 @@ export default function ChatInboxLayout({
   };
 
   useEffect(() => {
+    // Reset local thread state when actor scope changes (e.g., organizer/client/admin identity switch)
+    // so stale conversations from a previous scope do not remain visible.
+    setConversations([]);
+    setSelectedId("");
+    setMessages([]);
     loadConversations();
-  }, []);
+  }, [api, listParamsKey]);
 
   useEffect(() => {
     if (!selectedId) {

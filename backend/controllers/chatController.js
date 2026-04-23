@@ -86,7 +86,7 @@ async function sendAttachmentResponse(attachment, res) {
 async function requireOrganizerActor(req, res) {
   const accessCode = String(req.params.accessCode || req.query?.accessCode || req.body?.accessCode || "").trim();
   let actor = await resolveActorFromOrganizer(accessCode);
-  if (!actor) {
+  if (!actor && !accessCode) {
     const eventId = String(req.query?.eventId || req.body?.eventId || "").trim();
     if (eventId) {
       const event = await prisma.userEvent.findUnique({
